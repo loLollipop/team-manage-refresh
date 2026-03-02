@@ -269,13 +269,13 @@ async def team_import(
         logger.info(f"管理员导入 Team: {import_data.import_type}")
 
         if import_data.import_type == "single":
-            # 单个导入
-            if not import_data.access_token:
+            # 单个导入 - 允许通过 AT, RT 或 ST 导入
+            if not any([import_data.access_token, import_data.refresh_token, import_data.session_token]):
                 return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     content={
                         "success": False,
-                        "error": "Access Token 不能为空"
+                        "error": "必须提供 Access Token、Refresh Token 或 Session Token 其中之一"
                     }
                 )
 

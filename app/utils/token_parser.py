@@ -22,13 +22,13 @@ class TokenParser:
     # Account ID 正则 (UUID 格式)
     ACCOUNT_ID_PATTERN = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
-    # Refresh Token 正则
-    REFRESH_TOKEN_PATTERN = r'rt-[A-Za-z0-9_-]+'
+    # Refresh Token 正则 (支持 rt- 或 rt_ 前缀,且包含点号)
+    REFRESH_TOKEN_PATTERN = r'rt[_-][A-Za-z0-9._-]+'
     
     # Session Token 正则 (通常比较长，包含两个点)
     SESSION_TOKEN_PATTERN = r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)?'
 
-    # Client ID 正则 (根据用户提供的信息: app_ 开头)
+    # Client ID 正则 (严格匹配 app_ 开头)
     CLIENT_ID_PATTERN = r'app_[A-Za-z0-9]+'
 
     def extract_jwt_tokens(self, text: str) -> List[str]:
