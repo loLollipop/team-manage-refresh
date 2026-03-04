@@ -142,7 +142,7 @@ class ChatGPTService:
                     except Exception:
                         pass
                     
-                    if error_code == "token_invalidated" or "token_invalidated" in error_msg.lower():
+                    if error_code == "token_invalidated" or "token_invalidated" in str(error_msg).lower():
                         logger.warning(f"检测到 Token 失效，清理会话缓存: {identifier}")
                         await self.clear_session(identifier)
                     
