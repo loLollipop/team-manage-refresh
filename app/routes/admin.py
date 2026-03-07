@@ -106,19 +106,16 @@ async def admin_dashboard(
         # 获取 Team 列表 (分页)
         teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search)
         
-        # 获取统计信息 (可以使用专用统计方法优化)
-        all_teams_result = await team_service.get_all_teams(db, page=1, per_page=10000)
-        all_teams = all_teams_result.get("teams", [])
-        
-        all_codes_result = await redemption_service.get_all_codes(db, page=1, per_page=10000)
-        all_codes = all_codes_result.get("codes", [])
+        # 获取统计信息 (使用专用统计方法优化)
+        team_stats = await team_service.get_stats(db)
+        code_stats = await redemption_service.get_stats(db)
 
         # 计算统计数据
         stats = {
-            "total_teams": len(all_teams),
-            "available_teams": len([t for t in all_teams if t.get("status") == "active" and t.get("current_members", 0) < t.get("max_members", 6)]),
-            "total_codes": len(all_codes),
-            "used_codes": len([c for c in all_codes if c.get("status") == "used"])
+            "total_teams": team_stats["total"],
+            "available_teams": team_stats["available"],
+            "total_codes": code_stats["total"],
+            "used_codes": code_stats["used"]
         }
 
         return templates.TemplateResponse(
@@ -545,18 +542,10 @@ async def codes_list_page(
         total_pages = codes_result.get("total_pages", 1)
         current_page = codes_result.get("current_page", 1)
 
-        # 为了统计数据，我们需要获取所有统计（或者增加统计接口）
-        # 这里暂时获取全部用于统计
-        all_codes_result = await redemption_service.get_all_codes(db, page=1, per_page=10000)
-        all_codes = all_codes_result.get("codes", [])
-
-        # 计算统计数据
-        stats = {
-            "total": total_codes,
-            "unused": len([c for c in all_codes if c["status"] == "unused"]),
-            "used": len([c for c in all_codes if c["status"] == "used"]),
-            "expired": len([c for c in all_codes if c["status"] == "expired"])
-        }
+        # 获取统计信息
+        stats = await redemption_service.get_stats(db)
+        # 兼容旧模版中的 status 统计名 (unused/used/expired)
+        # 注意: get_stats 返回的 used 已经包含了 warranty_active
 
         # 格式化日期时间
         from datetime import datetime
@@ -796,6 +785,7 @@ async def export_codes(
             status_text = {
                 'unused': '未使用',
                 'used': '已使用',
+                'warranty_active': '质保中',
                 'expired': '已过期'
             }.get(code['status'], code['status'])
 

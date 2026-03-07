@@ -1915,6 +1915,33 @@ class TeamService:
             logger.error(f"获取总可用车位数失败: {e}")
             return 0
 
+    async def get_stats(
+        self,
+        db_session: AsyncSession
+    ) -> Dict[str, int]:
+        """获取 Team 统计信息"""
+        try:
+            # 总数
+            total_stmt = select(func.count(Team.id))
+            total_result = await db_session.execute(total_stmt)
+            total = total_result.scalar() or 0
+            
+            # 可用 Team 数 (状态为 active 且未满)
+            available_stmt = select(func.count(Team.id)).where(
+                Team.status == "active",
+                Team.current_members < Team.max_members
+            )
+            available_result = await db_session.execute(available_stmt)
+            available = available_result.scalar() or 0
+            
+            return {
+                "total": total,
+                "available": available
+            }
+        except Exception as e:
+            logger.error(f"获取 Team 统计信息失败: {e}")
+            return {"total": 0, "available": 0}
+
 
 # 创建全局 Team 服务实例
 team_service = TeamService()

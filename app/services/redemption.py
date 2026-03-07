@@ -855,6 +855,50 @@ class RedemptionService:
                 "error": f"批量更新失败: {str(e)}"
             }
 
+    async def get_stats(
+        self,
+        db_session: AsyncSession
+    ) -> Dict[str, int]:
+        """
+        获取兑换码统计信息
+        
+        Returns:
+            统计字典, 包含 total, unused, used, expired
+        """
+        try:
+            # 使用 SQL 聚合统计各状态数量
+            stmt = select(
+                RedemptionCode.status,
+                func.count(RedemptionCode.id)
+            ).group_by(RedemptionCode.status)
+            
+            result = await db_session.execute(stmt)
+            status_counts = dict(result.all())
+            
+            # 由于 "used" 和 "warranty_active" 都属于广义上的 "已使用"
+            # 这里的 used 统计需要合并这两个状态
+            used_count = status_counts.get("used", 0) + status_counts.get("warranty_active", 0)
+            
+            # 计算总数
+            total_stmt = select(func.count(RedemptionCode.id))
+            total_result = await db_session.execute(total_stmt)
+            total = total_result.scalar() or 0
+            
+            return {
+                "total": total,
+                "unused": status_counts.get("unused", 0),
+                "used": used_count,
+                "expired": status_counts.get("expired", 0)
+            }
+        except Exception as e:
+            logger.error(f"获取兑换码统计信息失败: {e}")
+            return {
+                "total": 0,
+                "unused": 0,
+                "used": 0,
+                "expired": 0
+            }
+
 
 # 创建全局兑换码服务实例
 redemption_service = RedemptionService()
