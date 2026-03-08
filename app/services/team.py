@@ -55,7 +55,8 @@ class TeamService:
             "token_invalidated", 
             "account_suspended", 
             "account_not_found",
-            "user_not_found"
+            "user_not_found",
+            "deactivated_workspace"
         }
         is_banned = error_code in ban_codes
         
@@ -71,14 +72,17 @@ class TeamService:
                 "account was deleted",
                 "user_not_found",
                 "session_invalidated",
-                "this account is deactivated"
+                "this account is deactivated",
+                "deactivated_workspace"
             ]
             if any(kw in error_msg for kw in ban_keywords):
                 is_banned = True
                 
         if is_banned:
             # 简化状态描述判断
-            if any(x in error_msg for x in ["deactivated", "suspended", "not found", "deleted"]):
+            if "workspace" in error_msg or "workspace" in (error_code or ""):
+                status_desc = "到期"
+            elif any(x in error_msg for x in ["deactivated", "suspended", "not found", "deleted"]):
                 status_desc = "封禁"
             else:
                 status_desc = "失效"
@@ -132,8 +136,16 @@ class TeamService:
         """
         team.error_count = 0
         if team.status == "error":
-            logger.info(f"Team {team.id} ({team.email}) 请求成功, 将状态从 error 恢复为 active")
-            team.status = "active"
+            # 恢复时也要校验是否满员或到期
+            if team.current_members >= team.max_members:
+                logger.info(f"Team {team.id} ({team.email}) 请求成功, 将状态从 error 恢复为 full")
+                team.status = "full"
+            elif team.expires_at and team.expires_at < datetime.now():
+                logger.info(f"Team {team.id} ({team.email}) 请求成功, 将状态从 error 恢复为 expired")
+                team.status = "expired"
+            else:
+                logger.info(f"Team {team.id} ({team.email}) 请求成功, 将状态从 error 恢复为 active")
+                team.status = "active"
         await db_session.commit()
 
     def _should_proactive_refresh(self, team: Team) -> bool:
@@ -684,10 +696,12 @@ class TeamService:
             if status:
                 team.status = status
             
-            # 自动维护 active/full 状态 (仅当当前处于这两者之一或刚更新了 max_members/status)
-            if team.status in ["active", "full"]:
+            # 自动维护 active/full/expired 状态 (仅当当前处于这三者之一或刚更新了 max_members/status)
+            if team.status in ["active", "full", "expired"]:
                 if team.current_members >= team.max_members:
                     team.status = "full"
+                elif team.expires_at and team.expires_at < datetime.now():
+                    team.status = "expired"
                 else:
                     team.status = "active"
 
@@ -1016,12 +1030,19 @@ class TeamService:
                 identifier=team.email
             )
 
+            all_member_emails = set()
             current_members = 0
             if members_result["success"]:
                 current_members += members_result["total"]
+                for m in members_result.get("members", []):
+                    if m.get("email"):
+                        all_member_emails.add(m["email"].lower())
             
             if invites_result["success"]:
                 current_members += invites_result["total"]
+                for inv in invites_result.get("items", []):
+                    if inv.get("email_address"):
+                        all_member_emails.add(inv["email_address"].lower())
             else:
                 # 检查是否封号或 Token 失效
                 if await self._handle_api_error(invites_result, team, db_session):
@@ -1078,13 +1099,17 @@ class TeamService:
             team.error_count = 0  # 同步成功，重置错误次数
             team.last_sync = get_now()
 
-            await db_session.commit()
+            if not db_session.in_transaction():
+                await db_session.commit()
+            else:
+                await db_session.flush()
 
             logger.info(f"Team 同步成功: ID {team_id}, 成员数 {current_members}")
 
             return {
                 "success": True,
                 "message": f"同步成功,当前成员数: {current_members}",
+                "member_emails": list(all_member_emails),
                 "error": None
             }
 
@@ -1372,13 +1397,8 @@ class TeamService:
                     "error": f"撤回邀请失败: {revoke_result['error']}"
                 }
 
-            # 4. 更新成员数 (如果是按席位算的，撤回邀请应该减少)
-            if team.current_members > 0:
-                team.current_members -= 1
-            
-            if team.current_members < team.max_members:
-                if team.status == "full":
-                    team.status = "active"
+            # 4. 更新成员数 (不再手动 -1，同步最新数据)
+            await self.sync_team_info(team_id, db_session)
 
             await db_session.commit()
 
@@ -1483,10 +1503,19 @@ class TeamService:
                     "error": f"发送邀请失败: {invite_result['error']}"
                 }
 
-            # 5. 更新成员数
-            team.current_members += 1
-            if team.current_members >= team.max_members:
-                team.status = "full"
+            # 5. 更新成员数并二次校验邀请是否真的生效 (防止接口返回 200 但实际未加入)
+            sync_res = await self.sync_team_info(team_id, db_session)
+            member_emails = sync_res.get("member_emails", [])
+            
+            if email.lower() not in [m.lower() for m in member_emails]:
+                logger.error(f"检测到“虚假成功”: Team {team_id} 发送邀请返回成功，但成员列表中未见该邮箱 {email}")
+                # 标记错误
+                await self._handle_api_error({"success": False, "error": "邀请发送成功但同步列表未见成员", "error_code": "ghost_success"}, team, db_session)
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": "邀请发送成功但同步成员列表校验失败，该 Team 账号可能存在异常。"
+                }
 
             await member_lifecycle_service.upsert_lifecycle_event(
                 db_session,
@@ -1587,14 +1616,8 @@ class TeamService:
                     "error": f"删除成员失败: {delete_result['error']}"
                 }
 
-            # 4. 更新成员数
-            if team.current_members > 0:
-                team.current_members -= 1
-
-            # 更新状态
-            if team.current_members < team.max_members:
-                if team.status == "full":
-                    team.status = "active"
+            # 4. 更新成员数 (不再手动 -1，同步最新数据)
+            await self.sync_team_info(team_id, db_session)
 
             await db_session.commit()
 
@@ -1617,6 +1640,48 @@ class TeamService:
                 "message": None,
                 "error": f"删除成员失败: {str(e)}"
             }
+
+    async def enable_device_code_auth(
+        self,
+        team_id: int,
+        db_session: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        开启 Team 的设备代码身份验证
+        """
+        try:
+            # 1. 查询 Team
+            stmt = select(Team).where(Team.id == team_id)
+            result = await db_session.execute(stmt)
+            team = result.scalar_one_or_none()
+
+            if not team:
+                return {"success": False, "error": f"Team ID {team_id} 不存在"}
+
+            # 2. 确保 AT Token 有效
+            access_token = await self.ensure_access_token(team, db_session)
+            if not access_token:
+                return {"success": False, "error": "Token 已过期且无法刷新"}
+
+            # 3. 调用 ChatGPT API 开启功能
+            result = await self.chatgpt_service.toggle_beta_feature(
+                access_token,
+                team.account_id,
+                "codex_device_code_auth",
+                True,
+                db_session,
+                identifier=team.email
+            )
+
+            if not result["success"]:
+                return {"success": False, "error": f"开启设备身份验证失败: {result.get('error', '未知错误')}"}
+
+            logger.info(f"Team {team_id} ({team.email}) 开启设备身份验证成功")
+            return {"success": True, "message": "设备代码身份验证开启成功"}
+
+        except Exception as e:
+            logger.error(f"开启设备身份验证失败: {e}")
+            return {"success": False, "error": f"异常: {str(e)}"}
 
     async def get_available_teams(
         self,
@@ -2101,6 +2166,49 @@ class TeamService:
                 "message": None,
                 "error": f"删除 Team 失败: {str(e)}"
             }
+
+    async def get_total_available_seats(
+        self,
+        db_session: AsyncSession
+    ) -> int:
+        """
+        获取所有活跃 Team 的总剩余车位数
+        """
+        try:
+            # 统计所有状态为 active 的 Team 的剩余位置
+            stmt = select(func.sum(Team.max_members - Team.current_members)).where(Team.status == "active")
+            result = await db_session.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"获取总可用车位数失败: {e}")
+            return 0
+
+    async def get_stats(
+        self,
+        db_session: AsyncSession
+    ) -> Dict[str, int]:
+        """获取 Team 统计信息"""
+        try:
+            # 总数
+            total_stmt = select(func.count(Team.id))
+            total_result = await db_session.execute(total_stmt)
+            total = total_result.scalar() or 0
+            
+            # 可用 Team 数 (状态为 active 且未满)
+            available_stmt = select(func.count(Team.id)).where(
+                Team.status == "active",
+                Team.current_members < Team.max_members
+            )
+            available_result = await db_session.execute(available_stmt)
+            available = available_result.scalar() or 0
+            
+            return {
+                "total": total,
+                "available": available
+            }
+        except Exception as e:
+            logger.error(f"获取 Team 统计信息失败: {e}")
+            return {"total": 0, "available": 0}
 
 
 # 创建全局 Team 服务实例

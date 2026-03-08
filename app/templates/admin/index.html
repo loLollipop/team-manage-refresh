@@ -151,6 +151,10 @@
                                 data-id="{{ team.id }}" title="刷新">
                                 <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i>
                             </button>
+                            <button class="btn btn-sm btn-icon btn-minimal btn-success btn-enable-device-auth"
+                                data-id="{{ team.id }}" title="一键开启设备代码验证">
+                                <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
+                            </button>
                             <button class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
                                 data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除">
                                 <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
@@ -372,7 +376,38 @@
                 editTeam(id);
             });
         });
+
+        // 绑定开启设备认证按钮
+        document.querySelectorAll('.btn-enable-device-auth').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                enableDeviceAuth(id);
+            });
+        });
     });
+
+    async function enableDeviceAuth(teamId) {
+        if (!confirm('确定要为该 Team 开启设备代码身份验证吗?')) {
+            return;
+        }
+
+        try {
+            showToast('正在开启...', 'info');
+            const response = await fetch(`/admin/teams/${teamId}/enable-device-auth`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('开启成功', 'success');
+            } else {
+                showToast(data.error || '开启失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
 
     async function refreshTeam(teamId) {
         if (!confirm('确定要刷新此 Team 的信息吗?')) {

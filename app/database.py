@@ -10,7 +10,7 @@ from app.config import settings
 # 创建异步引擎
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,  # 开发环境打印 SQL
+    echo=settings.database_echo,  # 控制是否打印 SQL
     future=True,
     connect_args={"timeout": 30}
 )

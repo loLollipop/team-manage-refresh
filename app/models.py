@@ -35,7 +35,7 @@ class Team(Base):
 
     # 关系
     team_accounts = relationship("TeamAccount", back_populates="team", cascade="all, delete-orphan")
-    redemption_records = relationship("RedemptionRecord", back_populates="team")
+    redemption_records = relationship("RedemptionRecord", back_populates="team", cascade="all, delete-orphan")
 
     # 索引
     __table_args__ = (

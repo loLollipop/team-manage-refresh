@@ -74,12 +74,18 @@ class ChatGPTService:
         """
         发送 HTTP 请求 (使用持久化隔离会话，提高 CF 通过率并防止污染)
         """
-        # 尝试从 Token 自动提取 Email 作为标识符，确保身份绝对隔离
-        if identifier == "default" and "Authorization" in headers:
-            token = headers["Authorization"].replace("Bearer ", "")
-            email = self.jwt_parser.extract_email(token)
-            if email:
-                identifier = email
+        # 尝试从 Header 或 Token 自动提取标识符，确保身份绝对隔离
+        if identifier == "default":
+            # 优先从账号 ID 识别，这对 Team 邀请等操作最重要
+            acc_id = headers.get("chatgpt-account-id")
+            if acc_id:
+                identifier = f"acc_{acc_id}"
+            # 其次从 Token 解析邮箱
+            elif "Authorization" in headers:
+                token = headers["Authorization"].replace("Bearer ", "")
+                email = self.jwt_parser.extract_email(token)
+                if email:
+                    identifier = email
 
         session = await self._get_session(db_session, identifier)
         
@@ -129,12 +135,18 @@ class ChatGPTService:
                     error_code = None
                     try:
                         error_data = response.json()
-                        error_msg = error_data.get("detail", error_msg)
+                        detail = error_data.get("detail", error_msg)
+                        # 确保 error_msg 是字符串，避免前端显示 [object Object]
+                        error_msg = str(detail) if not isinstance(detail, str) else detail
                         if isinstance(error_data, dict):
                             error_info = error_data.get("error")
                             error_code = error_info.get("code") if isinstance(error_info, dict) else error_data.get("code")
                     except Exception:
                         pass
+                    
+                    if error_code == "token_invalidated" or "token_invalidated" in str(error_msg).lower():
+                        logger.warning(f"检测到 Token 失效，清理会话缓存: {identifier}")
+                        await self.clear_session(identifier)
                     
                     logger.warning(f"客户端错误 {status_code}: {error_msg}")
                     return {"success": False, "status_code": status_code, "error": error_msg, "error_code": error_code}
@@ -251,6 +263,27 @@ class ChatGPTService:
         result = await self._make_request("DELETE", url, headers, db_session=db_session, identifier=identifier)
         return result
 
+    async def toggle_beta_feature(
+        self,
+        access_token: str,
+        account_id: str,
+        feature: str,
+        value: bool,
+        db_session: DBAsyncSession,
+        identifier: str = "default"
+    ) -> Dict[str, Any]:
+        """开启或关闭 Beta 功能"""
+        url = f"{self.BASE_URL}/accounts/{account_id}/beta_features"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+            "chatgpt-account-id": account_id,
+            "oai-language": "zh-CN",
+            "sec-ch-ua-platform": '"Windows"'
+        }
+        json_data = {"feature": feature, "value": value}
+        return await self._make_request("POST", url, headers, json_data, db_session, identifier)
+
     async def get_account_info(
         self,
         access_token: str,
@@ -311,14 +344,29 @@ class ChatGPTService:
             
             response = await session.get(url, headers=headers)
             if response.status_code == 200:
-                data = response.json()
+                try:
+                    data = response.json()
+                except Exception:
+                    return {"success": False, "error": "无法解析会话 JSON 响应"}
+                
                 at = data.get("accessToken")
                 st = data.get("sessionToken")
                 if at:
                     return {"success": True, "access_token": at, "session_token": st}
-                return {"success": False, "error": "响应中未包含 accessToken"}
+                
+                # 如果 200 但没有 token，可能是被拦截或格式变了
+                error_msg = str(data.get("detail") or data.get("error") or "响应中未包含 accessToken")
+                return {"success": False, "error": error_msg}
             else:
-                return {"success": False, "status_code": response.status_code, "error": response.text}
+                error_text = response.text
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("detail") or error_data.get("error") or error_text
+                    if not isinstance(error_msg, str):
+                        error_msg = str(error_msg)
+                except:
+                    error_msg = error_text
+                return {"success": False, "status_code": response.status_code, "error": error_msg}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -359,14 +407,17 @@ class ChatGPTService:
             "id_token": data.get("id_token")
         }
 
-    async def clear_session(self, identifier: str):
-        """清理指定身份的会话"""
-        if identifier in self._sessions:
-            try:
-                await self._sessions[identifier].close()
-            except:
-                pass
-            del self._sessions[identifier]
+    async def clear_session(self, identifier: Optional[str] = None):
+        """清理指定身份的会话，若不提供则清理所有"""
+        if identifier:
+            if identifier in self._sessions:
+                try:
+                    await self._sessions[identifier].close()
+                except:
+                    pass
+                del self._sessions[identifier]
+        else:
+            await self.close()
 
     async def close(self):
         """关闭所有会话"""

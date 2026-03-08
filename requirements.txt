@@ -8,6 +8,7 @@ aiosqlite>=0.19.0
 
 # HTTP Client (with browser fingerprint simulation)
 curl-cffi>=0.6.0
+httpx>=0.27.0
 
 # Template Engine
 jinja2>=3.1.3

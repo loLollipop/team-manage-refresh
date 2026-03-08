@@ -135,7 +135,7 @@ async def confirm_redeem(
 
         if not result["success"]:
             # 根据错误类型返回不同的状态码
-            error_msg = result["error"]
+            error_msg = result.get("error") or "未知原因"
             if any(kw in error_msg for kw in ["不存在", "已使用", "已过期", "截止时间", "已满", "席位", "质保", "无效", "失效", "maximum number of seats"]):
                 status_code = status.HTTP_400_BAD_REQUEST
                 if any(kw in error_msg for kw in ["已满", "席位", "maximum number of seats"]):

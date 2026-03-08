@@ -43,6 +43,13 @@ git pull && docker compose down && docker compose up -d --build
   - 代理配置（HTTP/SOCKS5）
   - 管理员密码修改
   - 日志级别动态调整
+  - **库存预警 Webhook** (支持库存不足时自动通知第三方系统补货)
+
+### 自动化与集成
+- **库存预警与自动导入**
+  - 当可用兑换码低于设置阈值时，自动触发 Webhook 通知
+  - 支持第三方程序通过 API 自动导入新 Team 账号
+  - 详细对接说明见 [integration_docs.md](integration_docs.md)
 
 ### 用户功能
 - **兑换流程**

@@ -124,12 +124,9 @@ async def admin_dashboard(
         # 获取 Team 列表 (分页)
         teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search)
         
-        # 获取统计信息 (可以使用专用统计方法优化)
-        all_teams_result = await team_service.get_all_teams(db, page=1, per_page=10000)
-        all_teams = all_teams_result.get("teams", [])
-        
-        all_codes_result = await redemption_service.get_all_codes(db, page=1, per_page=10000)
-        all_codes = all_codes_result.get("codes", [])
+        # 获取统计信息 (使用专用统计方法优化)
+        team_stats = await team_service.get_stats(db)
+        code_stats = await redemption_service.get_stats(db)
 
         reminders_result = await member_lifecycle_service.get_reminders(db)
         reminders = reminders_result.get("items", [])
@@ -292,13 +289,13 @@ async def team_import(
         logger.info(f"管理员导入 Team: {import_data.import_type}")
 
         if import_data.import_type == "single":
-            # 单个导入
-            if not import_data.access_token:
+            # 单个导入 - 允许通过 AT, RT 或 ST 导入
+            if not any([import_data.access_token, import_data.refresh_token, import_data.session_token]):
                 return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     content={
                         "success": False,
-                        "error": "Access Token 不能为空"
+                        "error": "必须提供 Access Token、Refresh Token 或 Session Token 其中之一"
                     }
                 )
 
@@ -528,6 +525,50 @@ async def revoke_team_invite(
             content={
                 "success": False,
                 "error": f"撤回邀请失败: {str(e)}"
+            }
+        )
+
+
+@router.post("/teams/{team_id}/enable-device-auth")
+async def enable_team_device_auth(
+    team_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    开启 Team 的设备代码身份验证
+
+    Args:
+        team_id: Team ID
+        db: 数据库会话
+        current_user: 当前用户（需要登录）
+
+    Returns:
+        结果
+    """
+    try:
+        logger.info(f"管理员开启 Team {team_id} 的设备身份验证")
+
+        result = await team_service.enable_device_code_auth(
+            team_id=team_id,
+            db_session=db
+        )
+
+        if not result["success"]:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result
+            )
+
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        logger.error(f"开启设备身份验证失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "error": f"操作失败: {str(e)}"
             }
         )
 
@@ -825,6 +866,7 @@ async def export_codes(
             status_text = {
                 'unused': '未使用',
                 'used': '已使用',
+                'warranty_active': '质保中',
                 'expired': '已过期'
             }.get(code['status'], code['status'])
 

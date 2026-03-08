@@ -35,40 +35,33 @@ def get_current_user(request: Request) -> dict:
     return user
 
 
-def require_admin(request: Request) -> dict:
+async def require_admin(request: Request) -> dict:
     """
     要求管理员权限
-    检查用户是否已登录且具有管理员权限
-
-    Args:
-        request: FastAPI Request 对象
-
-    Returns:
-        用户信息字典
-
-    Raises:
-        HTTPException: 如果未登录或无权限
+    检查用户是否已登录且具有管理员权限, 或者提供有效的 X-API-Key
     """
+    # 1. 首先尝试 Session 认证
     user = request.session.get("user")
+    if user and user.get("is_admin"):
+        return user
 
-    if not user:
-        logger.warning("未登录用户尝试访问管理员资源")
-        # 抛出 401 异常，由 app/main.py 中的全局异常处理程序处理
-        # 如果是 HTML 请求会重定向到登录页，否则返回 JSON
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录，请先登录"
-        )
+    # 2. 如果 Session 不行，尝试 Header 认证 (X-API-Key)
+    api_key_header = request.headers.get("X-API-Key")
+    if api_key_header:
+        from app.database import AsyncSessionLocal
+        from app.services.settings import settings_service
+        
+        async with AsyncSessionLocal() as db:
+            api_key = await settings_service.get_setting(db, "api_key")
+            if api_key and api_key_header == api_key:
+                return {"username": "api_user", "is_admin": True}
 
-    # 检查是否是管理员
-    if not user.get("is_admin"):
-        logger.warning(f"非管理员用户尝试访问管理员资源: {user.get('username')}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="无权限访问"
-        )
-
-    return user
+    # 3. 都没有权限
+    logger.warning("认证失败: 未登录或 API Key 错误")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="未登录或 API Key 无效"
+    )
 
 
 def optional_user(request: Request) -> dict | None:

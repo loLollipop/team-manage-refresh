@@ -3,9 +3,10 @@
 处理用户质保查询和验证
 """
 import logging
+import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import RedemptionCode, RedemptionRecord, Team
@@ -316,7 +317,23 @@ class WarrantyService:
                 if team:
                     is_expired = team.expires_at and team.expires_at < get_now()
                     if team.status in ["active", "full"] and not is_expired:
-                        # 如果是同一个邮箱，提示已在有效 Team 中
+                        # --- 自愈逻辑：验证是否真的在 Team 中 ---
+                        # 针对“虚假成功”导致的拉人记录残留进行清理
+                        logger.info(f"验证质保重复使用: 发现活跃 record，正在同步 Team {team.id} 以校验成员是否存在")
+                        sync_res = await self.team_service.sync_team_info(team.id, db_session)
+                        member_emails = [m.lower() for m in sync_res.get("member_emails", [])]
+                        
+                        if record.email.lower() not in member_emails:
+                            logger.warning(f"自愈逻辑: 发现孤儿记录 (Email: {record.email}, Team: {team.id}), 但同步结果中不包含该成员。正在清理记录。")
+                            # 删除该孤儿记录
+                            await db_session.delete(record)
+                            if not db_session.in_transaction():
+                                await db_session.commit()
+                            else:
+                                await db_session.flush()
+                            continue # 继续检查下一个记录或结束循环
+
+                        # 如果是同一个邮箱且确实在 Team 中，提示已在有效 Team 中
                         if record.email == email:
                             return {
                                 "success": True,
@@ -332,6 +349,11 @@ class WarrantyService:
                                 "reason": "该兑换码当前已被其他账号绑定且正在使用中。如需更换，请确保原账号已下车或原 Team 已失效。",
                                 "error": None
                             }
+
+            # 刷新记录列表 (可能在上面自愈逻辑中删除了孤儿记录)
+            stmt = select(RedemptionRecord).where(RedemptionRecord.code == code)
+            result = await db_session.execute(stmt)
+            all_records_for_code = result.scalars().all()
 
             # 5. 查找当前用户使用该兑换码的记录 (用于后续逻辑判断)
             records = [r for r in all_records_for_code if r.email == email]

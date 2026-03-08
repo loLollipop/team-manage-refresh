@@ -5,7 +5,7 @@ FastAPI 应用入口文件
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 import logging
 from pathlib import Path
@@ -256,7 +256,7 @@ templates.env.filters["escape_js"] = escape_js
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -283,6 +283,12 @@ async def login_page(request: Request):
 async def health_check():
     """健康检查端点"""
     return {"status": "healthy"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """ favicon.ico 路由 """
+    return FileResponse(APP_DIR / "static" / "favicon.png")
 
 
 if __name__ == "__main__":

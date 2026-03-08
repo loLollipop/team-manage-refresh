@@ -154,7 +154,7 @@ class SettingsService:
         proxy = await self.get_setting(session, "proxy", "")
 
         return {
-            "enabled": proxy_enabled.lower() == "true",
+            "enabled": str(proxy_enabled).lower() == "true",
             "proxy": proxy
         }
 

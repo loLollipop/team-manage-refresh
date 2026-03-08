@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # 日志配置
     log_level: str = "INFO"
+    database_echo: bool = False
 
     # 代理配置
     proxy: str = ""

@@ -356,5 +356,39 @@
             showToast('网络错误', 'error');
         }
     });
+
+    // Webhook 配置表单
+    document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const webhook_url = document.getElementById('webhookUrl').value.trim();
+        const low_stock_threshold = parseInt(document.getElementById('lowStockThreshold').value);
+        const api_key = document.getElementById('apiKey').value.trim();
+
+        if (isNaN(low_stock_threshold) || low_stock_threshold < 0) {
+            showToast('请输入有效的库存阈值', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/settings/webhook', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ webhook_url, low_stock_threshold, api_key })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('Webhook 配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
 </script>
 {% endblock %}

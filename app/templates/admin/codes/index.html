@@ -47,6 +47,8 @@
                 <button onclick="filterByStatus('all')" class="filter-tab active" id="filter-all">全部</button>
                 <button onclick="filterByStatus('unused')" class="filter-tab" id="filter-unused">未使用</button>
                 <button onclick="filterByStatus('used')" class="filter-tab" id="filter-used">已使用</button>
+                <button onclick="filterByStatus('warranty_active')" class="filter-tab"
+                    id="filter-warranty_active">质保中</button>
                 <button onclick="filterByStatus('expired')" class="filter-tab" id="filter-expired">已过期</button>
             </div>
 
@@ -585,13 +587,23 @@
         document.querySelectorAll('.filter-tab').forEach(btn => {
             btn.classList.remove('active');
         });
-        document.getElementById(`filter-${status}`).classList.add('active');
+        const activeBtn = document.getElementById(`filter-${status}`);
+        if (activeBtn) activeBtn.classList.add('active');
 
         // 筛选表格行
         const rows = document.querySelectorAll('#codesTableBody tr');
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
-            if (status === 'all' || rowStatus === status) {
+            if (status === 'all') {
+                row.style.display = '';
+            } else if (status === 'used') {
+                // "已使用" 包含 used 和 warranty_active
+                if (rowStatus === 'used' || rowStatus === 'warranty_active') {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            } else if (rowStatus === status) {
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
