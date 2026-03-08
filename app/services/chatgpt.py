@@ -389,17 +389,23 @@ class ChatGPTService:
         
         if identifier == "default":
             identifier = f"rt_{refresh_token[:8]}"
-
         result = await self._make_request("POST", url, headers, json_data, db_session, identifier)
-        if result["success"]:
-            data = result.get("data", {})
-            return {
-                "success": True,
-                "access_token": data.get("access_token"),
-                "refresh_token": data.get("refresh_token"),
-                "data": data
-            }
-        return result
+
+        # 统一返回结构，避免调用方重复解析 data 字段
+        if not result.get("success"):
+            return result
+
+        data = result.get("data", {})
+        access_token = data.get("access_token")
+        if not access_token:
+            return {"success": False, "error": "响应中未包含 access_token", "status_code": result.get("status_code")}
+
+        return {
+            "success": True,
+            "access_token": access_token,
+            "refresh_token": data.get("refresh_token"),
+            "id_token": data.get("id_token")
+        }
 
     async def clear_session(self, identifier: Optional[str] = None):
         """清理指定身份的会话，若不提供则清理所有"""

@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     # JWT 配置
     jwt_verify_signature: bool = False
 
+
+    # Token 自动刷新配置
+    token_auto_refresh_enabled: bool = True
+    token_auto_refresh_interval_seconds: int = 30
+    token_refresh_lead_seconds: int = 300
+
     # 时区配置
     timezone: str = "Asia/Shanghai"
 

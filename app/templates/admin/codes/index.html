@@ -183,6 +183,9 @@
             <button onclick="showBulkEditModal()" class="btn btn-primary">
                 <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
             </button>
+            <button onclick="bulkDeleteCodes()" class="btn btn-danger">
+                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> 批量删除
+            </button>
             <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
         </div>
     </div>
@@ -354,19 +357,22 @@
 <style>
     .bulk-action-bar {
         position: fixed;
-        bottom: 2rem;
+        bottom: 5.5rem;
         left: 50%;
         transform: translateX(-50%);
-        background: white;
-        padding: 1rem 2rem;
+        background: var(--bg-secondary);
+        color: var(--text-color);
+        padding: 1rem 1.5rem;
         border-radius: 12px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
         display: flex;
         align-items: center;
-        gap: 2rem;
-        z-index: 100;
+        gap: 1rem;
+        z-index: 1000;
         border: 1px solid var(--border-color);
         animation: slideUp 0.3s ease-out;
+        max-width: calc(100vw - 2rem);
+        flex-wrap: wrap;
     }
 
     @keyframes slideUp {
@@ -390,6 +396,23 @@
         display: flex;
         gap: 0.5rem;
     }
+
+    @media (max-width: 768px) {
+        .bulk-action-bar {
+            left: 1rem;
+            right: 1rem;
+            bottom: 4.5rem;
+            transform: none;
+            justify-content: center;
+        }
+
+        .bulk-actions {
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+    }
+
 </style>
 {% endblock %}
 
@@ -616,6 +639,47 @@
                 }, 1000);
             } else {
                 showToast(result.error || '删除失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+
+    // 批量删除兑换码
+    async function bulkDeleteCodes() {
+        const selected = document.querySelectorAll('.code-checkbox:checked');
+        const selectedCodes = Array.from(selected);
+        const deletable = selectedCodes.filter(cb => cb.closest('tr')?.getAttribute('data-status') === 'unused');
+        const skipped = selectedCodes.length - deletable.length;
+        const codes = deletable.map(cb => cb.value);
+
+        if (!codes.length) {
+            showToast('仅未使用兑换码可删除，请重新选择', 'error');
+            return;
+        }
+
+        if (!confirm(`确定要批量删除 ${codes.length} 个兑换码吗？${skipped > 0 ? `
+
+已自动跳过 ${skipped} 个非未使用兑换码` : ''}`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/codes/bulk-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ codes })
+            });
+
+            const result = await response.json();
+            if (response.ok && result.success) {
+                showToast(result.message || '批量删除成功', 'success');
+                setTimeout(() => window.location.reload(), 800);
+            } else {
+                showToast(result.error || '批量删除失败', 'error');
             }
         } catch (error) {
             showToast('网络错误', 'error');

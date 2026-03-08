@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}提醒汇总 - GPT Team 管理系统{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>提醒汇总</h2>
+</div>
+
+<div class="content-section">
+    <div class="section-header">
+        <h3>待提醒成员</h3>
+        <span class="badge badge-info">{{ reminders|length }} 条</span>
+    </div>
+
+    {% if reminders %}
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>邮箱</th>
+                    <th>策略</th>
+                    <th>到期时间</th>
+                    <th>剩余天数</th>
+                    <th>状态</th>
+                    <th>最近发送</th>
+                    <th style="text-align: right;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in reminders %}
+                <tr>
+                    <td>{{ item.id }}</td>
+                    <td><strong>{{ item.email }}</strong></td>
+                    <td>{{ item.policy_type }}</td>
+                    <td>{{ item.target_expires_at.strftime('%Y-%m-%d %H:%M') if item.target_expires_at else '-' }}</td>
+                    <td>{{ item.days_left }}</td>
+                    <td>{{ item.status }}</td>
+                    <td>{{ item.last_sent_at.strftime('%Y-%m-%d %H:%M') if item.last_sent_at else '-' }}</td>
+                    <td style="text-align: right;">
+                        <button class="btn btn-sm btn-primary" onclick="sendReminder('{{ item.id }}')">去发件</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>暂无需要提醒</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function sendReminder(reminderId) {
+    try {
+        const resp = await fetch(`/admin/reminders/${reminderId}/compose-gmail`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            window.open(data.compose_url, '_blank');
+            alert('已打开 Gmail 发件页');
+        } else {
+            alert(data.error || '发送失败');
+        }
+    } catch (e) {
+        alert('网络错误');
+    }
+}
+</script>
+{% endblock %}

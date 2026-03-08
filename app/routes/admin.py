@@ -4,17 +4,19 @@
 """
 import logging
 from typing import Optional, List
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.database import get_db
 from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
 from app.utils.time_utils import get_now
+from app.services.member_lifecycle import member_lifecycle_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,17 @@ class TeamImportRequest(BaseModel):
 class AddMemberRequest(BaseModel):
     """添加成员请求"""
     email: str = Field(..., description="成员邮箱")
+    is_legacy_customer: bool = Field(False, description="是否旧账客户")
+    legacy_remaining_warranty_days: Optional[int] = Field(None, description="旧账客户剩余质保天数")
+
+    @model_validator(mode="after")
+    def validate_legacy_fields(self):
+        if self.is_legacy_customer:
+            if self.legacy_remaining_warranty_days is None:
+                raise ValueError("旧账客户必须填写剩余质保天数")
+            if self.legacy_remaining_warranty_days < 0 or self.legacy_remaining_warranty_days > 365:
+                raise ValueError("剩余质保天数必须在 0-365 之间")
+        return self
 
 
 class CodeGenerateRequest(BaseModel):
@@ -84,6 +97,11 @@ class BulkCodeUpdateRequest(BaseModel):
     warranty_days: Optional[int] = Field(None, description="质保天数")
 
 
+class BulkCodeDeleteRequest(BaseModel):
+    """批量删除兑换码请求"""
+    codes: List[str] = Field(..., description="兑换码列表")
+
+
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
@@ -110,12 +128,16 @@ async def admin_dashboard(
         team_stats = await team_service.get_stats(db)
         code_stats = await redemption_service.get_stats(db)
 
+        reminders_result = await member_lifecycle_service.get_reminders(db)
+        reminders = reminders_result.get("items", [])
+
         # 计算统计数据
         stats = {
-            "total_teams": team_stats["total"],
-            "available_teams": team_stats["available"],
-            "total_codes": code_stats["total"],
-            "used_codes": code_stats["used"]
+            "total_teams": len(all_teams),
+            "available_teams": len([t for t in all_teams if t.get("status") == "active" and t.get("current_members", 0) < t.get("max_members", 6)]),
+            "total_codes": len(all_codes),
+            "used_codes": len([c for c in all_codes if c.get("status") == "used"]),
+            "pending_reminders": len([r for r in reminders if r.get("status") == "pending"])
         }
 
         return templates.TemplateResponse(
@@ -127,6 +149,7 @@ async def admin_dashboard(
                 "teams": teams_result.get("teams", []),
                 "stats": stats,
                 "search": search,
+                "reminders": reminders,
                 "pagination": {
                     "current_page": teams_result.get("current_page", page),
                     "total_pages": teams_result.get("total_pages", 1),
@@ -388,7 +411,9 @@ async def add_team_member(
         result = await team_service.add_team_member(
             team_id=team_id,
             email=member_data.email,
-            db_session=db
+            db_session=db,
+            is_legacy_customer=member_data.is_legacy_customer,
+            legacy_remaining_warranty_days=member_data.legacy_remaining_warranty_days
         )
 
         if not result["success"]:
@@ -586,10 +611,21 @@ async def codes_list_page(
         total_pages = codes_result.get("total_pages", 1)
         current_page = codes_result.get("current_page", 1)
 
-        # 获取统计信息
-        stats = await redemption_service.get_stats(db)
-        # 兼容旧模版中的 status 统计名 (unused/used/expired)
-        # 注意: get_stats 返回的 used 已经包含了 warranty_active
+        # 为了统计数据，我们需要获取所有统计（或者增加统计接口）
+        # 这里暂时获取全部用于统计
+        all_codes_result = await redemption_service.get_all_codes(db, page=1, per_page=10000)
+        all_codes = all_codes_result.get("codes", [])
+
+        reminders_result = await member_lifecycle_service.get_reminders(db)
+        reminders = reminders_result.get("items", [])
+
+        # 计算统计数据
+        stats = {
+            "total": total_codes,
+            "unused": len([c for c in all_codes if c["status"] == "unused"]),
+            "used": len([c for c in all_codes if c["status"] == "used"]),
+            "expired": len([c for c in all_codes if c["status"] == "expired"])
+        }
 
         # 格式化日期时间
         from datetime import datetime
@@ -613,6 +649,7 @@ async def codes_list_page(
                 "codes": codes,
                 "stats": stats,
                 "search": search,
+                "reminders": reminders,
                 "pagination": {
                     "current_page": current_page,
                     "total_pages": total_pages,
@@ -922,6 +959,29 @@ async def bulk_update_codes(
         )
 
 
+
+
+@router.post("/codes/bulk-delete")
+async def bulk_delete_codes(
+    delete_data: BulkCodeDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量删除兑换码"""
+    try:
+        result = await redemption_service.bulk_delete_codes(delete_data.codes, db)
+        if not result["success"]:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result
+            )
+        return JSONResponse(content=result)
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
 @router.get("/records", response_class=HTMLResponse)
 async def records_page(
     request: Request,
@@ -1037,6 +1097,10 @@ async def records_page(
             except:
                 pass
 
+        # 读取提醒数据（供布局/上下文使用，避免模板上下文缺失）
+        reminders_result = await member_lifecycle_service.get_reminders(db)
+        reminders = reminders_result.get("items", [])
+
         # 分页
         # per_page = 20 (Removed hardcoded value)
         total_records = len(filtered_records)
@@ -1075,6 +1139,7 @@ async def records_page(
                     "start_date": start_date,
                     "end_date": end_date
                 },
+                "reminders": reminders,
                 "pagination": {
                     "current_page": page_int,
                     "total_pages": total_pages,
@@ -1132,6 +1197,44 @@ async def withdraw_record(
         )
 
 
+
+
+@router.get("/reminders", response_class=HTMLResponse)
+async def reminders_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """提醒汇总页"""
+    try:
+        from app.main import templates
+        data = await member_lifecycle_service.get_reminders(db)
+        reminders = [item for item in data.get("items", []) if item.get("status") == "pending"]
+        return templates.TemplateResponse(
+            "admin/reminders/index.html",
+            {
+                "request": request,
+                "user": current_user,
+                "active_page": "reminders",
+                "reminders": reminders,
+            }
+        )
+    except Exception as e:
+        logger.error(f"加载提醒汇总页失败: {e}")
+        raise HTTPException(status_code=500, detail=f"加载提醒汇总页失败: {str(e)}")
+
+
+@router.post("/reminders/{reminder_id}/send")
+async def send_reminder(
+    reminder_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """手动发送提醒邮件"""
+    result = await member_lifecycle_service.send_reminder_email(db, reminder_id)
+    status_code = status.HTTP_200_OK if result.get("success") else status.HTTP_400_BAD_REQUEST
+    return JSONResponse(status_code=status_code, content=result)
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(
     request: Request,
@@ -1158,6 +1261,8 @@ async def settings_page(
         # 获取当前配置
         proxy_config = await settings_service.get_proxy_config(db)
         log_level = await settings_service.get_log_level(db)
+        token_refresh_config = await settings_service.get_token_auto_refresh_config(db)
+        reminder_email_config = await settings_service.get_reminder_email_config(db)
 
         return templates.TemplateResponse(
             "admin/settings/index.html",
@@ -1168,9 +1273,10 @@ async def settings_page(
                 "proxy_enabled": proxy_config["enabled"],
                 "proxy": proxy_config["proxy"],
                 "log_level": log_level,
-                "webhook_url": await settings_service.get_setting(db, "webhook_url", ""),
-                "low_stock_threshold": await settings_service.get_setting(db, "low_stock_threshold", "10"),
-                "api_key": await settings_service.get_setting(db, "api_key", "")
+                "token_auto_refresh_enabled": token_refresh_config["enabled"],
+                "token_auto_refresh_interval_seconds": token_refresh_config["interval_seconds"],
+                "token_refresh_lead_seconds": token_refresh_config["lead_seconds"],
+                "reminder_email_config": reminder_email_config
             }
         )
 
@@ -1193,11 +1299,18 @@ class LogLevelRequest(BaseModel):
     level: str = Field(..., description="日志级别")
 
 
-class WebhookSettingsRequest(BaseModel):
-    """Webhook 设置请求"""
-    webhook_url: str = Field("", description="Webhook URL")
-    low_stock_threshold: int = Field(10, description="库存阈值")
-    api_key: str = Field("", description="API Key")
+class TokenAutoRefreshConfigRequest(BaseModel):
+    """Token 自动刷新配置请求"""
+    enabled: bool = Field(..., description="是否启用自动刷新")
+    interval_seconds: int = Field(..., ge=5, description="检查间隔（秒，最小5）")
+    lead_seconds: int = Field(..., ge=0, description="提前刷新窗口（秒）")
+
+
+class ReminderEmailConfigRequest(BaseModel):
+    """到期提醒邮件配置请求（手动发件模板）"""
+    due_days: int = Field(3, ge=0, le=30, description="提前提醒天数")
+    subject: str = Field("team空间到期提醒", description="邮件主题")
+    body_template: str = Field("", description="邮件正文模板")
 
 
 @router.post("/settings/proxy")
@@ -1302,39 +1415,99 @@ async def update_log_level(
         )
 
 
-@router.post("/settings/webhook")
-async def update_webhook_settings(
-    webhook_data: WebhookSettingsRequest,
+
+@router.post("/settings/token-refresh")
+async def update_token_refresh_config(
+    config_data: TokenAutoRefreshConfigRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """
-    更新 Webhook 和 API Key 设置
-    """
+    """更新 Token 自动刷新配置"""
     try:
         from app.services.settings import settings_service
 
-        logger.info(f"管理员更新 Webhook/API 配置: url={webhook_data.webhook_url}, threshold={webhook_data.low_stock_threshold}")
+        logger.info(
+            f"管理员更新 Token 自动刷新配置: enabled={config_data.enabled}, "
+            f"interval={config_data.interval_seconds}s, lead={config_data.lead_seconds}s"
+        )
 
-        settings = {
-            "webhook_url": webhook_data.webhook_url.strip(),
-            "low_stock_threshold": str(webhook_data.low_stock_threshold),
-            "api_key": webhook_data.api_key.strip()
-        }
-
-        success = await settings_service.update_settings(db, settings)
+        success = await settings_service.update_token_auto_refresh_config(
+            db,
+            config_data.enabled,
+            config_data.interval_seconds,
+            config_data.lead_seconds
+        )
 
         if success:
-            return JSONResponse(content={"success": True, "message": "配置已保存"})
-        else:
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"success": False, "error": "保存失败"}
-            )
+            return JSONResponse(content={"success": True, "message": "Token 自动刷新配置已保存"})
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
 
     except Exception as e:
-        logger.error(f"更新配置失败: {e}")
+        logger.error(f"更新 Token 自动刷新配置失败: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": f"更新失败: {str(e)}"}
         )
+
+
+@router.post("/settings/reminder-email")
+async def update_reminder_email_config(
+    config_data: ReminderEmailConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新到期提醒邮件配置"""
+    try:
+        from app.services.settings import settings_service
+
+        success = await settings_service.update_reminder_email_config(
+            db,
+            {
+                "due_days": config_data.due_days,
+                "subject": config_data.subject.strip() or "team空间到期提醒",
+                "body_template": config_data.body_template.strip() or "您好，您加入的team工作空间一个月套餐即将到期，请及时联系管理员续期，否则到期后将踢出工作空间~",
+            }
+        )
+
+        if success:
+            return JSONResponse(content={"success": True, "message": "到期提醒邮件配置已保存"})
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
+
+    except Exception as e:
+        logger.error(f"更新到期提醒邮件配置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )
+
+
+@router.post("/reminders/{reminder_id}/compose-gmail")
+async def compose_reminder_gmail(
+    reminder_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """生成 Gmail 写信链接（手动发送）"""
+    content = await member_lifecycle_service.get_reminder_compose_content(db, reminder_id)
+    if not content.get("success"):
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
+
+    params = urlencode({
+        "view": "cm",
+        "fs": "1",
+        "to": content.get("to", ""),
+        "su": content.get("subject", ""),
+        "body": content.get("body", ""),
+    })
+    return JSONResponse(content={
+        "success": True,
+        "compose_url": f"https://mail.google.com/mail/?{params}",
+    })

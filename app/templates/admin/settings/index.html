@@ -87,37 +87,65 @@
     </form>
 </div>
 
-<!-- Webhook 配置 -->
-<div class="content-section">
+<div class="settings-section card">
     <div class="section-header">
-        <h3>库存预警 Webhook</h3>
+        <h3>Token 自动刷新</h3>
     </div>
 
-    <form id="webhookForm" class="settings-form">
+    <form id="tokenRefreshForm" class="settings-form">
         <div class="form-group">
-            <label for="webhookUrl">Webhook URL</label>
-            <input type="text" id="webhookUrl" name="webhook_url" value="{{ webhook_url or '' }}"
-                placeholder="https://your-api.com/webhook" class="form-control">
-            <p class="form-help">当系统总剩余车位低于阈值时,系统将向此URL发送POST请求</p>
+            <label class="checkbox-label">
+                <input type="checkbox" id="tokenAutoRefreshEnabled" name="enabled" {% if token_auto_refresh_enabled %}checked{% endif %}>
+                <span>启用后台自动刷新 Access Token</span>
+            </label>
+            <p class="form-help">启用后，系统会按设定间隔扫描并预刷新即将过期的 Token。</p>
         </div>
 
         <div class="form-group">
-            <label for="lowStockThreshold">车位预警阈值</label>
-            <input type="number" id="lowStockThreshold" name="low_stock_threshold"
-                value="{{ low_stock_threshold or '10' }}" min="0" class="form-control">
-            <p class="form-help">全系统所有活跃 Team 的总剩余车位低于或等于此数值时触发补货通知</p>
+            <label for="tokenAutoRefreshInterval">检查间隔（秒）</label>
+            <input type="number" id="tokenAutoRefreshInterval" name="interval_seconds" min="5" value="{{ token_auto_refresh_interval_seconds }}" class="form-control">
+            <p class="form-help">最小 5 秒。建议设置为 30~120 秒。</p>
         </div>
 
         <div class="form-group">
-            <label for="apiKey">API Key (用于补货对接)</label>
-            <input type="text" id="apiKey" name="api_key" value="{{ api_key or '' }}"
-                placeholder="用于外部程序调用的密钥 (X-API-Key)" class="form-control">
-            <p class="form-help">设置后,第三方程序可以通过 Header `X-API-Key` 认证管理员接口</p>
+            <label for="tokenRefreshLead">提前刷新窗口（秒）</label>
+            <input type="number" id="tokenRefreshLead" name="lead_seconds" min="0" value="{{ token_refresh_lead_seconds }}" class="form-control">
+            <p class="form-help">当 Token 剩余有效期小于该值时，将触发预刷新。默认 300 秒。</p>
         </div>
 
-        <button type="submit" class="btn btn-primary">保存配置</button>
+        <button type="submit" class="btn btn-primary">保存自动刷新配置</button>
     </form>
 </div>
+
+
+
+<div class="settings-section card">
+    <div class="section-header">
+        <h3>到期提醒邮件配置</h3>
+    </div>
+
+    <form id="reminderEmailForm" class="settings-form">
+        <div class="form-group">
+            <label for="reminderDueDays">提前提醒天数</label>
+            <input type="number" id="reminderDueDays" name="due_days" class="form-control" min="0" max="30" value="{{ reminder_email_config.due_days }}">
+        </div>
+
+        <div class="form-group">
+            <label for="reminderSubject">邮件主题</label>
+            <input type="text" id="reminderSubject" name="subject" class="form-control" value="{{ reminder_email_config.subject }}">
+        </div>
+
+        <div class="form-group">
+            <label for="reminderBody">邮件正文模板</label>
+            <textarea id="reminderBody" name="body_template" class="form-control" rows="4">{{ reminder_email_config.body_template }}</textarea>
+            <p class="form-help">可用变量：{email}、{expire_at}、{days_left}</p>
+            <p class="form-help">点击“去发件”将跳转到 Gmail 写信页，并自动填入收件人/主题/正文。</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存提醒邮件配置</button>
+    </form>
+</div>
+
 {% endblock %}
 
 {% block extra_css %}
@@ -214,6 +242,88 @@
                 }, 2000);
             } else {
                 showToast(data.error || '修改失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+
+
+
+    // 到期提醒邮件配置表单
+    document.getElementById('reminderEmailForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const payload = {
+            due_days: Number(document.getElementById('reminderDueDays').value || 3),
+            subject: document.getElementById('reminderSubject').value.trim(),
+            body_template: document.getElementById('reminderBody').value.trim()
+        };
+
+        if (payload.due_days < 0 || payload.due_days > 30) {
+            showToast('提前提醒天数必须在 0-30 之间', 'error');
+            return;
+        }
+        if (!payload.subject) {
+            showToast('请填写邮件主题', 'error');
+            return;
+        }
+        if (!payload.body_template) {
+            showToast('请填写邮件正文', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/settings/reminder-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showToast('提醒邮件配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // Token 自动刷新配置表单
+    document.getElementById('tokenRefreshForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const enabled = document.getElementById('tokenAutoRefreshEnabled').checked;
+        const interval_seconds = Number(document.getElementById('tokenAutoRefreshInterval').value || 0);
+        const lead_seconds = Number(document.getElementById('tokenRefreshLead').value || 0);
+
+        if (interval_seconds < 5) {
+            showToast('检查间隔不能小于5秒', 'error');
+            return;
+        }
+
+        if (lead_seconds < 0) {
+            showToast('提前刷新窗口不能小于0', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/settings/token-refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ enabled, interval_seconds, lead_seconds })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('Token 自动刷新配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
             }
         } catch (error) {
             showToast('网络错误', 'error');

@@ -54,6 +54,7 @@ async function logout() {
         const data = await response.json();
 
         if (response.ok && data.success) {
+            clearSavedBatchGeneratedCodes();
             window.location.href = '/login';
         } else {
             showToast('登出失败', 'error');
@@ -95,6 +96,7 @@ function confirmAction(message) {
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
     checkAuthStatus();
+    restoreBatchGeneratedCodes();
 });
 
 // 检查认证状态
@@ -337,6 +339,68 @@ async function handleBatchImport(event) {
     }
 }
 
+// === 兑换码生成缓存 ===
+
+const BATCH_CODES_STORAGE_KEY = 'last_batch_generated_codes';
+const BATCH_CODES_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function saveBatchGeneratedCodes(codes = []) {
+    try {
+        sessionStorage.setItem(BATCH_CODES_STORAGE_KEY, JSON.stringify({
+            codes,
+            savedAt: Date.now()
+        }));
+        localStorage.removeItem(BATCH_CODES_STORAGE_KEY);
+    } catch (error) {
+        console.error('保存批量兑换码缓存失败:', error);
+    }
+}
+
+function getSavedBatchGeneratedCodes() {
+    try {
+        const raw = sessionStorage.getItem(BATCH_CODES_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        const savedAt = Number(parsed.savedAt || 0);
+
+        if (!savedAt || (Date.now() - savedAt > BATCH_CODES_CACHE_TTL_MS)) {
+            clearSavedBatchGeneratedCodes();
+            return [];
+        }
+
+        return Array.isArray(parsed.codes) ? parsed.codes : [];
+    } catch (error) {
+        console.error('读取批量兑换码缓存失败:', error);
+        return [];
+    }
+}
+
+
+function clearSavedBatchGeneratedCodes() {
+    try {
+        sessionStorage.removeItem(BATCH_CODES_STORAGE_KEY);
+        // 清理旧版本遗留
+        localStorage.removeItem(BATCH_CODES_STORAGE_KEY);
+    } catch (error) {
+        console.error('清理批量兑换码缓存失败:', error);
+    }
+}
+
+function restoreBatchGeneratedCodes() {
+    const textarea = document.getElementById('batchCodes');
+    const batchTotal = document.getElementById('batchTotal');
+    const batchResult = document.getElementById('batchResult');
+
+    if (!textarea || !batchTotal || !batchResult) return;
+
+    const savedCodes = getSavedBatchGeneratedCodes();
+    if (!savedCodes.length) return;
+
+    textarea.value = savedCodes.join('\n');
+    batchTotal.textContent = savedCodes.length;
+    batchResult.style.display = 'block';
+}
+
 // === 兑换码生成逻辑 ===
 
 async function generateSingle(event) {
@@ -404,6 +468,7 @@ async function generateBatch(event) {
         document.getElementById('batchTotal').textContent = result.data.total;
         document.getElementById('batchCodes').value = result.data.codes.join('\n');
         document.getElementById('batchResult').style.display = 'block';
+        saveBatchGeneratedCodes(result.data.codes);
         form.reset();
         showToast(`成功生成 ${result.data.total} 个兑换码`, 'success');
         if (window.location.pathname === '/admin/codes') {
@@ -476,12 +541,30 @@ function copyCode(code) {
 }
 
 function copyBatchCodes() {
-    const codes = document.getElementById('batchCodes').value;
+    let codes = '';
+    const batchCodesEl = document.getElementById('batchCodes');
+    if (batchCodesEl) {
+        codes = batchCodesEl.value;
+    }
+
+    if (!codes) {
+        codes = getSavedBatchGeneratedCodes().join('\n');
+    }
+
     copyToClipboard(codes);
 }
 
 function downloadCodes() {
-    const codes = document.getElementById('batchCodes').value;
+    let codes = '';
+    const batchCodesEl = document.getElementById('batchCodes');
+    if (batchCodesEl) {
+        codes = batchCodesEl.value;
+    }
+
+    if (!codes) {
+        codes = getSavedBatchGeneratedCodes().join('\n');
+    }
+
     const blob = new Blob([codes], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -616,11 +699,19 @@ async function handleAddMember(event) {
     event.preventDefault();
     const form = event.target;
     const email = form.email.value.trim();
+    const isLegacyCustomer = !!form.is_legacy_customer?.checked;
+    const legacyDaysRaw = form.legacy_remaining_warranty_days?.value;
+    const legacyRemainingWarrantyDays = legacyDaysRaw === '' || legacyDaysRaw == null ? null : Number(legacyDaysRaw);
     const submitButton = document.getElementById('addMemberSubmitBtn');
     const teamId = window.currentTeamId;
 
     if (!teamId) {
         showToast('无法获取 Team ID', 'error');
+        return;
+    }
+
+    if (isLegacyCustomer && (legacyRemainingWarrantyDays == null || Number.isNaN(legacyRemainingWarrantyDays) || legacyRemainingWarrantyDays < 0 || legacyRemainingWarrantyDays > 365)) {
+        showToast('旧账客户请填写 0-365 之间的剩余质保天数', 'error');
         return;
     }
 
@@ -631,7 +722,11 @@ async function handleAddMember(event) {
     try {
         const result = await apiCall(`/admin/teams/${teamId}/members/add`, {
             method: 'POST',
-            body: JSON.stringify({ email })
+            body: JSON.stringify({
+                email,
+                is_legacy_customer: isLegacyCustomer,
+                legacy_remaining_warranty_days: isLegacyCustomer ? legacyRemainingWarrantyDays : null
+            })
         });
 
         if (result.success) {
@@ -679,3 +774,16 @@ async function deleteMember(teamId, userId, email, inModal = false) {
         showToast('网络错误', 'error');
     }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const legacyCheckbox = document.getElementById('isLegacyCustomer');
+    const legacyDaysInput = document.getElementById('legacyRemainingWarrantyDays');
+    if (legacyCheckbox && legacyDaysInput) {
+        legacyCheckbox.addEventListener('change', () => {
+            const checked = legacyCheckbox.checked;
+            legacyDaysInput.style.display = checked ? 'block' : 'none';
+            legacyDaysInput.required = checked;
+            if (!checked) legacyDaysInput.value = '';
+        });
+    }
+});

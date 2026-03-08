@@ -5,17 +5,19 @@ Team 管理服务
 import logging
 import asyncio
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Team, TeamAccount, RedemptionCode
+from app.models import Team, TeamAccount, RedemptionCode, RedemptionRecord
 from app.services.chatgpt import ChatGPTService
 from app.services.encryption import encryption_service
 from app.utils.token_parser import TokenParser
 from app.utils.jwt_parser import JWTParser
 from app.utils.time_utils import get_now
+from app.config import settings
+from app.services.member_lifecycle import member_lifecycle_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +32,18 @@ class TeamService:
         self.token_parser = TokenParser()
         self.jwt_parser = JWTParser()
 
-    async def _handle_api_error(self, result: Dict[str, Any], team: Team, db_session: AsyncSession) -> bool:
+    async def _handle_api_error(
+        self,
+        result: Dict[str, Any],
+        team: Team,
+        db_session: AsyncSession,
+        stop_on_nonfatal: bool = True
+    ) -> bool:
         """
         检查结果是否表示账号被封禁、Token 失效或 Team 已满,如果是则更新状态
         
         Returns:
-            bool: 是否已处理致命错误
+            bool: 是否应中断当前流程
         """
         error_code = result.get("error_code")
         error_msg = str(result.get("error", "")).lower()
@@ -112,14 +120,15 @@ class TeamService:
                 logger.error(f"Team {team.id} 连续错误 {team.error_count} 次，标记为 error")
                 team.status = "error"
         
-        # 如果是 Token 过期，尝试立即刷新一次（为下次重试做准备）
-        if is_token_expired:
+        # 仅在普通 API 请求流程中，Token 过期时尝试后台刷新一次
+        # 刷新流程内部失败时不再递归触发刷新，避免死循环
+        if is_token_expired and stop_on_nonfatal:
             logger.info(f"Team {team.id} Token 过期，尝试后台刷新...")
             # 注意：此处不等待刷新结果，仅作为修复尝试
             await self.ensure_access_token(team, db_session)
             
         await db_session.commit()
-        return True
+        return stop_on_nonfatal
         
     async def _reset_error_status(self, team: Team, db_session: AsyncSession) -> None:
         """
@@ -138,6 +147,94 @@ class TeamService:
                 logger.info(f"Team {team.id} ({team.email}) 请求成功, 将状态从 error 恢复为 active")
                 team.status = "active"
         await db_session.commit()
+
+    def _should_proactive_refresh(self, team: Team) -> bool:
+        """
+        判断是否需要在后台提前刷新 Token
+        """
+        try:
+            if not team.access_token_encrypted:
+                return True
+            access_token = encryption_service.decrypt_token(team.access_token_encrypted)
+            exp_time = self.jwt_parser.get_expiration_time(access_token)
+            if not exp_time:
+                return True
+            now = get_now()
+            lead = max(0, int(settings.token_refresh_lead_seconds or 0))
+            return (exp_time - now).total_seconds() <= lead
+        except Exception:
+            return True
+
+    async def proactive_refresh_due_tokens(self, db_session: AsyncSession) -> Dict[str, Any]:
+        """
+        扫描并提前刷新即将过期的 Team Token（后台任务使用）
+        """
+        stmt = select(Team).where(Team.status != "banned")
+        result = await db_session.execute(stmt)
+        teams = result.scalars().all()
+
+        checked = 0
+        refreshed = 0
+        failed = 0
+
+        for team in teams:
+            checked += 1
+            if not self._should_proactive_refresh(team):
+                continue
+
+            token = await self.ensure_access_token(team, db_session, force_refresh=True)
+            if token:
+                refreshed += 1
+            else:
+                failed += 1
+
+        return {
+            "success": True,
+            "checked": checked,
+            "refreshed": refreshed,
+            "failed": failed
+        }
+
+    def _is_token_expired_error(self, result: Dict[str, Any]) -> bool:
+        """判断接口结果是否属于 Token 过期类错误"""
+        error_msg = str(result.get("error", "")).lower()
+        error_code = str(result.get("error_code", "")).lower()
+        return (
+            error_code == "token_expired"
+            or "token_expired" in error_msg
+            or "token is expired" in error_msg
+            or result.get("status_code") == 401
+        )
+
+    async def _request_with_refresh_retry(
+        self,
+        team: Team,
+        db_session: AsyncSession,
+        request_func
+    ) -> Dict[str, Any]:
+        """
+        请求级双保险：若本次请求报 Token 过期，则强制刷新后重试一次
+        """
+        access_token = await self.ensure_access_token(team, db_session)
+        if not access_token:
+            return {"success": False, "error": "Token 已过期且无法刷新", "error_code": "token_expired"}
+
+        first = await request_func(access_token)
+        if first.get("success"):
+            return first
+
+        if not self._is_token_expired_error(first):
+            return first
+
+        logger.info(f"Team {team.id} 请求触发 Token 过期，强制刷新并重试一次")
+        refreshed_token = await self.ensure_access_token(team, db_session, force_refresh=True)
+        if not refreshed_token:
+            return first
+
+        second = await request_func(refreshed_token)
+        if second.get("success"):
+            logger.info(f"Team {team.id} 刷新后重试请求成功")
+        return second
 
     async def ensure_access_token(self, team: Team, db_session: AsyncSession, force_refresh: bool = False) -> Optional[str]:
         """
@@ -189,7 +286,7 @@ class TeamService:
                 return new_at
             else:
                 # 检查是否为致命错误 (如 token_invalidated)
-                if await self._handle_api_error(refresh_result, team, db_session):
+                if await self._handle_api_error(refresh_result, team, db_session, stop_on_nonfatal=False):
                     return None
 
         # 4. 尝试使用 refresh_token 刷新
@@ -210,7 +307,7 @@ class TeamService:
                 return new_at
             else:
                 # 检查是否为致命错误 (如 account_deactivated)
-                if await self._handle_api_error(refresh_result, team, db_session):
+                if await self._handle_api_error(refresh_result, team, db_session, stop_on_nonfatal=False):
                     return None
         
         if team.status != "banned":
@@ -425,7 +522,8 @@ class TeamService:
                     except Exception as e:
                         logger.warning(f"解析过期时间失败: {e}")
 
-                # 确定状态和最大成员数 (默认 6)
+                # 确定状态
+                # 新导入 Team 时还没有创建 ORM team 实例，这里应使用默认席位数
                 max_members = 6
                 status = "active"
                 if current_members >= max_members:
@@ -852,6 +950,7 @@ class TeamService:
                         account_result = await self.chatgpt_service.get_account_info(new_token, db_session, identifier=team.email)
                         if account_result["success"]:
                             logger.info(f"Team {team.id} 自动刷新 Token 后重试同步成功")
+                            access_token = new_token
                         else:
                             # 刷新成功但请求依然失败，标记为过期/异常
                             logger.error(f"Team {team.id} Token 刷新成功但获取账户信息仍失败，标记为 expired")
@@ -1264,22 +1363,17 @@ class TeamService:
                     "error": f"Team ID {team_id} 不存在"
                 }
 
-            # 2. 确保 AT Token 有效
-            access_token = await self.ensure_access_token(team, db_session)
-            if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
-
-            # 3. 调用 ChatGPT API 撤回邀请
-            revoke_result = await self.chatgpt_service.delete_invite(
-                access_token,
-                team.account_id,
-                email,
+            # 2. 调用 ChatGPT API 撤回邀请（请求级双保险）
+            revoke_result = await self._request_with_refresh_retry(
+                team,
                 db_session,
-                identifier=team.email
+                lambda token: self.chatgpt_service.delete_invite(
+                    token,
+                    team.account_id,
+                    email,
+                    db_session,
+                    identifier=team.email
+                )
             )
 
             if not revoke_result["success"]:
@@ -1332,7 +1426,9 @@ class TeamService:
         self,
         team_id: int,
         email: str,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        is_legacy_customer: bool = False,
+        legacy_remaining_warranty_days: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         添加 Team 成员
@@ -1373,22 +1469,17 @@ class TeamService:
                     "error": "Team 已过期,无法添加成员"
                 }
 
-            # 3. 确保 AT Token 有效
-            access_token = await self.ensure_access_token(team, db_session)
-            if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
-
-            # 4. 调用 ChatGPT API 发送邀请
-            invite_result = await self.chatgpt_service.send_invite(
-                access_token,
-                team.account_id,
-                email,
+            # 3. 调用 ChatGPT API 发送邀请（请求级双保险：失败可触发刷新后重试）
+            invite_result = await self._request_with_refresh_retry(
+                team,
                 db_session,
-                identifier=team.email
+                lambda token: self.chatgpt_service.send_invite(
+                    token,
+                    team.account_id,
+                    email,
+                    db_session,
+                    identifier=team.email
+                )
             )
 
             if not invite_result["success"]:
@@ -1425,6 +1516,19 @@ class TeamService:
                     "message": None,
                     "error": "邀请发送成功但同步成员列表校验失败，该 Team 账号可能存在异常。"
                 }
+
+            await member_lifecycle_service.upsert_lifecycle_event(
+                db_session,
+                email=email,
+                team_id=team_id,
+                source_type="manual",
+                event_type="legacy_seed" if is_legacy_customer else "manual_join",
+                code_or_manual_tag="MANUAL",
+                has_warranty=bool(is_legacy_customer),
+                warranty_expires_at=(get_now() + timedelta(days=legacy_remaining_warranty_days)) if (is_legacy_customer and legacy_remaining_warranty_days is not None) else None,
+                is_legacy_seeded=is_legacy_customer,
+                legacy_remaining_warranty_days=legacy_remaining_warranty_days,
+            )
 
             await db_session.commit()
 
@@ -1478,22 +1582,17 @@ class TeamService:
                     "error": f"Team ID {team_id} 不存在"
                 }
 
-            # 2. 确保 AT Token 有效
-            access_token = await self.ensure_access_token(team, db_session)
-            if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
-
-            # 3. 调用 ChatGPT API 删除成员
-            delete_result = await self.chatgpt_service.delete_member(
-                access_token,
-                team.account_id,
-                user_id,
+            # 2. 调用 ChatGPT API 删除成员（请求级双保险）
+            delete_result = await self._request_with_refresh_retry(
+                team,
                 db_session,
-                identifier=team.email
+                lambda token: self.chatgpt_service.delete_member(
+                    token,
+                    team.account_id,
+                    user_id,
+                    db_session,
+                    identifier=team.email
+                )
             )
 
             if not delete_result["success"]:
@@ -1898,6 +1997,94 @@ class TeamService:
             logger.error(f"撤回邀请或删除成员时发生异常: {e}")
             return {"success": False, "error": str(e)}
 
+
+    async def cleanup_expired_teams(
+        self,
+        db_session: AsyncSession,
+        retention_days: int = 30
+    ) -> Dict[str, Any]:
+        """
+        自动清理到期超过 retention_days 天的 Team。
+
+        规则：
+        - 若 Team 关联了仍在质保期内的兑换码，则跳过（保护后续质保复用）。
+        - 无质保保护时：有兑换记录则软删除；无兑换记录则硬删除。
+        """
+        try:
+            now = get_now()
+            cutoff = now - timedelta(days=max(1, retention_days))
+
+            stmt = select(Team).where(
+                Team.expires_at.is_not(None),
+                Team.expires_at < cutoff
+            )
+            result = await db_session.execute(stmt)
+            expired_teams = result.scalars().all()
+
+            hard_deleted = 0
+            soft_deleted = 0
+            skipped_warranty = 0
+
+            for team in expired_teams:
+                # 已软删除的不重复处理
+                if team.status == "deleted":
+                    continue
+
+                # 若存在仍在质保期内的兑换码，跳过自动删除
+                active_warranty_stmt = (
+                    select(func.count(RedemptionCode.id))
+                    .join(RedemptionRecord, RedemptionRecord.code == RedemptionCode.code)
+                    .where(
+                        RedemptionRecord.team_id == team.id,
+                        RedemptionCode.has_warranty.is_(True),
+                        RedemptionCode.warranty_expires_at.is_not(None),
+                        RedemptionCode.warranty_expires_at > now
+                    )
+                )
+                active_warranty_result = await db_session.execute(active_warranty_stmt)
+                active_warranty_count = active_warranty_result.scalar() or 0
+                if active_warranty_count > 0:
+                    skipped_warranty += 1
+                    continue
+
+                records_count_stmt = select(func.count(RedemptionRecord.id)).where(RedemptionRecord.team_id == team.id)
+                records_count_result = await db_session.execute(records_count_stmt)
+                records_count = records_count_result.scalar() or 0
+
+                if records_count > 0:
+                    team.status = "deleted"
+                    team.team_name = f"[自动删除] {team.team_name or team.email}"
+                    team.last_sync = now
+                    await db_session.execute(
+                        delete(TeamAccount).where(TeamAccount.team_id == team.id)
+                    )
+                    soft_deleted += 1
+                else:
+                    await db_session.delete(team)
+                    hard_deleted += 1
+
+            await db_session.commit()
+
+            return {
+                "success": True,
+                "hard_deleted": hard_deleted,
+                "soft_deleted": soft_deleted,
+                "skipped_warranty": skipped_warranty,
+                "total_candidates": len(expired_teams),
+                "error": None
+            }
+        except Exception as e:
+            await db_session.rollback()
+            logger.error(f"自动清理 Team 失败: {e}")
+            return {
+                "success": False,
+                "hard_deleted": 0,
+                "soft_deleted": 0,
+                "skipped_warranty": 0,
+                "total_candidates": 0,
+                "error": f"自动清理 Team 失败: {str(e)}"
+            }
+
     async def delete_team(
         self,
         team_id: int,
@@ -1905,6 +2092,9 @@ class TeamService:
     ) -> Dict[str, Any]:
         """
         删除 Team
+
+        对于存在兑换记录的 Team，采用“软删除”以保留质保/历史关联；
+        对于无兑换记录的 Team，执行“硬删除”。
 
         Args:
             team_id: Team ID
@@ -1926,11 +2116,37 @@ class TeamService:
                     "error": f"Team ID {team_id} 不存在"
                 }
 
-            # 1.5 处理 RedemptionCode 关联 (置空)
-            update_stmt = update(RedemptionCode).where(RedemptionCode.used_team_id == team_id).values(used_team_id=None)
-            await db_session.execute(update_stmt)
+            # 2. 判断是否存在兑换记录（含质保关联）
+            records_count_stmt = select(func.count(RedemptionRecord.id)).where(RedemptionRecord.team_id == team_id)
+            records_count_result = await db_session.execute(records_count_stmt)
+            records_count = records_count_result.scalar() or 0
 
-            # 2. 删除 Team (级联删除 team_accounts 和 redemption_records)
+            if records_count > 0:
+                # 2.1 软删除：保留 Team 与兑换记录关联，避免影响质保查询
+                team.status = "deleted"
+                team.team_name = f"[已删除] {team.team_name or team.email}"
+                team.last_sync = get_now()
+
+                # 清理 TeamAccount，避免后续被当作可用 Team 使用
+                await db_session.execute(
+                    delete(TeamAccount).where(TeamAccount.team_id == team_id)
+                )
+
+                await db_session.commit()
+                logger.info(f"Team {team_id} 存在 {records_count} 条兑换记录，已执行软删除")
+                return {
+                    "success": True,
+                    "message": "Team 已软删除（保留质保与历史记录）",
+                    "error": None
+                }
+
+            # 2.2 无兑换记录时执行硬删除
+            await db_session.execute(
+                update(RedemptionCode)
+                .where(RedemptionCode.used_team_id == team_id)
+                .values(used_team_id=None)
+            )
+
             await db_session.delete(team)
             await db_session.commit()
 

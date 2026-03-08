@@ -24,6 +24,15 @@ def column_exists(cursor, table_name, column_name):
     return column_name in columns
 
 
+def table_exists(cursor, table_name):
+    """检查表是否存在"""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,)
+    )
+    return cursor.fetchone() is not None
+
+
 def run_auto_migration():
     """
     自动运行数据库迁移
@@ -101,6 +110,74 @@ def run_auto_migration():
             logger.info("添加 teams.account_role 字段")
             cursor.execute("ALTER TABLE teams ADD COLUMN account_role VARCHAR(50)")
             migrations_applied.append("teams.account_role")
+
+        # 生命周期主档与提醒队列
+        if not table_exists(cursor, "member_lifecycles"):
+            logger.info("创建 member_lifecycles 表")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS member_lifecycles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    first_joined_at DATETIME NOT NULL,
+                    policy_type VARCHAR(50) NOT NULL,
+                    policy_expires_at DATETIME,
+                    has_migration_downtime BOOLEAN DEFAULT 0,
+                    is_legacy_seeded BOOLEAN DEFAULT 0,
+                    effective_from DATETIME NOT NULL,
+                    current_team_id INTEGER,
+                    status VARCHAR(20) DEFAULT 'active',
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(current_team_id) REFERENCES teams(id)
+                )
+            """)
+            migrations_applied.append("create.member_lifecycles")
+
+        if not table_exists(cursor, "member_lifecycle_events"):
+            logger.info("创建 member_lifecycle_events 表")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS member_lifecycle_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lifecycle_id INTEGER NOT NULL,
+                    event_type VARCHAR(50) NOT NULL,
+                    source_type VARCHAR(20) NOT NULL,
+                    code_or_manual_tag VARCHAR(64),
+                    has_warranty BOOLEAN DEFAULT 0,
+                    warranty_expires_at DATETIME,
+                    from_team_id INTEGER,
+                    to_team_id INTEGER,
+                    event_at DATETIME NOT NULL,
+                    meta_json TEXT,
+                    FOREIGN KEY(lifecycle_id) REFERENCES member_lifecycles(id) ON DELETE CASCADE
+                )
+            """)
+            migrations_applied.append("create.member_lifecycle_events")
+
+        if not table_exists(cursor, "member_reminder_queue"):
+            logger.info("创建 member_reminder_queue 表")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS member_reminder_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lifecycle_id INTEGER NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    policy_type VARCHAR(50) NOT NULL,
+                    target_expires_at DATETIME NOT NULL,
+                    days_left INTEGER NOT NULL,
+                    reason VARCHAR(50) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    dedupe_key VARCHAR(255) NOT NULL UNIQUE,
+                    last_sent_at DATETIME,
+                    last_send_result TEXT,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(lifecycle_id) REFERENCES member_lifecycles(id) ON DELETE CASCADE
+                )
+            """)
+            migrations_applied.append("create.member_reminder_queue")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lifecycle_policy_expires ON member_lifecycles(policy_expires_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lifecycle_event_time ON member_lifecycle_events(lifecycle_id, event_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_status ON member_reminder_queue(status)")
         
         # 提交更改
         conn.commit()

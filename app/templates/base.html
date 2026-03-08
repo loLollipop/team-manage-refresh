@@ -58,6 +58,12 @@
                         <span class="menu-text">使用记录</span>
                     </a>
                 </li>
+                <li class="menu-item {% if active_page == 'reminders' %}active{% endif %}">
+                    <a href="/admin/reminders">
+                        <span class="menu-icon" data-lucide="mail-warning"></span>
+                        <span class="menu-text">提醒汇总</span>
+                    </a>
+                </li>
                 <li class="menu-item {% if active_page == 'settings' %}active{% endif %}">
                     <a href="/admin/settings">
                         <span class="menu-icon" data-lucide="settings"></span>
@@ -290,16 +296,25 @@
                 <!-- 添加成员表单 -->
                 <div class="content-section"
                     style="padding: 1.25rem; margin-bottom: 1.5rem; background: rgba(255,255,255,0.03);">
-                    <form id="addMemberForm" onsubmit="handleAddMember(event)"
-                        style="display: flex; gap: 1rem; align-items: flex-end;">
-                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                            <label for="memberEmail">新增成员邮箱</label>
-                            <input type="email" id="memberEmail" name="email" class="form-control"
-                                placeholder="user@example.com" required>
+                    <form id="addMemberForm" onsubmit="handleAddMember(event)">
+                        <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                            <div class="form-group" style="flex: 1; margin-bottom: 0; min-width: 220px;">
+                                <label for="memberEmail">新增成员邮箱</label>
+                                <input type="email" id="memberEmail" name="email" class="form-control"
+                                    placeholder="user@example.com" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <input type="checkbox" id="isLegacyCustomer" name="is_legacy_customer">
+                                    是否旧账客户
+                                </label>
+                                <input type="number" id="legacyRemainingWarrantyDays" name="legacy_remaining_warranty_days"
+                                    class="form-control" min="0" max="365" placeholder="剩余质保天数" style="display: none;">
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="addMemberSubmitBtn">
+                                <i data-lucide="user-plus"></i> 添加
+                            </button>
                         </div>
-                        <button type="submit" class="btn btn-primary" id="addMemberSubmitBtn">
-                            <i data-lucide="user-plus"></i> 添加
-                        </button>
                     </form>
                 </div>
 

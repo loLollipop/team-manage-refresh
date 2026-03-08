@@ -15,7 +15,7 @@ from app.services.warranty import WarrantyService
 from app.services.team import TeamService
 from app.services.chatgpt import ChatGPTService
 from app.services.encryption import encryption_service
-from app.services.notification import notification_service
+from app.services.member_lifecycle import member_lifecycle_service
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -332,6 +332,7 @@ class RedeemFlowService:
                     final_team_expires_at = team.expires_at
                     final_access_token_encrypted = team.access_token_encrypted
                     final_is_warranty = is_warranty_code
+                    final_warranty_expires_at = redemption_code.warranty_expires_at if is_warranty_code else None
                     
                     # 事务 commit
                 
@@ -378,61 +379,17 @@ class RedeemFlowService:
                             is_warranty_redemption=final_is_warranty
                         )
                         db_session.add(redemption_record)
-
-                        # 成功后人数+1 (先本地更新，确保即时性)
-                        stmt = select(Team).where(Team.id == team_id_final).with_for_update()
-                        res = await db_session.execute(stmt)
-                        t = res.scalar_one_or_none()
-                        if t:
-                            t.current_members += 1
-                            if t.current_members >= t.max_members:
-                                t.status = "full"
-                        
-                    # 确保在 sleep 前没有任何未决事务，彻底释放读视图，避免占用数据库资源
-                    if db_session.in_transaction():
-                        await db_session.rollback()
-                    db_session.expire_all()
-
-                    # 延时 5 秒再同步，给 API 留出同步缓冲时间，减少虚假成功误判
-                    logger.info(f"等待 5 秒后校验邀请结果: {email}")
-                    await asyncio.sleep(5)
-
-                    # 同步最新成员数并校验邀请是否生效
-                    sync_res = await self.team_service.sync_team_info(team_id_final, db_session)
-                    
-                    # 显式提交同步结果，确保 last_sync 等信息已写入数据库
-                    if db_session.in_transaction():
-                        await db_session.commit()
-                    
-                    # 强校验：如果同步结果中没有当前邮箱，说明是“虚假成功”
-                    member_emails = sync_res.get("member_emails", [])
-                    if email.lower() not in [m.lower() for m in member_emails]:
-                        logger.error(f"检测到“虚假成功”: Team {team_id_final} 接口返回邀请成功，但同步成员列表未见该邮箱 {email}")
-                        
-                        # 手动标记错误并累加计数
-                        if db_session.in_transaction():
-                            await db_session.rollback()
-                            
-                        async with db_session.begin():
-                            stmt = select(Team).where(Team.id == team_id_final).with_for_update()
-                            res = await db_session.execute(stmt)
-                            target_team = res.scalar_one_or_none()
-                            if target_team:
-                                target_team.error_count = (target_team.error_count or 0) + 1
-                                if target_team.error_count >= 2:
-                                    logger.error(f"Team {target_team.id} 连续虚假成功/错误 {target_team.error_count} 次，标记为 error")
-                                    target_team.status = "error"
-                                await db_session.commit()
-                        
-                        # 触发回退并进入重试逻辑
-                        await self._rollback_redemption(db_session, code, team_id_final, email=email)
-                        last_error = f"Team {team_id_final} 校验失败（邀请发送成功但同步未见成员）"
-                        
-                        if attempt < max_retries - 1:
-                            logger.info(f"检测到虚假成功，原 Team ({team_id_final}) 第 {attempt + 1} 次重试...")
-                            current_target_team_id = team_id_final # 保持同一个 Team 重试
-                            continue
-                        return {"success": False, "error": f"连续 {max_retries} 次虚假成功，该 Team 账号 ({team_id_final}) 可能存在同步延迟或异常，请稍后再试"}
+                        await member_lifecycle_service.upsert_lifecycle_event(
+                            db_session,
+                            email=email,
+                            team_id=team_id_final,
+                            source_type="redeem",
+                            event_type="redeem_join",
+                            code_or_manual_tag=code,
+                            has_warranty=final_is_warranty,
+                            warranty_expires_at=final_warranty_expires_at,
+                            event_time=redemption_record.redeemed_at,
+                        )
                     
                     logger.info(f"兑换成功: {email} 加入 Team {team_id_final}")
 

@@ -125,3 +125,76 @@ class Setting(Base):
     __table_args__ = (
         Index("idx_key", "key"),
     )
+
+
+class MemberLifecycle(Base):
+    """成员生命周期主档（按邮箱聚合）"""
+    __tablename__ = "member_lifecycles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, comment="成员邮箱")
+    first_joined_at = Column(DateTime, nullable=False, comment="首次加入时间")
+    policy_type = Column(String(50), nullable=False, comment="策略类型: warranty/manual_28d/redeem_no_warranty_28d")
+    policy_expires_at = Column(DateTime, comment="策略到期时间")
+    has_migration_downtime = Column(Boolean, default=False, comment="是否发生过停用迁移")
+    is_legacy_seeded = Column(Boolean, default=False, comment="是否旧账补录")
+    effective_from = Column(DateTime, nullable=False, comment="策略生效时间门槛")
+    current_team_id = Column(Integer, ForeignKey("teams.id"), comment="当前 Team ID")
+    status = Column(String(20), default="active", comment="状态: active/inactive")
+    created_at = Column(DateTime, default=get_now, comment="创建时间")
+    updated_at = Column(DateTime, default=get_now, onupdate=get_now, comment="更新时间")
+
+    events = relationship("MemberLifecycleEvent", back_populates="lifecycle", cascade="all, delete-orphan")
+    reminders = relationship("MemberReminderQueue", back_populates="lifecycle", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_lifecycle_policy_expires", "policy_expires_at"),
+    )
+
+
+class MemberLifecycleEvent(Base):
+    """成员生命周期事件表"""
+    __tablename__ = "member_lifecycle_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lifecycle_id = Column(Integer, ForeignKey("member_lifecycles.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String(50), nullable=False, comment="事件类型")
+    source_type = Column(String(20), nullable=False, comment="来源类型: redeem/manual")
+    code_or_manual_tag = Column(String(64), comment="兑换码或手动标记")
+    has_warranty = Column(Boolean, default=False, comment="是否质保")
+    warranty_expires_at = Column(DateTime, comment="质保到期")
+    from_team_id = Column(Integer, comment="迁移前 Team ID")
+    to_team_id = Column(Integer, comment="迁移后 Team ID")
+    event_at = Column(DateTime, default=get_now, nullable=False, comment="事件时间")
+    meta_json = Column(Text, comment="扩展字段 JSON")
+
+    lifecycle = relationship("MemberLifecycle", back_populates="events")
+
+    __table_args__ = (
+        Index("idx_lifecycle_event_time", "lifecycle_id", "event_at"),
+    )
+
+
+class MemberReminderQueue(Base):
+    """成员提醒队列表"""
+    __tablename__ = "member_reminder_queue"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lifecycle_id = Column(Integer, ForeignKey("member_lifecycles.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False, comment="成员邮箱")
+    policy_type = Column(String(50), nullable=False, comment="策略类型")
+    target_expires_at = Column(DateTime, nullable=False, comment="目标到期时间")
+    days_left = Column(Integer, nullable=False, comment="剩余天数")
+    reason = Column(String(50), nullable=False, comment="提醒原因")
+    status = Column(String(20), default="pending", comment="状态: pending/sent/skipped")
+    dedupe_key = Column(String(255), nullable=False, unique=True, comment="去重键")
+    last_sent_at = Column(DateTime, comment="最近发送时间")
+    last_send_result = Column(Text, comment="最近发送结果")
+    created_at = Column(DateTime, default=get_now, comment="创建时间")
+    updated_at = Column(DateTime, default=get_now, onupdate=get_now, comment="更新时间")
+
+    lifecycle = relationship("MemberLifecycle", back_populates="reminders")
+
+    __table_args__ = (
+        Index("idx_reminder_status", "status"),
+    )
