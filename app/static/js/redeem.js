@@ -440,9 +440,22 @@ function showWarrantyResult(data) {
                                         </div>
                                     </div>
                                     ` : ''}
-                                </div>
-                            </div>
-                        `;
+                                     <div style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.8rem; margin-top: 0.2rem;">
+                                         <div>
+                                             <div style="color: var(--text-muted); margin-bottom: 0.2rem;">设备身份验证 (Codex)</div>
+                                             <div style="font-weight: 500;">
+                                                 ${record.device_code_auth_enabled ? '<span style="color: var(--success);">已开启</span>' : '<span style="color: var(--warning);">未开启</span>'}
+                                             </div>
+                                         </div>
+                                         ${(!record.device_code_auth_enabled && record.team_status !== 'banned' && record.team_status !== 'expired') ? `
+                                         <button onclick="enableUserDeviceAuth(${record.team_id}, '${escapeHtml(record.code)}', '${escapeHtml(record.email)}')" class="btn btn-xs btn-primary" style="padding: 4px 10px; font-size: 0.75rem; height: auto;">
+                                             一键开启
+                                         </button>
+                                         ` : ''}
+                                     </div>
+                                 </div>
+                             </div>
+                         `;
         }).join('')}
                 </div>
             </div>
@@ -538,5 +551,49 @@ async function oneClickReplace(code, email) {
             btn.innerHTML = originalContent;
             if (window.lucide) lucide.createIcons();
         }
+    }
+}
+
+// 用户一键开启设备身份验证
+async function enableUserDeviceAuth(teamId, code, email) {
+    if (!confirm('确定要在该 Team 中开启设备代码身份验证吗？')) {
+        return;
+    }
+
+    const btn = event.currentTarget;
+    const originalContent = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 开启中...';
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const response = await fetch('/warranty/enable-device-auth', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                team_id: teamId,
+                code: code,
+                email: email
+            })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showToast(data.message || '开启成功', 'success');
+            // 刷新当前状态
+            checkWarranty();
+        } else {
+            showToast(data.error || data.detail || '开启失败', 'error');
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+            if (window.lucide) lucide.createIcons();
+        }
+    } catch (error) {
+        showToast('网络错误，请稍后重试', 'error');
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        if (window.lucide) lucide.createIcons();
     }
 }

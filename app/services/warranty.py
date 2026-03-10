@@ -225,7 +225,8 @@ class WarrantyService:
                     "team_name": team.team_name,
                     "team_status": team.status,
                     "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
-                    "email": record.email
+                    "email": record.email,
+                    "device_code_auth_enabled": team.device_code_auth_enabled
                 })
 
             # 3. 判断是否可以重复使用 (只要有有效的质保码且有被封的 Team)

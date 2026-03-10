@@ -35,6 +35,7 @@ class WarrantyCheckRecord(BaseModel):
     team_status: Optional[str]
     team_expires_at: Optional[str]
     email: Optional[str] = None
+    device_code_auth_enabled: bool = False
 
 
 class WarrantyCheckResponse(BaseModel):
@@ -101,4 +102,60 @@ async def check_warranty(
         raise HTTPException(
             status_code=500,
             detail=f"查询质保状态失败: {str(e)}"
+        )
+
+
+class EnableDeviceAuthRequest(BaseModel):
+    """开启设备身份验证请求"""
+    code: str
+    email: str
+    team_id: int
+
+
+@router.post("/enable-device-auth")
+async def enable_device_auth(
+    request: EnableDeviceAuthRequest,
+    db_session: AsyncSession = Depends(get_db)
+):
+    """
+    用户一键开启设备身份验证
+    """
+    from app.services.team import team_service
+    from sqlalchemy import select
+    from app.models import RedemptionRecord
+
+    try:
+        # 1. 验证用户是否有记录在该 Team
+        stmt = select(RedemptionRecord).where(
+            RedemptionRecord.code == request.code,
+            RedemptionRecord.email == request.email,
+            RedemptionRecord.team_id == request.team_id
+        )
+        result = await db_session.execute(stmt)
+        record = result.scalar_one_or_none()
+        
+        if not record:
+            raise HTTPException(
+                status_code=403,
+                detail="未找到相关的兑换记录，无法进行该操作"
+            )
+            
+        # 2. 调用 TeamService 开启
+        # 注意：这里我们使用已经实现的 enable_device_code_auth
+        res = await team_service.enable_device_code_auth(request.team_id, db_session)
+        
+        if not res.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=res.get("error", "开启失败")
+            )
+            
+        return {"success": True, "message": "设备代码身份验证开启成功"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"开启失败: {str(e)}"
         )
