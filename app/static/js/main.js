@@ -95,6 +95,21 @@ function confirmAction(message) {
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
     checkAuthStatus();
+
+    // OAuth 一键导入按钮绑定（避免仅依赖内联 onclick）
+    const btnOneClickToken = document.getElementById('btnOneClickToken');
+    if (btnOneClickToken) {
+        btnOneClickToken.addEventListener('click', () => {
+            generateOAuthAuthorizeLink();
+        });
+    }
+
+    const btnParseOAuthCallback = document.getElementById('btnParseOAuthCallback');
+    if (btnParseOAuthCallback) {
+        btnParseOAuthCallback.addEventListener('click', () => {
+            parseOAuthCallbackAndFill();
+        });
+    }
 });
 
 // 检查认证状态
