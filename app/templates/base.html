@@ -111,6 +111,22 @@
 
                 <div id="singleImport" class="import-panel">
                     <form id="singleImportForm" onsubmit="handleSingleImport(event)">
+                        <div class="form-group" style="padding: 0.75rem; border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 1rem;">
+                            <label style="margin-bottom: 0.5rem; display: block;">一键获取 Token（实验功能）</label>
+                            <div class="input-group-btn" style="margin-bottom: 0.5rem;">
+                                <input type="text" id="oauthClientIdInput" class="form-control" placeholder="先填写 Client ID（app_xxx）">
+                                <button type="button" class="btn btn-secondary" onclick="generateOAuthAuthorizeLink()">生成授权链接</button>
+                            </div>
+                            <div class="input-group-btn" style="margin-bottom: 0.5rem;">
+                                <input type="text" id="oauthAuthorizeUrlOutput" class="form-control" placeholder="点击生成后会出现授权链接" readonly>
+                                <button type="button" class="btn btn-secondary" onclick="copyOAuthAuthorizeUrl()">复制链接</button>
+                            </div>
+                            <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后把完整回调 URL 粘贴到这里"></textarea>
+                            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-secondary" onclick="parseOAuthCallbackAndFill()">解析并自动填充</button>
+                                <small class="form-text" style="margin: 0; align-self: center;">支持直接解析 callback 中 token，或用 code + code_verifier 自动兑换。</small>
+                            </div>
+                        </div>
                         <div class="form-group">
                             <label>Access Token (AT) <span class="required">*</span></label>
                             <input type="text" name="accessToken" class="form-control"

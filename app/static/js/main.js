@@ -172,6 +172,101 @@ function toggleWarrantyDays(checkbox, targetId) {
 
 // === Team 导入逻辑 ===
 
+let oauthDraft = {
+    codeVerifier: '',
+    state: '',
+    clientId: ''
+};
+
+async function generateOAuthAuthorizeLink() {
+    const form = document.getElementById('singleImportForm');
+    if (!form) return;
+
+    const inlineClientId = document.getElementById('oauthClientIdInput').value.trim();
+    const formClientId = form.clientId ? form.clientId.value.trim() : '';
+    const clientId = inlineClientId || formClientId;
+
+    if (!clientId) {
+        showToast('请先填写 Client ID（app_xxx）', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/admin/oauth/openai/authorize', {
+            method: 'POST',
+            body: JSON.stringify({
+                client_id: clientId,
+                redirect_uri: 'http://localhost:1455/auth/callback'
+            })
+        });
+
+        if (!result.success) {
+            showToast(result.error || '生成授权链接失败', 'error');
+            return;
+        }
+
+        const data = result.data || {};
+        oauthDraft.codeVerifier = data.code_verifier || '';
+        oauthDraft.state = data.state || '';
+        oauthDraft.clientId = data.client_id || clientId;
+
+        document.getElementById('oauthAuthorizeUrlOutput').value = data.authorize_url || '';
+        document.getElementById('oauthClientIdInput').value = oauthDraft.clientId;
+        if (form.clientId) form.clientId.value = oauthDraft.clientId;
+
+        showToast('授权链接已生成，复制后去浏览器登录', 'success');
+    } catch (error) {
+        showToast('生成授权链接失败', 'error');
+    }
+}
+
+function copyOAuthAuthorizeUrl() {
+    const url = document.getElementById('oauthAuthorizeUrlOutput').value.trim();
+    if (!url) {
+        showToast('还没有可复制的授权链接', 'error');
+        return;
+    }
+    copyToClipboard(url);
+}
+
+async function parseOAuthCallbackAndFill() {
+    const callbackText = document.getElementById('oauthCallbackInput').value.trim();
+    const form = document.getElementById('singleImportForm');
+
+    if (!callbackText) {
+        showToast('请先粘贴回调 URL', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/admin/oauth/openai/parse-callback', {
+            method: 'POST',
+            body: JSON.stringify({
+                callback_text: callbackText,
+                code_verifier: oauthDraft.codeVerifier || null,
+                expected_state: oauthDraft.state || null,
+                client_id: (document.getElementById('oauthClientIdInput').value.trim() || (form.clientId ? form.clientId.value.trim() : '') || oauthDraft.clientId || null),
+                redirect_uri: 'http://localhost:1455/auth/callback'
+            })
+        });
+
+        if (!result.success) {
+            showToast(result.error || '解析回调失败', 'error');
+            return;
+        }
+
+        const data = result.data || {};
+        if (form.accessToken && data.access_token) form.accessToken.value = data.access_token;
+        if (form.refreshToken && data.refresh_token) form.refreshToken.value = data.refresh_token;
+        if (form.clientId && data.client_id) form.clientId.value = data.client_id;
+        if (data.client_id) document.getElementById('oauthClientIdInput').value = data.client_id;
+
+        showToast('已自动填充 Token 信息，请确认后导入', 'success');
+    } catch (error) {
+        showToast('解析回调失败', 'error');
+    }
+}
+
 async function handleSingleImport(event) {
     event.preventDefault();
     const form = event.target;

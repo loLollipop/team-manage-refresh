@@ -3,7 +3,7 @@
 处理管理员面板的所有页面和操作
 """
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
@@ -14,6 +14,7 @@ from app.database import get_db
 from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
+from app.services.chatgpt import chatgpt_service
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,26 @@ class TeamImportRequest(BaseModel):
     account_id: Optional[str] = Field(None, description="Account ID (单个导入)")
     content: Optional[str] = Field(None, description="批量导入内容")
 
+
+
+
+class OAuthAuthorizeRequest(BaseModel):
+    """生成 OAuth 授权链接请求"""
+    client_id: str = Field(..., description="OAuth Client ID")
+    redirect_uri: str = Field("http://localhost:1455/auth/callback", description="回调地址")
+    scope: str = Field("openid email profile offline_access", description="OAuth scope")
+    audience: Optional[str] = Field(None, description="audience（可选）")
+    codex_cli_simplified_flow: bool = Field(True, description="是否启用 codex 简化流程")
+    id_token_add_organizations: bool = Field(True, description="是否在 id_token 中附带组织信息")
+
+
+class OAuthCallbackParseRequest(BaseModel):
+    """OAuth 回调解析请求"""
+    callback_text: str = Field(..., description="完整回调 URL 或回调文本")
+    code_verifier: Optional[str] = Field(None, description="PKCE code_verifier")
+    expected_state: Optional[str] = Field(None, description="期望的 state 值")
+    client_id: Optional[str] = Field(None, description="兜底 client_id")
+    redirect_uri: str = Field("http://localhost:1455/auth/callback", description="回调地址")
 
 class AddMemberRequest(BaseModel):
     """添加成员请求"""
@@ -336,6 +357,114 @@ async def team_import(
 
 
 
+@router.post("/oauth/openai/authorize")
+async def create_openai_oauth_authorize_url(
+    payload: OAuthAuthorizeRequest,
+    current_user: dict = Depends(require_admin)
+):
+    """生成 OpenAI OAuth 授权链接。"""
+    try:
+        client_id = (payload.client_id or "").strip()
+        if not client_id:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"success": False, "error": "client_id 不能为空"})
+
+        auth_data = chatgpt_service.create_oauth_authorize_url(
+            client_id=client_id,
+            redirect_uri=payload.redirect_uri.strip(),
+            scope=payload.scope.strip() or "openid email profile offline_access",
+            audience=(payload.audience.strip() if payload.audience else None),
+            codex_cli_simplified_flow=payload.codex_cli_simplified_flow,
+            id_token_add_organizations=payload.id_token_add_organizations,
+        )
+
+        return JSONResponse(content={"success": True, "data": {
+            "authorize_url": auth_data["authorize_url"],
+            "code_verifier": auth_data["code_verifier"],
+            "state": auth_data["state"],
+            "client_id": client_id
+        }})
+    except Exception as e:
+        logger.error(f"生成 OAuth 授权链接失败: {e}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
+
+
+@router.post("/oauth/openai/parse-callback")
+async def parse_openai_oauth_callback(
+    payload: OAuthCallbackParseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """解析 OAuth 回调内容并提取 token。"""
+    from urllib.parse import parse_qs, urlparse
+
+    try:
+        text = (payload.callback_text or "").strip()
+        if not text:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"success": False, "error": "回调内容不能为空"})
+
+        parsed = urlparse(text)
+        query = parse_qs(parsed.query)
+        fragment = parse_qs(parsed.fragment)
+
+        merged: Dict[str, str] = {}
+        for source in (query, fragment):
+            for k, v in source.items():
+                if v:
+                    merged[k] = v[0]
+
+        if payload.expected_state and merged.get("state") and merged.get("state") != payload.expected_state:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"success": False, "error": "state 不匹配，请重新生成授权链接"})
+
+        access_token = merged.get("access_token")
+        refresh_token = merged.get("refresh_token")
+        client_id = merged.get("client_id") or payload.client_id
+
+        # 如果回调中只有 code，尝试自动换取 AT/RT
+        code = merged.get("code")
+        if code and not access_token:
+            if not payload.code_verifier:
+                return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={
+                    "success": False,
+                    "error": "回调中是 code 流程，需要 code_verifier 才能兑换 token"
+                })
+            if not client_id:
+                return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={
+                    "success": False,
+                    "error": "缺少 client_id，无法兑换 token"
+                })
+
+            exchange = await chatgpt_service.exchange_oauth_code(
+                code=code,
+                client_id=client_id,
+                redirect_uri=payload.redirect_uri.strip(),
+                code_verifier=payload.code_verifier.strip(),
+                db_session=db,
+                identifier=f"oauth_{current_user.get('username', 'admin')}"
+            )
+            if not exchange.get("success"):
+                return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=exchange)
+
+            access_token = exchange.get("access_token")
+            refresh_token = exchange.get("refresh_token")
+
+        if not access_token and not refresh_token:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={
+                "success": False,
+                "error": "未在回调内容中解析到 access_token/refresh_token 或可兑换的 code"
+            })
+
+        return JSONResponse(content={
+            "success": True,
+            "data": {
+                "access_token": access_token or "",
+                "refresh_token": refresh_token or "",
+                "client_id": client_id or "",
+                "raw": merged
+            }
+        })
+    except Exception as e:
+        logger.error(f"解析 OAuth 回调失败: {e}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
 
 
 @router.get("/teams/{team_id}/members/list")
