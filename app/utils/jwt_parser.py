@@ -74,6 +74,19 @@ class JWTParser:
             logger.error(f"提取邮箱失败: {e}")
             return None
 
+    def extract_client_id(self, token: str) -> Optional[str]:
+        """从 Token 中提取 OAuth client_id。"""
+        payload = self.decode_token(token)
+        if not payload:
+            return None
+
+        try:
+            cid = payload.get("client_id")
+            return str(cid) if cid else None
+        except Exception as e:
+            logger.error(f"提取 client_id 失败: {e}")
+            return None
+
     def extract_user_id(self, token: str) -> Optional[str]:
         """
         从 Token 中提取用户 ID

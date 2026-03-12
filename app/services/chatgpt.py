@@ -392,20 +392,23 @@ class ChatGPTService:
         db_session: DBAsyncSession,
         identifier: str = "default"
     ) -> Dict[str, Any]:
-        """使用 refresh_token 刷新 AT"""
-        url = "https://auth.openai.com/oauth/token"
-        json_data = {
+        """使用 refresh_token 刷新 AT（兼容多端点/多请求格式）。"""
+        if identifier == "default":
+            identifier = f"rt_{refresh_token[:8]}"
+
+        # 方案 1：当前主流程（JSON + auth.openai.com）
+        primary_url = "https://auth.openai.com/oauth/token"
+        primary_payload = {
             "client_id": client_id,
             "grant_type": "refresh_token",
             "redirect_uri": "com.openai.sora://auth.openai.com/android/com.openai.sora/callback",
             "refresh_token": refresh_token
         }
-        headers = {"Content-Type": "application/json"}
-        
-        if identifier == "default":
-            identifier = f"rt_{refresh_token[:8]}"
+        primary_headers = {"Content-Type": "application/json"}
 
-        result = await self._make_request("POST", url, headers, json_data, db_session, identifier)
+        result = await self._make_request(
+            "POST", primary_url, primary_headers, primary_payload, db_session, identifier
+        )
         if result["success"]:
             data = result.get("data", {})
             return {
@@ -414,7 +417,57 @@ class ChatGPTService:
                 "refresh_token": data.get("refresh_token"),
                 "data": data
             }
-        return result
+
+        # 方案 2：回退到 auth0.openai.com + x-www-form-urlencoded
+        # 某些 OAuth 客户端（尤其是 app_xxx）在该端点成功率更高。
+        fallback_url = "https://auth0.openai.com/oauth/token"
+        fallback_form = {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+            "scope": "openid profile email offline_access"
+        }
+        fallback_headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+
+        session = await self._get_session(db_session, identifier)
+        try:
+            response = await session.post(fallback_url, headers=fallback_headers, data=fallback_form)
+            if 200 <= response.status_code < 300:
+                data = response.json()
+                return {
+                    "success": True,
+                    "access_token": data.get("access_token"),
+                    "refresh_token": data.get("refresh_token"),
+                    "data": data
+                }
+
+            # 带上主流程失败信息，便于排查 client_id / rt 不匹配等问题
+            fallback_error = response.text
+            try:
+                fallback_json = response.json()
+                detail = fallback_json.get("error_description") or fallback_json.get("error") or fallback_error
+                fallback_error = str(detail)
+            except Exception:
+                pass
+
+            return {
+                "success": False,
+                "error": (
+                    f"refresh_token 刷新失败。primary={result.get('error')} ; "
+                    f"fallback_status={response.status_code} fallback_error={fallback_error}"
+                ),
+                "status_code": response.status_code,
+                "error_code": result.get("error_code")
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"refresh_token 刷新异常: {e}; primary={result.get('error')}",
+                "error_code": result.get("error_code")
+            }
 
     async def clear_session(self, identifier: Optional[str] = None):
         """清理指定身份的会话，若不提供则清理所有"""

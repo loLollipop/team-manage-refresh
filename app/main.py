@@ -10,6 +10,8 @@ from starlette.middleware.sessions import SessionMiddleware
 import logging
 from pathlib import Path
 from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 from contextlib import asynccontextmanager
 # 导入路由
@@ -17,12 +19,118 @@ from app.routes import redeem, auth, admin, api, user, warranty
 from app.config import settings
 from app.database import init_db, close_db, AsyncSessionLocal
 from app.services.auth import auth_service
+from app.services.team import team_service
 
 # 获取项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
 APP_DIR = BASE_DIR / "app"
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+# 全局调度器
+scheduler = AsyncIOScheduler(timezone=settings.timezone)
+
+DEFAULT_TOKEN_REFRESH_INTERVAL_MINUTES = 30
+DEFAULT_TOKEN_REFRESH_WINDOW_HOURS = 2
+MIN_TOKEN_REFRESH_INTERVAL_MINUTES = 5
+MAX_TOKEN_REFRESH_INTERVAL_MINUTES = 24 * 60
+MIN_TOKEN_REFRESH_WINDOW_HOURS = 1
+MAX_TOKEN_REFRESH_WINDOW_HOURS = 24
+PERIODIC_TEAM_SYNC_INTERVAL_HOURS = 12
+PERIODIC_TEAM_SYNC_DAYS = 7
+
+
+def _safe_int(value, default):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def normalize_token_refresh_interval(interval_minutes: int) -> int:
+    return max(MIN_TOKEN_REFRESH_INTERVAL_MINUTES, min(MAX_TOKEN_REFRESH_INTERVAL_MINUTES, interval_minutes))
+
+
+def normalize_token_refresh_window(window_hours: int) -> int:
+    return max(MIN_TOKEN_REFRESH_WINDOW_HOURS, min(MAX_TOKEN_REFRESH_WINDOW_HOURS, window_hours))
+
+
+def configure_proactive_refresh_job(interval_minutes: int) -> int:
+    """配置（或重配置）Token 预刷新任务。"""
+    normalized_interval = normalize_token_refresh_interval(interval_minutes)
+    trigger = IntervalTrigger(minutes=normalized_interval)
+
+    existing_job = scheduler.get_job("proactive_refresh_tokens")
+    if existing_job:
+        scheduler.reschedule_job("proactive_refresh_tokens", trigger=trigger)
+    else:
+        scheduler.add_job(
+            scheduled_proactive_refresh,
+            trigger=trigger,
+            id="proactive_refresh_tokens",
+            replace_existing=True
+        )
+
+    if not scheduler.running:
+        scheduler.start()
+
+    return normalized_interval
+
+
+async def configure_proactive_refresh_job_from_settings() -> int:
+    """从系统设置读取间隔并应用到定时任务。"""
+    from app.services.settings import settings_service
+
+    async with AsyncSessionLocal() as session:
+        interval_raw = await settings_service.get_setting(
+            session,
+            "token_refresh_interval_minutes",
+            str(DEFAULT_TOKEN_REFRESH_INTERVAL_MINUTES)
+        )
+
+    interval = _safe_int(interval_raw, DEFAULT_TOKEN_REFRESH_INTERVAL_MINUTES)
+    return configure_proactive_refresh_job(interval)
+
+
+async def scheduled_proactive_refresh():
+    """定时执行 Team Token 预刷新（间隔可配置）。"""
+    from app.services.settings import settings_service
+
+    try:
+        async with AsyncSessionLocal() as session:
+            window_raw = await settings_service.get_setting(
+                session,
+                "token_refresh_window_hours",
+                str(DEFAULT_TOKEN_REFRESH_WINDOW_HOURS)
+            )
+            window_hours = normalize_token_refresh_window(
+                _safe_int(window_raw, DEFAULT_TOKEN_REFRESH_WINDOW_HOURS)
+            )
+            stats = await team_service.proactive_refresh_tokens(session, refresh_window_hours=window_hours)
+            logger.info(
+                "Token 预刷新任务完成: total=%s refreshed=%s skipped=%s failed=%s window=%sh",
+                stats["total"], stats["refreshed"], stats["skipped"], stats["failed"], window_hours
+            )
+    except Exception as e:
+        logger.error(f"Token 预刷新任务执行失败: {e}")
+
+
+async def scheduled_periodic_team_status_sync():
+    """定时按 7 天周期同步 Team 状态（基于导入/最近同步时间）。"""
+    try:
+        async with AsyncSessionLocal() as session:
+            stats = await team_service.sync_teams_due_for_periodic_refresh(
+                session,
+                refresh_interval_days=PERIODIC_TEAM_SYNC_DAYS
+            )
+            logger.info(
+                "Team 周期状态同步完成: total=%s due=%s synced=%s failed=%s skipped=%s",
+                stats["total"], stats["due"], stats["synced"], stats["failed"], stats["skipped"]
+            )
+    except Exception as e:
+        logger.error(f"Team 周期状态同步任务执行失败: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,12 +154,33 @@ async def lifespan(app: FastAPI):
         # 3. 初始化管理员密码（如果不存在）
         async with AsyncSessionLocal() as session:
             await auth_service.initialize_admin_password(session)
+
+        # 4. 启动定时任务（间隔支持系统设置动态配置）
+        interval = await configure_proactive_refresh_job_from_settings()
+        logger.info(f"定时任务已启动: 每 {interval} 分钟预刷新 Team Token")
+
+        scheduler.add_job(
+            scheduled_periodic_team_status_sync,
+            trigger=IntervalTrigger(hours=PERIODIC_TEAM_SYNC_INTERVAL_HOURS),
+            id="periodic_team_status_sync",
+            replace_existing=True
+        )
+        logger.info(
+            "定时任务已启动: 每 %s 小时检查一次 Team 状态同步（每 %s 天同步）",
+            PERIODIC_TEAM_SYNC_INTERVAL_HOURS,
+            PERIODIC_TEAM_SYNC_DAYS
+        )
+
         logger.info("数据库初始化完成")
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
     
     yield
     
+    # 关闭定时任务
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+
     # 关闭连接
     await close_db()
     logger.info("系统正在关闭，已释放数据库连接")

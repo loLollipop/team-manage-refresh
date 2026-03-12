@@ -5,7 +5,7 @@ Team 管理服务
 import logging
 import asyncio
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 class TeamService:
     """Team 管理服务类"""
+
+    PROACTIVE_REFRESH_WINDOW_HOURS = 2
 
     def __init__(self):
         """初始化 Team 管理服务"""
@@ -63,13 +65,17 @@ class TeamService:
                 "account is suspended",
                 "account was deleted",
                 "user_not_found",
-                "session_invalidated",
                 "this account is deactivated",
                 "deactivated_workspace"
             ]
             if any(kw in error_msg for kw in ban_keywords):
                 is_banned = True
                 
+        # session_token 失效不等于账号封禁，允许后续走 refresh_token 刷新
+        if "session_invalidated" in error_msg:
+            logger.info(f"Team {team.id} session_token 已失效，继续尝试其他刷新方式")
+            return False
+
         # 1.1 判定是否为“虚假成功” (Ghost Success)
         if error_code == "ghost_success":
             logger.error(f"检测到 Team {team.id} ({team.email}) 存在“虚假成功”现象 (邀请返回 200 但列表无成员)，标记为 error")
@@ -191,7 +197,49 @@ class TeamService:
             logger.error(f"解密或验证 Token 失败: {e}")
             access_token = None # 可能是解密失败，强制走刷新流程
 
-        # 3. 尝试使用 session_token 刷新
+        # 3. 优先使用 refresh_token 刷新（无 ST 场景更稳定）
+        if team.refresh_token_encrypted:
+            # 自动补齐 client_id（优先 Token claim，其次系统设置）
+            if not team.client_id:
+                try:
+                    current_at = encryption_service.decrypt_token(team.access_token_encrypted)
+                    token_client_id = self.jwt_parser.extract_client_id(current_at)
+                    if token_client_id:
+                        team.client_id = token_client_id
+                        logger.info(f"Team {team.id} 从 AT 自动提取到 client_id")
+                except Exception:
+                    pass
+
+                if not team.client_id:
+                    from app.services.settings import settings_service
+                    fallback_client_id = await settings_service.get_setting(db_session, "token_refresh_client_id", "")
+                    if fallback_client_id:
+                        team.client_id = fallback_client_id.strip()
+                        logger.info(f"Team {team.id} 使用系统设置中的默认 client_id")
+
+            if not team.client_id:
+                logger.warning(f"Team {team.id} 存在 refresh_token 但缺少 client_id，跳过 RT 刷新")
+            else:
+                refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
+                refresh_result = await self.chatgpt_service.refresh_access_token_with_refresh_token(
+                    refresh_token, team.client_id, db_session, identifier=team.email
+                )
+                if refresh_result["success"]:
+                    new_at = refresh_result["access_token"]
+                    new_rt = refresh_result.get("refresh_token")
+                    logger.info(f"Team {team.id} 通过 refresh_token 成功刷新 AT")
+                    team.access_token_encrypted = encryption_service.encrypt_token(new_at)
+                    if new_rt:
+                        team.refresh_token_encrypted = encryption_service.encrypt_token(new_rt)
+                    # 成功刷新，重置错误状态
+                    await self._reset_error_status(team, db_session)
+                    return new_at
+                else:
+                    # 检查是否为致命错误 (如 account_deactivated)
+                    if await self._handle_api_error(refresh_result, team, db_session):
+                        return None
+
+        # 4. 兜底尝试使用 session_token 刷新
         if team.session_token_encrypted:
             session_token = encryption_service.decrypt_token(team.session_token_encrypted)
             refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
@@ -202,12 +250,12 @@ class TeamService:
                 new_st = refresh_result.get("session_token")
                 logger.info(f"Team {team.id} 通过 session_token 成功刷新 AT")
                 team.access_token_encrypted = encryption_service.encrypt_token(new_at)
-                
+
                 # 如果返回了新的 session_token,予以更新
                 if new_st and new_st != session_token:
                     logger.info(f"Team {team.id} Session Token 已更新")
                     team.session_token_encrypted = encryption_service.encrypt_token(new_st)
-                
+
                 # 成功刷新，重置错误状态
                 await self._reset_error_status(team, db_session)
                 return new_at
@@ -216,27 +264,6 @@ class TeamService:
                 if await self._handle_api_error(refresh_result, team, db_session):
                     return None
 
-        # 4. 尝试使用 refresh_token 刷新
-        if team.refresh_token_encrypted and team.client_id:
-            refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
-            refresh_result = await self.chatgpt_service.refresh_access_token_with_refresh_token(
-                refresh_token, team.client_id, db_session, identifier=team.email
-            )
-            if refresh_result["success"]:
-                new_at = refresh_result["access_token"]
-                new_rt = refresh_result.get("refresh_token")
-                logger.info(f"Team {team.id} 通过 refresh_token 成功刷新 AT")
-                team.access_token_encrypted = encryption_service.encrypt_token(new_at)
-                if new_rt:
-                    team.refresh_token_encrypted = encryption_service.encrypt_token(new_rt)
-                # 成功刷新，重置错误状态
-                await self._reset_error_status(team, db_session)
-                return new_at
-            else:
-                # 检查是否为致命错误 (如 account_deactivated)
-                if await self._handle_api_error(refresh_result, team, db_session):
-                    return None
-        
         if team.status != "banned":
             logger.error(f"Team {team.id} Token 已过期且无法刷新，标记为 expired")
             team.status = "expired"
@@ -244,6 +271,52 @@ class TeamService:
         if not db_session.in_transaction():
             await db_session.commit()
         return None
+
+    async def proactive_refresh_tokens(
+        self,
+        db_session: AsyncSession,
+        refresh_window_hours: Optional[int] = None
+    ) -> Dict[str, int]:
+        """在 AT 过期前自动预刷新 Token。"""
+        window_hours = refresh_window_hours or self.PROACTIVE_REFRESH_WINDOW_HOURS
+        threshold_time = get_now() + timedelta(hours=window_hours)
+
+        stmt = select(Team)
+        result = await db_session.execute(stmt)
+        teams = result.scalars().all()
+
+        stats = {"total": len(teams), "refreshed": 0, "skipped": 0, "failed": 0}
+
+        for team in teams:
+            if team.status == "banned":
+                stats["skipped"] += 1
+                continue
+
+            if not team.refresh_token_encrypted and not team.session_token_encrypted:
+                stats["skipped"] += 1
+                continue
+
+            try:
+                access_token = encryption_service.decrypt_token(team.access_token_encrypted)
+                expire_at = self.jwt_parser.get_expiration_time(access_token)
+            except Exception as e:
+                logger.warning(f"Team {team.id} Token 解析失败,尝试直接刷新: {e}")
+                expire_at = None
+
+            if expire_at and expire_at > threshold_time:
+                stats["skipped"] += 1
+                continue
+
+            new_token = await self.ensure_access_token(team, db_session, force_refresh=True)
+            if new_token:
+                stats["refreshed"] += 1
+                logger.info(f"✅ Team {team.id} ({team.email}) Token 预刷新成功")
+            else:
+                stats["failed"] += 1
+                logger.warning(f"❌ Team {team.id} ({team.email}) Token 预刷新失败")
+
+        await db_session.commit()
+        return stats
 
     async def import_team_single(
         self,
@@ -268,6 +341,17 @@ class TeamService:
             结果字典,包含 success, team_id (第一个导入的), message, error
         """
         try:
+            # 0. 如果带有 refresh_token 但未传 client_id，先尝试自动补齐
+            if refresh_token and not client_id:
+                if access_token:
+                    client_id = self.jwt_parser.extract_client_id(access_token)
+                if not client_id:
+                    from app.services.settings import settings_service
+                    fallback_client_id = await settings_service.get_setting(db_session, "token_refresh_client_id", "")
+                    client_id = fallback_client_id.strip() if fallback_client_id else None
+                if client_id:
+                    logger.info("导入时自动补齐 client_id")
+
             # 1. 检查并尝试刷新 Token (如果 AT 缺失或过期)
             is_at_valid = False
             if access_token:
@@ -279,6 +363,7 @@ class TeamService:
             
             if not is_at_valid:
                 logger.info("导入时 AT 缺失或过期, 尝试使用 ST/RT 刷新")
+
                 # 尝试 session_token
                 if session_token:
                     refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
@@ -618,15 +703,21 @@ class TeamService:
                     else:
                         acc.is_primary = False
 
-            # 3. 更新 Token
-            if access_token:
-                team.access_token_encrypted = encryption_service.encrypt_token(access_token)
-            if refresh_token:
-                team.refresh_token_encrypted = encryption_service.encrypt_token(refresh_token)
-            if session_token:
-                team.session_token_encrypted = encryption_service.encrypt_token(session_token)
-            if client_id:
-                team.client_id = client_id
+            # 3. 更新 Token（支持显式清空 ST/RT/client_id）
+            if access_token is not None and access_token.strip():
+                team.access_token_encrypted = encryption_service.encrypt_token(access_token.strip())
+
+            if refresh_token is not None:
+                refresh_token = refresh_token.strip()
+                team.refresh_token_encrypted = encryption_service.encrypt_token(refresh_token) if refresh_token else None
+
+            if session_token is not None:
+                session_token = session_token.strip()
+                team.session_token_encrypted = encryption_service.encrypt_token(session_token) if session_token else None
+
+            if client_id is not None:
+                client_id = client_id.strip()
+                team.client_id = client_id or None
 
             # 4. 更新最大成员数
             if max_members is not None:
@@ -1075,6 +1166,98 @@ class TeamService:
                 "success": False,
                 "message": None,
                 "error": f"同步失败: {str(e)}"
+            }
+
+    async def sync_teams_due_for_periodic_refresh(
+        self,
+        db_session: AsyncSession,
+        refresh_interval_days: int = 7
+    ) -> Dict[str, Any]:
+        """按周期（默认 7 天）自动刷新 Team 状态。"""
+        try:
+            stmt = select(Team)
+            result = await db_session.execute(stmt)
+            teams = result.scalars().all()
+
+            if not teams:
+                return {
+                    "success": True,
+                    "total": 0,
+                    "due": 0,
+                    "synced": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "results": [],
+                    "error": None
+                }
+
+            now = get_now()
+            due_teams = []
+            skipped = 0
+
+            for team in teams:
+                if team.status == "banned":
+                    skipped += 1
+                    continue
+
+                base_time = team.last_sync or team.created_at
+
+                # created_at 为空时保守处理为“需要同步”
+                if not base_time:
+                    due_teams.append(team)
+                    continue
+
+                next_refresh_at = base_time + timedelta(days=refresh_interval_days)
+                if now >= next_refresh_at:
+                    due_teams.append(team)
+                else:
+                    skipped += 1
+
+            synced = 0
+            failed = 0
+            results = []
+
+            for team in due_teams:
+                sync_result = await self.sync_team_info(team.id, db_session)
+                if sync_result["success"]:
+                    synced += 1
+                else:
+                    failed += 1
+
+                results.append({
+                    "team_id": team.id,
+                    "email": team.email,
+                    "success": sync_result["success"],
+                    "message": sync_result.get("message"),
+                    "error": sync_result.get("error")
+                })
+
+            logger.info(
+                "周期状态同步完成: total=%s due=%s synced=%s failed=%s skipped=%s interval_days=%s",
+                len(teams), len(due_teams), synced, failed, skipped, refresh_interval_days
+            )
+
+            return {
+                "success": True,
+                "total": len(teams),
+                "due": len(due_teams),
+                "synced": synced,
+                "failed": failed,
+                "skipped": skipped,
+                "results": results,
+                "error": None
+            }
+        except Exception as e:
+            logger.error(f"周期状态同步失败: {e}")
+            return {
+                "success": False,
+                "total": 0,
+                "due": 0,
+                "synced": 0,
+                "failed": 0,
+                "skipped": 0,
+                "results": [],
+                "error": f"周期状态同步失败: {str(e)}"
             }
 
     async def sync_all_teams(

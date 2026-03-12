@@ -1306,7 +1306,10 @@ async def settings_page(
                 "log_level": log_level,
                 "webhook_url": await settings_service.get_setting(db, "webhook_url", ""),
                 "low_stock_threshold": await settings_service.get_setting(db, "low_stock_threshold", "10"),
-                "api_key": await settings_service.get_setting(db, "api_key", "")
+                "api_key": await settings_service.get_setting(db, "api_key", ""),
+                "token_refresh_interval_minutes": await settings_service.get_setting(db, "token_refresh_interval_minutes", "30"),
+                "token_refresh_window_hours": await settings_service.get_setting(db, "token_refresh_window_hours", "2"),
+                "token_refresh_client_id": await settings_service.get_setting(db, "token_refresh_client_id", "")
             }
         )
 
@@ -1334,6 +1337,13 @@ class WebhookSettingsRequest(BaseModel):
     webhook_url: str = Field("", description="Webhook URL")
     low_stock_threshold: int = Field(10, description="库存阈值")
     api_key: str = Field("", description="API Key")
+
+
+class TokenRefreshSettingsRequest(BaseModel):
+    """Token 自动刷新设置请求"""
+    interval_minutes: int = Field(30, ge=5, le=1440, description="定时刷新间隔（分钟）")
+    window_hours: int = Field(2, ge=1, le=24, description="过期前提前刷新窗口（小时）")
+    client_id: str = Field("", description="OAuth Client ID（用于 RT 刷新）")
 
 
 @router.post("/settings/proxy")
@@ -1470,6 +1480,53 @@ async def update_webhook_settings(
 
     except Exception as e:
         logger.error(f"更新配置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )
+
+
+@router.post("/settings/token-refresh")
+async def update_token_refresh_settings(
+    token_data: TokenRefreshSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新 Token 自动刷新设置。"""
+    try:
+        from app.main import configure_proactive_refresh_job
+        from app.services.settings import settings_service
+
+        logger.info(
+            "管理员更新 Token 自动刷新配置: interval=%s, window=%s",
+            token_data.interval_minutes,
+            token_data.window_hours,
+        )
+
+        settings = {
+            "token_refresh_interval_minutes": str(token_data.interval_minutes),
+            "token_refresh_window_hours": str(token_data.window_hours),
+            "token_refresh_client_id": token_data.client_id.strip(),
+        }
+
+        success = await settings_service.update_settings(db, settings)
+        if not success:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "保存失败"}
+            )
+
+        interval = configure_proactive_refresh_job(token_data.interval_minutes)
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": f"Token 自动刷新配置已保存（当前间隔: {interval} 分钟）",
+                "interval": interval
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"更新 Token 自动刷新设置失败: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": f"更新失败: {str(e)}"}

@@ -36,3 +36,6 @@ pytz>=2023.3
 
 # Excel Export
 xlsxwriter>=3.1.9
+
+# Scheduler
+APScheduler>=3.10.4
