@@ -1,6 +1,6 @@
-# GPT Team 管理和兑换码自动邀请系统
+# GPT Team 车位管理与兑换系统
 
-一个基于 FastAPI 的 ChatGPT Team 账号管理系统，支持管理员批量管理 Team 账号，用户通过兑换码自动加入 Team。
+一个基于 FastAPI 的 ChatGPT Team 管理系统，围绕「账号导入 → 兑换分配 → 质保售后 → 库存预警」完整流程设计，适合需要稳定管理 Team 车位与兑换业务的场景。
 
 ## 🚀 Docker 一键部署 & 更新
 
@@ -21,15 +21,17 @@ git pull && docker compose down && docker compose up -d --build
 
 ### 管理员功能
 - **Team 账号管理**
-  - 单个/批量导入 Team 账号（支持任意格式的 AT Token）
-  - 智能识别和提取 AT Token、邮箱、Account ID
+  - 单个/批量导入 Team 账号（支持 Access Token / Refresh Token / Session Token / Client ID）
+  - 智能识别和提取 AT Token、邮箱、Account ID（支持从混合文本中提取）
   - 自动同步 Team 信息（名称、订阅计划、到期时间、成员数）
   - Team 成员管理（查看、添加、删除成员）
   - Team 状态监控（可用/已满/已过期/错误）
+  - 支持 OAuth 授权链接生成与回调解析，便于获取和整理导入凭据
 
 - **兑换码管理**
   - 单个/批量生成兑换码
   - 自定义兑换码和有效期
+  - 支持质保兑换码（可配置质保天数）
   - 兑换码状态筛选（未使用/已使用/已过期）
   - 导出兑换码为文本文件
   - 删除未使用的兑换码
@@ -43,12 +45,19 @@ git pull && docker compose down && docker compose up -d --build
   - 代理配置（HTTP/SOCKS5）
   - 管理员密码修改
   - 日志级别动态调整
-  - **库存预警 Webhook** (支持库存不足时自动通知第三方系统补货)
+  - Token 预刷新频率与刷新窗口配置（降低过期导致的可用性问题）
+  - **库存预警 Webhook**（基于剩余可用车位自动通知补货系统）
+
+- **售后与风控能力**
+  - 质保查询：支持按邮箱或兑换码追溯历史记录
+  - 设备身份验证：支持用户一键开启 Device Code Auth
+  - Team 封禁关联追踪：辅助判断是否可复用或重新分配
 
 ### 自动化与集成
 - **库存预警与自动导入**
   - 当可用兑换码低于设置阈值时，自动触发 Webhook 通知
   - 支持第三方程序通过 API 自动导入新 Team 账号
+  - 内置定时任务：Token 预刷新 + Team 周期状态同步（默认 7 天维度）
   - 详细对接说明见 [integration_docs.md](integration_docs.md)
 
 ### 用户功能
@@ -66,6 +75,7 @@ git pull && docker compose down && docker compose up -d --build
 - **数据库**: SQLite + SQLAlchemy 2.0 + aiosqlite
 - **模板引擎**: Jinja2
 - **HTTP 客户端**: curl-cffi（模拟浏览器指纹，绕过 Cloudflare 防护）
+- **调度任务**: APScheduler（Token 预刷新、Team 周期同步）
 - **认证**: Session-based（bcrypt 密码哈希）
 - **加密**: cryptography（AES-256-GCM）
 - **JWT 解析**: PyJWT
@@ -297,10 +307,11 @@ team-manage/
    - 批量生成：设置数量和有效期
    - 生成后可复制或下载
 
-4. **查看使用记录**
+4. **查看使用记录与售后状态**
    - 进入"使用记录"
    - 可按邮箱、兑换码、Team ID、日期范围筛选
    - 查看统计数据（总数、今日、本周、本月）
+   - 需要售后时，可通过质保查询快速定位原始兑换记录
 
 5. **系统设置**
    - 进入"系统设置"
@@ -343,6 +354,8 @@ team-manage/
 - `GET /admin/teams/import` - Team 导入页面
 - `GET /admin/codes` - 兑换码列表
 - `GET /admin/records` - 使用记录
+- `POST /warranty/check` - 查询兑换码/邮箱质保状态
+- `POST /warranty/enable-device-auth` - 开启设备身份验证
 
 ## 🐛 故障排除
 
