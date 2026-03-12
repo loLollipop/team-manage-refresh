@@ -3,8 +3,12 @@ ChatGPT API 服务
 用于调用 ChatGPT 后端 API,实现 Team 成员管理功能
 """
 import asyncio
+import base64
+import hashlib
 import logging
 import random
+import secrets
+from urllib.parse import urlencode
 from typing import Optional, Dict, Any, List
 from curl_cffi.requests import AsyncSession
 from app.services.settings import settings_service
@@ -468,6 +472,80 @@ class ChatGPTService:
                 "error": f"refresh_token 刷新异常: {e}; primary={result.get('error')}",
                 "error_code": result.get("error_code")
             }
+
+    def create_oauth_authorize_url(
+        self,
+        client_id: str,
+        redirect_uri: str,
+        scope: str = "openid email profile offline_access",
+        audience: Optional[str] = None,
+        codex_cli_simplified_flow: bool = True,
+        id_token_add_organizations: bool = True,
+    ) -> Dict[str, str]:
+        """生成 OpenAI OAuth 授权链接（PKCE）。"""
+        verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode("utf-8")).digest()
+        ).decode("utf-8").rstrip("=")
+        state = secrets.token_urlsafe(24)
+
+        query_dict = {
+            "client_id": client_id,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "prompt": "login",
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": scope,
+            "state": state,
+            "codex_cli_simplified_flow": str(codex_cli_simplified_flow).lower(),
+            "id_token_add_organizations": str(id_token_add_organizations).lower(),
+        }
+        if audience:
+            query_dict["audience"] = audience
+
+        query = urlencode(query_dict)
+        return {
+            "authorize_url": f"https://auth.openai.com/oauth/authorize?{query}",
+            "code_verifier": verifier,
+            "state": state,
+        }
+
+    async def exchange_oauth_code(
+        self,
+        code: str,
+        client_id: str,
+        redirect_uri: str,
+        code_verifier: str,
+        db_session: DBAsyncSession,
+        identifier: str = "oauth_exchange"
+    ) -> Dict[str, Any]:
+        """用 OAuth code 兑换 access_token / refresh_token。"""
+        url = "https://auth.openai.com/oauth/token"
+        payload = {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": code_verifier,
+        }
+        headers = {"Content-Type": "application/json"}
+
+        result = await self._make_request("POST", url, headers, payload, db_session, identifier)
+        if not result["success"]:
+            return {
+                "success": False,
+                "error": f"code 换 token 失败: {result.get('error', '未知错误')}"
+            }
+
+        data = result.get("data", {})
+        return {
+            "success": True,
+            "access_token": data.get("access_token"),
+            "refresh_token": data.get("refresh_token"),
+            "id_token": data.get("id_token"),
+            "data": data,
+        }
 
     async def clear_session(self, identifier: Optional[str] = None):
         """清理指定身份的会话，若不提供则清理所有"""

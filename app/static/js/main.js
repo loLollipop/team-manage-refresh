@@ -95,6 +95,21 @@ function confirmAction(message) {
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
     checkAuthStatus();
+
+    // OAuth 一键导入按钮绑定（避免仅依赖内联 onclick）
+    const btnOneClickToken = document.getElementById('btnOneClickToken');
+    if (btnOneClickToken) {
+        btnOneClickToken.addEventListener('click', () => {
+            generateOAuthAuthorizeLink();
+        });
+    }
+
+    const btnParseOAuthCallback = document.getElementById('btnParseOAuthCallback');
+    if (btnParseOAuthCallback) {
+        btnParseOAuthCallback.addEventListener('click', () => {
+            parseOAuthCallbackAndFill();
+        });
+    }
 });
 
 // 检查认证状态
@@ -171,6 +186,138 @@ function toggleWarrantyDays(checkbox, targetId) {
 }
 
 // === Team 导入逻辑 ===
+
+
+
+async function copyTextSilently(text) {
+    if (!text) return false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (err) {
+        console.error('silent copy failed:', err);
+    }
+
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return ok;
+    } catch (err) {
+        console.error('silent fallback copy failed:', err);
+        return false;
+    }
+}
+
+function unwrapApiPayload(result) {
+    if (!result || !result.success) return null;
+    const body = result.data || {};
+    if (body && typeof body === 'object' && body.data && typeof body.data === 'object') {
+        return body.data;
+    }
+    return body;
+}
+
+let oauthDraft = {
+    codeVerifier: '',
+    state: '',
+    clientId: ''
+};
+
+async function generateOAuthAuthorizeLink() {
+    const form = document.getElementById('singleImportForm');
+    if (!form) return;
+
+    const formClientId = form.clientId ? form.clientId.value.trim() : '';
+    const defaultClientId = 'app_EMoamEEZ73f0CkXaXp7hrann';
+    const clientId = formClientId || defaultClientId;
+
+    showToast('正在生成并复制授权链接...', 'info');
+
+    try {
+        const result = await apiCall('/admin/oauth/openai/authorize', {
+            method: 'POST',
+            body: JSON.stringify({
+                client_id: clientId,
+                redirect_uri: 'http://localhost:1455/auth/callback'
+            })
+        });
+
+        if (!result.success) {
+            showToast(result.error || '生成授权链接失败', 'error');
+            return;
+        }
+
+        const data = unwrapApiPayload(result) || {};
+        oauthDraft.codeVerifier = data.code_verifier || '';
+        oauthDraft.state = data.state || '';
+        oauthDraft.clientId = data.client_id || clientId;
+
+        document.getElementById('oauthAuthorizeUrlOutput').value = data.authorize_url || '';
+        if (form.clientId) form.clientId.value = oauthDraft.clientId;
+
+        const authUrl = (data.authorize_url || '').trim();
+        if (!authUrl) {
+            showToast('授权链接生成失败，请重试', 'error');
+            return;
+        }
+
+        const copied = await copyTextSilently(authUrl);
+        if (copied) {
+            showToast('链接已复制，去浏览器登录后粘贴回调', 'success');
+        } else {
+            showToast('授权链接已生成，请手动复制', 'warning');
+        }
+    } catch (error) {
+        showToast('生成授权链接失败', 'error');
+    }
+}
+
+async function parseOAuthCallbackAndFill() {
+    const callbackText = document.getElementById('oauthCallbackInput').value.trim();
+    const form = document.getElementById('singleImportForm');
+
+    if (!callbackText) {
+        showToast('请先粘贴回调 URL', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/admin/oauth/openai/parse-callback', {
+            method: 'POST',
+            body: JSON.stringify({
+                callback_text: callbackText,
+                code_verifier: oauthDraft.codeVerifier || null,
+                expected_state: oauthDraft.state || null,
+                client_id: ((form.clientId ? form.clientId.value.trim() : '') || oauthDraft.clientId || 'app_EMoamEEZ73f0CkXaXp7hrann'),
+                redirect_uri: 'http://localhost:1455/auth/callback'
+            })
+        });
+
+        if (!result.success) {
+            showToast(result.error || '解析回调失败', 'error');
+            return;
+        }
+
+        const data = unwrapApiPayload(result) || {};
+        if (form.accessToken && data.access_token) form.accessToken.value = data.access_token;
+        if (form.refreshToken && data.refresh_token) form.refreshToken.value = data.refresh_token;
+        if (form.clientId && data.client_id) form.clientId.value = data.client_id;
+
+        showToast('已自动填充 Token 信息，请确认后导入', 'success');
+    } catch (error) {
+        showToast('解析回调失败', 'error');
+    }
+}
 
 async function handleSingleImport(event) {
     event.preventDefault();
@@ -678,4 +825,11 @@ async function deleteMember(teamId, userId, email, inModal = false) {
     } catch (error) {
         showToast('网络错误', 'error');
     }
+}
+
+
+// 确保内联 onclick 在任何加载模式下都可调用
+if (typeof window !== 'undefined') {
+    window.generateOAuthAuthorizeLink = generateOAuthAuthorizeLink;
+    window.parseOAuthCallbackAndFill = parseOAuthCallbackAndFill;
 }
