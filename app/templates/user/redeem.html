@@ -5,105 +5,120 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPT Team 兑换</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/user.css') }}">
-    <!-- Lucide Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/user.css') }}?v=20260313-2">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>GPT Team 兑换</h1>
-            <p class="subtitle">使用兑换码加入 ChatGPT Team</p>
-            {% if remaining_spots is not none %}
-            <div class="spots-badge"
-                style="display: inline-flex; align-items: center; gap: 6px; background: var(--primary-soft); padding: 6px 12px; border-radius: 20px; font-size: 0.875rem; color: var(--primary); margin-top: 10px; border: 1px solid var(--border-base);">
-                <i data-lucide="users" style="width: 14px; height: 14px;"></i> 剩余车位: {{ remaining_spots }}
-            </div>
-            {% endif %}
-        </div>
+<body class="redeem-page">
+    <div class="bg-scene" aria-hidden="true">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+    <div class="grid-overlay" aria-hidden="true"></div>
 
-        <!-- 步骤1: 输入兑换码 -->
-        <div id="step1" class="step active">
-            <div class="card">
-                <h2>输入兑换信息</h2>
-                <form id="verifyForm">
-                    <div class="form-group">
-                        <label for="email">邮箱地址</label>
-                        <input type="email" id="email" name="email" required placeholder="请输入您的邮箱地址" class="form-input">
-                        <p class="form-help">请填写您要接受邀请的账号的邮箱，邀请将发送到此邮箱</p>
-                    </div>
+    <div class="page-wrap">
+        <div class="container full-layout">
+            <header class="hero-header">
+                <div class="logo-badge">ChatGPT Team · 官方授权</div>
+                <h1>GPT Team 兑换中心</h1>
+                <p class="hero-subtitle">使用兑换码自助上车，或在质保期内查询重兑资格</p>
+                {% if remaining_spots is not none %}
+                <div class="spots-badge">
+                    <i data-lucide="users" style="width: 14px; height: 14px;"></i>
+                    剩余名额 <span class="seats-count">{{ remaining_spots }}</span> 位
+                </div>
+                {% endif %}
+            </header>
 
-                    <div class="form-group">
-                        <label for="code">兑换码</label>
-                        <input type="text" id="code" name="code" required placeholder="请输入兑换码" class="form-input">
-                    </div>
-
-                    <button type="submit" class="btn btn-primary" id="verifyBtn">
-                        <i data-lucide="shield-check"></i> 验证兑换码
+            <section class="main-shell">
+                <nav class="top-nav-tabs">
+                    <button type="button" id="tabRedeem" class="top-tab active" data-tab="redeem">
+                        <i data-lucide="gift"></i> 自助上车
                     </button>
-                </form>
-
-                <!-- 质保查询区域 -->
-                <div class="warranty-section"
-                    style="margin-top: 40px; padding-top: 30px; border-top: 1px solid var(--border-base);">
-                    <h3 style="font-size: 1.1rem; margin-bottom: 15px; color: var(--text-primary);">
-                        <i data-lucide="shield" style="width: 18px; height: 18px; vertical-align: middle;"></i>
-                        质保查询
-                    </h3>
-                    <p class="form-help" style="margin-bottom: 15px;">
-                        如果您使用质保兑换码加入的 Team 被封号，可以在质保期内（一个月）重复使用原兑换码
-                    </p>
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <input type="text" id="warrantyInput" placeholder="请输入原兑换码或邮箱进行查询" class="form-input">
-                    </div>
-                    <button type="button" class="btn btn-secondary" id="checkWarrantyBtn" onclick="checkWarranty()"
-                        style="width: 100%;">
-                        <i data-lucide="search"></i> 查询质保状态
+                    <button type="button" id="tabWarranty" class="top-tab" data-tab="warranty">
+                        <i data-lucide="shield"></i> 质保查询
                     </button>
-                </div>
-            </div>
-        </div>
+                </nav>
 
-        <!-- 质保查询结果 -->
-        <div id="warrantyResult" class="step" style="display: none;">
-            <div class="card">
-                <h2>质保查询结果</h2>
-                <div id="warrantyContent">
-                    <!-- 质保结果将通过JavaScript动态生成 -->
-                </div>
-                <div class="actions" style="margin-top: 20px;">
-                    <button onclick="backToStep1()" class="btn btn-secondary">返回</button>
-                </div>
-            </div>
-        </div>
+                <div id="step1" class="step active">
+                    <section id="redeemPanel" class="tab-panel active">
+                        <div class="panel-head">
+                            <h2>激活 ChatGPT Team</h2>
+                            <p>填写邮箱与兑换码后，系统将自动分配可用 Team 并发送邀请。</p>
+                        </div>
 
-        <!-- 步骤2: 选择Team (已废弃，保留占位符防止 JS 报错) -->
-        <div id="step2" class="step" style="display: none;">
-            <div class="card">
-                <h2>选择 Team</h2>
-                <div id="teamsList" class="teams-list"></div>
-                <div class="actions">
-                    <button onclick="backToStep1()" class="btn btn-secondary">返回</button>
-                    <button onclick="autoSelectTeam()" class="btn btn-primary">自动选择</button>
-                </div>
-            </div>
-        </div>
+                        <form id="verifyForm" class="stack-form">
+                            <div class="form-group">
+                                <label for="email">邮箱地址</label>
+                                <div class="field-wrap">
+                                    <i data-lucide="mail" class="field-icon"></i>
+                                    <input type="email" id="email" name="email" required placeholder="your@email.com" class="form-input">
+                                </div>
+                            </div>
 
-        <!-- 步骤3: 兑换结果 -->
-        <div id="step3" class="step">
-            <div class="card">
-                <div id="resultContent">
-                    <!-- 结果内容将通过JavaScript动态生成 -->
+                            <div class="form-group">
+                                <label for="code">兑换码</label>
+                                <div class="field-wrap">
+                                    <i data-lucide="key-round" class="field-icon"></i>
+                                    <input type="text" id="code" name="code" required placeholder="请输入兑换码" class="form-input">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary" id="verifyBtn">
+                                <i data-lucide="shield-check"></i> 验证兑换码
+                            </button>
+                        </form>
+                    </section>
+
+                    <section id="warrantyPanel" class="tab-panel">
+                        <div class="panel-head">
+                            <h2>质保查询</h2>
+                            <p>若您加入的 Team 失效，可在质保期内查询并自助处理。</p>
+                        </div>
+
+                        <div class="warranty-query-row">
+                            <div class="field-wrap">
+                                <i data-lucide="search" class="field-icon"></i>
+                                <input type="text" id="warrantyInput" placeholder="请输入原兑换码或邮箱进行查询" class="form-input">
+                            </div>
+                            <button type="button" class="btn btn-secondary" id="checkWarrantyBtn" onclick="checkWarranty()">
+                                <i data-lucide="search-check"></i> 查询质保状态
+                            </button>
+                        </div>
+
+                        <div id="warrantyResultContainer" class="warranty-result-container" style="display: none;">
+                            <div id="warrantyContent"></div>
+                        </div>
+                    </section>
                 </div>
-            </div>
+
+                <div id="step2" class="step" style="display: none;">
+                    <div class="result-shell">
+                        <h2>选择 Team</h2>
+                        <div id="teamsList" class="teams-list"></div>
+                        <div class="actions">
+                            <button onclick="backToStep1()" class="btn btn-secondary">返回</button>
+                            <button onclick="autoSelectTeam()" class="btn btn-primary">自动选择</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="step3" class="step">
+                    <div class="result-shell">
+                        <div id="resultContent"></div>
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
 
-    <!-- Toast提示 -->
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', path='/js/redeem.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/redeem.js') }}?v=20260313-2"></script>
     <script>
         if (window.lucide) lucide.createIcons();
     </script>

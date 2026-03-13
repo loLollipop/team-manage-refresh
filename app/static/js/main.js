@@ -110,6 +110,13 @@ document.addEventListener('DOMContentLoaded', function () {
             parseOAuthCallbackAndFill();
         });
     }
+
+    const btnExportOAuthJson = document.getElementById('btnExportOAuthJson');
+    if (btnExportOAuthJson) {
+        btnExportOAuthJson.addEventListener('click', () => {
+            exportOAuthJsonTemplateFile();
+        });
+    }
 });
 
 // 检查认证状态
@@ -282,42 +289,123 @@ async function generateOAuthAuthorizeLink() {
     }
 }
 
-async function parseOAuthCallbackAndFill() {
+async function parseOAuthCallbackData() {
     const callbackText = document.getElementById('oauthCallbackInput').value.trim();
     const form = document.getElementById('singleImportForm');
 
     if (!callbackText) {
-        showToast('请先粘贴回调 URL', 'error');
-        return;
+        throw new Error('请先粘贴回调 URL');
     }
 
+    const result = await apiCall('/admin/oauth/openai/parse-callback', {
+        method: 'POST',
+        body: JSON.stringify({
+            callback_text: callbackText,
+            code_verifier: oauthDraft.codeVerifier || null,
+            expected_state: oauthDraft.state || null,
+            client_id: ((form.clientId ? form.clientId.value.trim() : '') || oauthDraft.clientId || 'app_EMoamEEZ73f0CkXaXp7hrann'),
+            redirect_uri: 'http://localhost:1455/auth/callback'
+        })
+    });
+
+    if (!result.success) {
+        throw new Error(result.error || '解析回调失败');
+    }
+
+    return unwrapApiPayload(result) || {};
+}
+
+function decodeJwtPayload(token) {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+
     try {
-        const result = await apiCall('/admin/oauth/openai/parse-callback', {
-            method: 'POST',
-            body: JSON.stringify({
-                callback_text: callbackText,
-                code_verifier: oauthDraft.codeVerifier || null,
-                expected_state: oauthDraft.state || null,
-                client_id: ((form.clientId ? form.clientId.value.trim() : '') || oauthDraft.clientId || 'app_EMoamEEZ73f0CkXaXp7hrann'),
-                redirect_uri: 'http://localhost:1455/auth/callback'
-            })
-        });
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+        const jsonText = decodeURIComponent(escape(window.atob(padded)));
+        return JSON.parse(jsonText);
+    } catch (error) {
+        return null;
+    }
+}
 
-        if (!result.success) {
-            showToast(result.error || '解析回调失败', 'error');
-            return;
-        }
+function toIsoStringWithOffset8(dateObj) {
+    if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return '';
+    const shifted = new Date(dateObj.getTime() + 8 * 60 * 60 * 1000);
+    const iso = shifted.toISOString().replace('Z', '+08:00');
+    return iso.slice(0, 19) + '+08:00';
+}
 
-        const data = unwrapApiPayload(result) || {};
+function buildOAuthJsonTemplate(parsedData) {
+    const accessToken = parsedData.access_token || '';
+    const refreshToken = parsedData.refresh_token || '';
+    const clientId = parsedData.client_id || '';
+    const raw = parsedData.raw || {};
+
+    const accessPayload = decodeJwtPayload(accessToken) || {};
+    const accessAuth = accessPayload['https://api.openai.com/auth'] || {};
+    const accessProfile = accessPayload['https://api.openai.com/profile'] || {};
+
+    const accountId = raw.account_id || accessAuth.chatgpt_account_id || '';
+    const email = raw.email || accessProfile.email || '';
+    const exp = accessPayload.exp ? new Date(accessPayload.exp * 1000) : null;
+
+    return {
+        access_token: accessToken,
+        account_id: accountId,
+        disabled: false,
+        email,
+        expired: exp ? toIsoStringWithOffset8(exp) : '',
+        id_token: raw.id_token || '',
+        last_refresh: toIsoStringWithOffset8(new Date()),
+        refresh_token: refreshToken,
+        type: 'codex',
+        client_id: clientId
+    };
+}
+
+function downloadJsonFile(payload, filename) {
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function exportOAuthJsonTemplateFile() {
+    try {
+        const data = await parseOAuthCallbackData();
+        const payload = buildOAuthJsonTemplate(data);
+        const filename = `team-oauth-${Date.now()}.json`;
+        downloadJsonFile(payload, filename);
+        showToast('JSON 文件已导出', 'success');
+    } catch (error) {
+        showToast(error.message || '导出 JSON 失败', 'error');
+    }
+}
+
+async function parseOAuthCallbackAndFill() {
+    const form = document.getElementById('singleImportForm');
+
+    try {
+        const data = await parseOAuthCallbackData();
         if (form.accessToken && data.access_token) form.accessToken.value = data.access_token;
         if (form.refreshToken && data.refresh_token) form.refreshToken.value = data.refresh_token;
         if (form.clientId && data.client_id) form.clientId.value = data.client_id;
 
         showToast('已自动填充 Token 信息，请确认后导入', 'success');
     } catch (error) {
-        showToast('解析回调失败', 'error');
+        showToast(error.message || '解析回调失败', 'error');
     }
 }
+
 
 async function handleSingleImport(event) {
     event.preventDefault();
@@ -481,6 +569,143 @@ async function handleBatchImport(event) {
     } finally {
         submitButton.disabled = false;
         submitButton.textContent = '批量导入';
+    }
+}
+
+async function handleJsonFileImport() {
+    const fileInput = document.getElementById('jsonImportFile');
+    const form = document.getElementById('batchImportForm');
+    const submitButton = form ? form.querySelector('button[type="submit"]') : null;
+
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast('请先选择 JSON 文件', 'error');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    let content = '';
+    try {
+        content = await file.text();
+        JSON.parse(content);
+    } catch (error) {
+        showToast('JSON 文件格式无效', 'error');
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'JSON 导入中...';
+    }
+
+    // UI 元素
+    const progressContainer = document.getElementById('batchProgressContainer');
+    const progressBar = document.getElementById('batchProgressBar');
+    const progressStage = document.getElementById('batchProgressStage');
+    const progressPercent = document.getElementById('batchProgressPercent');
+    const successCountEl = document.getElementById('batchSuccessCount');
+    const failedCountEl = document.getElementById('batchFailedCount');
+    const resultsContainer = document.getElementById('batchResultsContainer');
+    const resultsDiv = document.getElementById('batchResults');
+    const finalSummaryEl = document.getElementById('batchFinalSummary');
+
+    // 重置 UI
+    progressContainer.style.display = 'block';
+    resultsContainer.style.display = 'none';
+    progressBar.style.width = '0%';
+    progressStage.textContent = '准备 JSON 导入...';
+    progressPercent.textContent = '0%';
+    successCountEl.textContent = '0';
+    failedCountEl.textContent = '0';
+    resultsDiv.innerHTML = '<table class="data-table"><thead><tr><th>邮箱</th><th>状态</th><th>消息</th></tr></thead><tbody id="batchResultsBody"></tbody></table>';
+    const resultsBody = document.getElementById('batchResultsBody');
+
+    try {
+        const response = await fetch('/admin/teams/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                import_type: 'json',
+                content
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || errorData.detail || '请求失败');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+
+                    if (data.type === 'start') {
+                        progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
+                    } else if (data.type === 'progress') {
+                        const percent = Math.round((data.current / data.total) * 100);
+                        progressBar.style.width = `${percent}%`;
+                        progressPercent.textContent = `${percent}%`;
+                        progressStage.textContent = `正在导入 ${data.current}/${data.total}...`;
+                        successCountEl.textContent = data.success_count;
+                        failedCountEl.textContent = data.failed_count;
+
+                        if (data.last_result) {
+                            resultsContainer.style.display = 'block';
+                            const res = data.last_result;
+                            const statusClass = res.success ? 'text-success' : 'text-danger';
+                            const statusText = res.success ? '成功' : '失败';
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${res.email}</td>
+                                <td class="${statusClass}">${statusText}</td>
+                                <td>${res.success ? (res.message || '导入成功') : res.error}</td>
+                            `;
+                            resultsBody.insertBefore(row, resultsBody.firstChild);
+                        }
+                    } else if (data.type === 'finish') {
+                        progressStage.textContent = '导入完成';
+                        progressBar.style.width = '100%';
+                        progressPercent.textContent = '100%';
+                        finalSummaryEl.textContent = `总数: ${data.total} | 成功: ${data.success_count} | 失败: ${data.failed_count}`;
+
+                        if (data.failed_count === 0) {
+                            showToast('全部导入成功！', 'success');
+                        } else {
+                            showToast(`导入完成，成功 ${data.success_count} 条，失败 ${data.failed_count} 条`, 'warning');
+                        }
+
+                        if (data.success_count > 0) {
+                            setTimeout(() => location.reload(), 3000);
+                        }
+                    } else if (data.type === 'error') {
+                        showToast(data.error, 'error');
+                    }
+                } catch (e) {
+                    console.error('解析流数据失败:', e, line);
+                }
+            }
+        }
+    } catch (error) {
+        showToast(error.message || '网络错误', 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = '批量导入';
+        }
     }
 }
 
@@ -832,4 +1057,6 @@ async function deleteMember(teamId, userId, email, inModal = false) {
 if (typeof window !== 'undefined') {
     window.generateOAuthAuthorizeLink = generateOAuthAuthorizeLink;
     window.parseOAuthCallbackAndFill = parseOAuthCallbackAndFill;
+    window.exportOAuthJsonTemplateFile = exportOAuthJsonTemplateFile;
+    window.handleJsonFileImport = handleJsonFileImport;
 }

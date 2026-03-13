@@ -18,6 +18,7 @@ let currentEmail = '';
 let currentCode = '';
 let availableTeams = [];
 let selectedTeamId = null;
+let currentTopTab = 'redeem';
 
 // Toast提示函数
 function showToast(message, type = 'info') {
@@ -52,11 +53,36 @@ function showStep(stepNumber) {
     }
 }
 
+function switchTopTab(tabName) {
+    currentTopTab = tabName;
+
+    const redeemPanel = document.getElementById('redeemPanel');
+    const warrantyPanel = document.getElementById('warrantyPanel');
+    const tabRedeem = document.getElementById('tabRedeem');
+    const tabWarranty = document.getElementById('tabWarranty');
+
+    if (redeemPanel) redeemPanel.classList.toggle('active', tabName === 'redeem');
+    if (warrantyPanel) warrantyPanel.classList.toggle('active', tabName === 'warranty');
+    if (tabRedeem) tabRedeem.classList.toggle('active', tabName === 'redeem');
+    if (tabWarranty) tabWarranty.classList.toggle('active', tabName === 'warranty');
+}
+
 // 返回步骤1
 function backToStep1() {
     showStep(1);
+    switchTopTab('redeem');
     selectedTeamId = null;
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const tabRedeem = document.getElementById('tabRedeem');
+    const tabWarranty = document.getElementById('tabWarranty');
+
+    if (tabRedeem) tabRedeem.addEventListener('click', () => switchTopTab('redeem'));
+    if (tabWarranty) tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
+
+    switchTopTab('redeem');
+});
 
 // 步骤1: 验证兑换码并直接兑换
 document.getElementById('verifyForm').addEventListener('submit', async (e) => {
@@ -328,6 +354,11 @@ async function checkWarranty() {
     }
 
     const checkBtn = document.getElementById('checkWarrantyBtn');
+    const warrantyResultContainer = document.getElementById('warrantyResultContainer');
+    if (warrantyResultContainer) {
+        warrantyResultContainer.style.display = 'none';
+    }
+
     checkBtn.disabled = true;
     checkBtn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 查询中...';
     if (window.lucide) lucide.createIcons();
@@ -540,9 +571,13 @@ function showWarrantyResult(data) {
 
     if (window.lucide) lucide.createIcons();
 
-    // 显示质保结果区域
-    document.querySelectorAll('.step').forEach(step => step.style.display = 'none');
-    document.getElementById('warrantyResult').style.display = 'block';
+    // 在顶部导航下展示质保结果
+    showStep(1);
+    switchTopTab('warranty');
+    const warrantyResultContainer = document.getElementById('warrantyResultContainer');
+    if (warrantyResultContainer) {
+        warrantyResultContainer.style.display = 'block';
+    }
 }
 
 // 复制质保兑换码
@@ -644,19 +679,13 @@ async function enableUserDeviceAuth(teamId, code, email) {
 // 从成功页面跳转到质保查询
 function goToWarrantyFromSuccess() {
     const warrantyInput = document.getElementById('warrantyInput');
-    // 优先填入邮箱，因为邮箱查询更全面
-    warrantyInput.value = currentEmail || currentCode || '';
-
-    // 切换视图
-    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-    document.getElementById('step1').classList.add('active');
-    document.getElementById('step3').style.display = 'none';
-
-    // 滚动到质保区域
-    const warrantySection = document.querySelector('.warranty-section');
-    if (warrantySection) {
-        warrantySection.scrollIntoView({ behavior: 'smooth' });
+    if (warrantyInput) {
+        // 优先填入邮箱，因为邮箱查询更全面
+        warrantyInput.value = currentEmail || currentCode || '';
     }
+
+    showStep(1);
+    switchTopTab('warranty');
 
     // 自动触发查询
     checkWarranty();

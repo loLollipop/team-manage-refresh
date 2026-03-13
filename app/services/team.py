@@ -3,6 +3,7 @@ Team 管理服务
 用于管理 Team 账号的导入、同步、成员管理等功能
 """
 import logging
+import json
 import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
@@ -893,6 +894,107 @@ class TeamService:
                 "type": "error",
                 "error": f"批量导入过程中发生异常: {str(e)}"
             }
+
+    async def import_team_json(
+        self,
+        json_text: Optional[str],
+        db_session: AsyncSession
+    ):
+        """从 JSON 文本批量导入 Team（流式返回进度）。"""
+        try:
+            if not json_text:
+                yield {"type": "error", "error": "JSON 内容不能为空"}
+                return
+
+            try:
+                payload = json.loads(json_text)
+            except Exception as e:
+                yield {"type": "error", "error": f"JSON 解析失败: {e}"}
+                return
+
+            raw_items = []
+            if isinstance(payload, list):
+                raw_items = payload
+            elif isinstance(payload, dict):
+                if isinstance(payload.get("teams"), list):
+                    raw_items = payload.get("teams")
+                else:
+                    raw_items = [payload]
+            else:
+                yield {"type": "error", "error": "JSON 顶层必须是对象或数组"}
+                return
+
+            normalized_items = []
+            for item in raw_items:
+                if not isinstance(item, dict):
+                    continue
+
+                access_token = item.get("access_token") or item.get("token")
+                refresh_token = item.get("refresh_token")
+                session_token = item.get("session_token")
+
+                if not any([access_token, refresh_token, session_token]):
+                    continue
+
+                normalized_items.append({
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "session_token": session_token,
+                    "client_id": item.get("client_id"),
+                    "email": item.get("email"),
+                    "account_id": item.get("account_id")
+                })
+
+            if not normalized_items:
+                yield {"type": "error", "error": "JSON 中未找到可导入的 Team 项（需包含 AT/RT/ST）"}
+                return
+
+            total = len(normalized_items)
+            yield {"type": "start", "total": total}
+
+            success_count = 0
+            failed_count = 0
+            for i, data in enumerate(normalized_items):
+                result = await self.import_team_single(
+                    access_token=data.get("access_token"),
+                    db_session=db_session,
+                    email=data.get("email"),
+                    account_id=data.get("account_id"),
+                    refresh_token=data.get("refresh_token"),
+                    session_token=data.get("session_token"),
+                    client_id=data.get("client_id")
+                )
+
+                if result["success"]:
+                    success_count += 1
+                else:
+                    failed_count += 1
+
+                yield {
+                    "type": "progress",
+                    "current": i + 1,
+                    "total": total,
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "last_result": {
+                        "email": result.get("email") or data.get("email") or "未知",
+                        "account_id": data.get("account_id", "未指定"),
+                        "success": result["success"],
+                        "team_id": result["team_id"],
+                        "message": result["message"],
+                        "error": result["error"]
+                    }
+                }
+
+            yield {
+                "type": "finish",
+                "total": total,
+                "success_count": success_count,
+                "failed_count": failed_count
+            }
+        except Exception as e:
+            logger.error(f"JSON 导入失败: {e}")
+            yield {"type": "error", "error": f"JSON 导入过程中发生异常: {str(e)}"}
 
     async def sync_team_info(
         self,

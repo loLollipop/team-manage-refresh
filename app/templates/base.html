@@ -121,7 +121,8 @@
                             <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后把完整回调 URL 粘贴到这里"></textarea>
                             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                                 <button type="button" id="btnParseOAuthCallback" class="btn btn-secondary">解析并自动填充</button>
-                                <small class="form-text" style="margin: 0; align-self: center;">粘贴回调后自动解析并填充 AT / RT / Client ID。</small>
+                                <button type="button" id="btnExportOAuthJson" class="btn btn-secondary">导出 JSON 文件</button>
+                                <small class="form-text" style="margin: 0; align-self: center;">粘贴回调后可自动填充 AT / RT / Client ID，或导出 JSON 模板文件。</small>
                             </div>
                         </div>
                         <div class="form-group">
@@ -162,6 +163,14 @@
 
                 <div id="batchImport" class="import-panel" style="display: none;">
                     <form id="batchImportForm" onsubmit="handleBatchImport(event)">
+                        <div class="form-group" style="padding: 0.75rem; border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 1rem;">
+                            <label style="margin-bottom: 0.5rem; display: block;">JSON 文件导入</label>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                <input type="file" id="jsonImportFile" accept=".json,application/json" class="form-control" style="max-width: 300px;">
+                                <button type="button" class="btn btn-secondary" onclick="handleJsonFileImport()">导入 JSON</button>
+                                <small class="form-text" style="margin: 0;">支持单对象、对象数组，或 {"teams": [...]} 格式。</small>
+                            </div>
+                        </div>
                         <div class="form-group">
                             <label>批量导入内容 <span class="required">*</span></label>
                             <textarea name="batchContent" class="form-control" rows="8" placeholder="一行一个 AT Token..."

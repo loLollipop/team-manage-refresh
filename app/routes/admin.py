@@ -337,6 +337,19 @@ async def team_import(
                 media_type="application/x-ndjson"
             )
 
+        elif import_data.import_type == "json":
+            async def progress_generator():
+                async for status_item in team_service.import_team_json(
+                    json_text=import_data.content,
+                    db_session=db
+                ):
+                    yield json.dumps(status_item, ensure_ascii=False) + "\n"
+
+            return StreamingResponse(
+                progress_generator(),
+                media_type="application/x-ndjson"
+            )
+
         else:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
