@@ -65,6 +65,108 @@ body {
     min-height: 100vh;
 }
 
+
+/* Admin dark style (inspired by redeem page) */
+body.admin-theme {
+    --primary: #4f8ef7;
+    --primary-hover: #3d7fe9;
+    --primary-soft: rgba(79, 142, 247, 0.16);
+    --bg-main: #060c1f;
+    --bg-surface: rgba(10, 20, 45, 0.86);
+    --text-main: #e8edf7;
+    --text-muted: #95a6bf;
+    --text-dim: #6f8098;
+    --border-base: rgba(148, 163, 184, 0.24);
+    --success-soft: rgba(16, 185, 129, 0.18);
+    --warning-soft: rgba(245, 158, 11, 0.18);
+    --danger-soft: rgba(239, 68, 68, 0.18);
+    background: radial-gradient(130% 120% at 0% 0%, #111b3a 0%, #060c1f 52%, #040714 100%);
+    color: var(--text-main);
+}
+
+body.admin-theme::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(79, 142, 247, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79, 142, 247, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.72), transparent 90%);
+    z-index: 0;
+}
+
+body.admin-theme .navbar,
+body.admin-theme .sidebar,
+body.admin-theme .footer,
+body.admin-theme .main-content,
+body.admin-theme .table-container,
+body.admin-theme .content-section,
+body.admin-theme .card,
+body.admin-theme .modal,
+body.admin-theme .dropdown-menu,
+body.admin-theme .input-group-clean,
+body.admin-theme .form-control,
+body.admin-theme .form-control-sm,
+body.admin-theme .btn-secondary {
+    background-color: var(--bg-surface);
+    border-color: var(--border-base);
+}
+
+body.admin-theme .navbar,
+body.admin-theme .sidebar,
+body.admin-theme .footer {
+    backdrop-filter: blur(14px);
+}
+
+body.admin-theme .main-container,
+body.admin-theme .main-content,
+body.admin-theme .content-section,
+body.admin-theme .table-container,
+body.admin-theme .modal,
+body.admin-theme .dropdown-menu,
+body.admin-theme .footer,
+body.admin-theme .page-header {
+    position: relative;
+    z-index: 1;
+}
+
+body.admin-theme .menu-item a:hover,
+body.admin-theme .data-table tbody tr:hover td,
+body.admin-theme .dropdown-item:hover {
+    background: rgba(79, 142, 247, 0.12);
+}
+
+body.admin-theme .menu-item.active a {
+    background: linear-gradient(135deg, rgba(79, 142, 247, 0.28), rgba(123, 94, 167, 0.28));
+    color: #eaf1ff;
+    box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.35);
+}
+
+body.admin-theme .btn-primary {
+    background: linear-gradient(135deg, #4f8ef7, #7b5ea7);
+    border-color: transparent;
+}
+
+body.admin-theme .btn-primary:hover {
+    background: linear-gradient(135deg, #5896fb, #8667b5);
+}
+
+body.admin-theme .stat-card,
+body.admin-theme .status-badge.status-banned {
+    background: rgba(255, 255, 255, 0.02);
+    border-color: var(--border-base);
+}
+
+body.admin-theme .status-badge.status-banned {
+    color: #cbd5e1;
+}
+
+body.admin-theme .data-table th {
+    background: rgba(10, 20, 45, 0.98);
+}
+
 /* Animations */
 @keyframes fadeInUp {
     from {

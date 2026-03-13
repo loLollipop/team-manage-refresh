@@ -12,7 +12,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 text-slate-900">
+<body class="bg-gray-50 text-slate-900{% if user %} admin-theme{% endif %}">
     {% if user %}
     <!-- 导航栏 -->
     <nav class="navbar">
