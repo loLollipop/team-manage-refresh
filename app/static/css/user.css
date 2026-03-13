@@ -298,6 +298,9 @@ body {
   color: #f8fbff;
   background: rgba(255, 255, 255, 0.08);
 }
+.toast.show { display: block; }
+.toast.success { border-left: 4px solid var(--success); }
+.toast.error { border-left: 4px solid var(--danger); }
 
 .warranty-query-row {
   margin-top: 22px;
@@ -397,6 +400,9 @@ body {
   padding: 10px 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
+.result-detail-item:last-child { border-bottom: none; }
+.result-detail-label { font-size: 0.875rem; color: var(--text-muted); }
+.result-detail-value { font-size: 0.875rem; font-weight: 600; }
 
 .result-detail-item:last-child { border-bottom: none; }
 .result-detail-label { color: var(--text-secondary); }
