@@ -637,8 +637,7 @@ async function handleBatchImport(event) {
         while (true) {
             const { value, done } = await reader.read();
             if (done) {
-                // 处理最后一段可能没有 
- 结尾的残余数据
+                // 处理最后一段可能没有 \n 结尾的残余数据
                 if (buffer && buffer.trim()) {
                     processStreamLine(buffer);
                 }
@@ -646,8 +645,7 @@ async function handleBatchImport(event) {
             }
 
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('
-');
+            const lines = buffer.split('\n');
             buffer = lines.pop() || '';
 
             for (const line of lines) {

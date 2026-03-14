@@ -239,8 +239,9 @@
                             data-id="{{ team.id }}" title="一键开启设备代码验证">
                             <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
                         </button>
-                        <button class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
-                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除">
+                        <button type="button" class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除"
+                            onclick='deleteTeam({{ team.id }}, {{ team.email|tojson }})'>
                             <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
                         </button>
                     </div>
@@ -443,15 +444,6 @@
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-id');
                 refreshTeam(id);
-            });
-        });
-
-        // 绑定删除按钮
-        document.querySelectorAll('.btn-delete-team').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                const email = btn.getAttribute('data-email');
-                deleteTeam(id, email);
             });
         });
 
