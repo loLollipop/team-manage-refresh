@@ -963,8 +963,8 @@ function copyBatchCodes() {
 }
 
 function copyWelfareCode() {
-    const el = document.getElementById('welfareCommonCodeText');
-    const code = el ? el.textContent.trim() : '';
+    const el = document.getElementById('welfareCommonCodeValue');
+    const code = el ? String(el.value || '').trim() : '';
     if (!code || code === '-') {
         showToast('暂无可复制的通用兑换码', 'warning');
         return;
@@ -1190,8 +1190,8 @@ async function generateWelfareCode() {
         const result = await apiCall('/admin/welfare/code/generate', { method: 'POST' });
         if (!result.success) throw new Error(result.error || '生成失败');
 
-        const codeTextEl = document.getElementById('welfareCommonCodeText');
-        if (codeTextEl) codeTextEl.textContent = result.code || '-';
+        const codeValueEl = document.getElementById('welfareCommonCodeValue');
+        if (codeValueEl) codeValueEl.value = result.code || '';
 
         const usageTextEl = document.getElementById('welfareCodeUsageText');
         if (usageTextEl) {
@@ -1204,24 +1204,7 @@ async function generateWelfareCode() {
         if (copyBtn) copyBtn.disabled = !result.code;
 
         await copyToClipboard(result.code || '');
-        showToast(`通用兑换码已更新，剩余次数 ${result.remaining}/${result.limit}`, 'success');
-    } catch (error) {
-        showToast(error.message || '生成通用兑换码失败', 'error');
-    } finally {
-        const btn = document.getElementById('generateWelfareCodeBtn');
-        if (btn) btn.disabled = false;
-    }
-}
-
-
-async function generateWelfareCode() {
-    try {
-        const btn = document.getElementById('generateWelfareCodeBtn');
-        if (btn) { btn.disabled = true; }
-        const result = await apiCall('/admin/welfare/code/generate', { method: 'POST' });
-        if (!result.success) throw new Error(result.error || '生成失败');
-        showToast(`通用兑换码已更新：${result.code}`, 'success');
-        setTimeout(() => location.reload(), 1000);
+        showToast(`通用兑换码已更新并复制，剩余次数 ${result.remaining}/${result.limit}`, 'success');
     } catch (error) {
         showToast(error.message || '生成通用兑换码失败', 'error');
     } finally {

@@ -34,14 +34,14 @@
     <div class="stat-card stat-warning welfare-code-card">
         <div class="stat-icon"><i data-lucide="ticket"></i></div>
         <div class="stat-info-group">
-            <div class="welfare-code-row">
-                <span class="stat-value welfare-code-value" id="welfareCommonCodeText">{{ stats.welfare_code or '-' }}</span>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
-                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制
-                </button>
-            </div>
             <div class="stat-label">通用兑换码</div>
             <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
+            <div class="welfare-code-row">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
+                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
+                </button>
+            </div>
+            <input type="hidden" id="welfareCommonCodeValue" value="{{ stats.welfare_code or '' }}">
         </div>
     </div>
     {% else %}
@@ -164,7 +164,7 @@
             <tr>
                 <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)">
                 </th>
-                <th>ID</th>
+                <th>编号</th>
                 <th>邮箱</th>
                 <th>Account ID</th>
                 <th>Team 名称</th>
@@ -181,7 +181,7 @@
             <tr>
                 <td><input type="checkbox" class="team-checkbox" value="{{ team.id }}" onchange="updateSelectedCount()">
                 </td>
-                <td><span class="text-muted">{{ team.id }}</span></td>
+                <td><span class="text-muted">{{ ((pagination.current_page - 1) * pagination.per_page) + loop.index }}</span></td>
                 <td>
                     {{ team.email }}
                     {% if team.account_role and team.account_role != 'account-owner' %}

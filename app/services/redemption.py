@@ -274,7 +274,18 @@ class RedemptionService:
                     except Exception:
                         used_count = 0
 
-                    if limit_count <= 0 or used_count >= limit_count:
+                    # 真实可兑换次数按可邀请席位计算：sum(max_members - 1)
+                    capacity_stmt = select(func.sum(Team.max_members - 1)).where(
+                        Team.pool_type == "welfare",
+                        Team.max_members > 1
+                    )
+                    capacity_result = await db_session.execute(capacity_stmt)
+                    usable_capacity = int(capacity_result.scalar() or 0)
+
+                    # 兼容历史错误配置：向下收敛到真实可邀请席位
+                    effective_limit = min(limit_count, usable_capacity) if limit_count > 0 else usable_capacity
+
+                    if effective_limit <= 0 or used_count >= effective_limit:
                         return {
                             "success": True,
                             "valid": False,
@@ -298,7 +309,7 @@ class RedemptionService:
                             "pool_type": "welfare",
                             "reusable_by_seat": True,
                             "virtual_welfare_code": True,
-                            "limit": limit_count,
+                            "limit": effective_limit,
                             "used_count": used_count,
                         },
                         "error": None
