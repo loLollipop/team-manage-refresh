@@ -17,6 +17,7 @@ from app.services.redemption import RedemptionService
 from app.services.team import TeamService
 from app.services.warranty import warranty_service
 from app.services.notification import notification_service
+from app.services.settings import settings_service
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -193,6 +194,7 @@ class RedeemFlowService:
                         return {"success": False, "error": validate_result.get("reason") or "兑换码无效"}
                     code_meta = validate_result.get("redemption_code") or {}
                     pool_type = code_meta.get("pool_type", "normal")
+                    is_virtual_welfare_code = bool(code_meta.get("virtual_welfare_code"))
 
                     # 确定目标 Team (初选)
                     team_id_final = current_target_team_id
@@ -221,27 +223,29 @@ class RedeemFlowService:
                             await db_session.begin()
                         
                         try:
-                            # 1. 验证和锁定码
-                            stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
-                            res = await db_session.execute(stmt)
-                            rc = res.scalar_one_or_none()
+                            # 1. 验证和锁定码（福利通用码不在 redemption_codes 表落库）
+                            rc = None
+                            if not is_virtual_welfare_code:
+                                stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
+                                res = await db_session.execute(stmt)
+                                rc = res.scalar_one_or_none()
 
-                            if not rc:
-                                await db_session.rollback()
-                                return {"success": False, "error": "兑换码不存在"}
-                            
-                            if not rc.reusable_by_seat:
-                                if rc.status not in ["unused", "warranty_active"]:
-                                    if rc.status == "used":
-                                        warranty_check = await self.warranty_service.validate_warranty_reuse(
-                                            db_session, code, email
-                                        )
-                                        if not warranty_check.get("can_reuse"):
+                                if not rc:
+                                    await db_session.rollback()
+                                    return {"success": False, "error": "兑换码不存在"}
+                                
+                                if not rc.reusable_by_seat:
+                                    if rc.status not in ["unused", "warranty_active"]:
+                                        if rc.status == "used":
+                                            warranty_check = await self.warranty_service.validate_warranty_reuse(
+                                                db_session, code, email
+                                            )
+                                            if not warranty_check.get("can_reuse"):
+                                                await db_session.rollback()
+                                                return {"success": False, "error": warranty_check.get("reason") or "兑换码已使用"}
+                                        else:
                                             await db_session.rollback()
-                                            return {"success": False, "error": warranty_check.get("reason") or "兑换码已使用"}
-                                    else:
-                                        await db_session.rollback()
-                                        return {"success": False, "error": f"兑换码状态无效: {rc.status}"}
+                                            return {"success": False, "error": f"兑换码状态无效: {rc.status}"}
 
                             # 2. 锁定并校验 Team
                             stmt = select(Team).where(Team.id == team_id_final, Team.pool_type == pool_type).with_for_update()
@@ -284,8 +288,10 @@ class RedeemFlowService:
                         
                         try:
                             # 重新载入，确保状态最新
-                            res = await db_session.execute(select(RedemptionCode).where(RedemptionCode.code == code).with_for_update())
-                            rc = res.scalar_one_or_none()
+                            rc = None
+                            if not is_virtual_welfare_code:
+                                res = await db_session.execute(select(RedemptionCode).where(RedemptionCode.code == code).with_for_update())
+                                rc = res.scalar_one_or_none()
                             res = await db_session.execute(select(Team).where(Team.id == team_id_final, Team.pool_type == pool_type).with_for_update())
                             target_team = res.scalar_one_or_none()
 
@@ -303,7 +309,7 @@ class RedeemFlowService:
                                     raise Exception(err)
 
                             # 成功逻辑
-                            if not rc.reusable_by_seat:
+                            if rc and (not rc.reusable_by_seat):
                                 rc.status = "used"
                                 rc.used_by_email = email
                                 rc.used_team_id = team_id_final
@@ -312,12 +318,25 @@ class RedeemFlowService:
                                     days = rc.warranty_days or 30
                                     rc.warranty_expires_at = get_now() + timedelta(days=days)
 
+                            if is_virtual_welfare_code:
+                                used_raw = await settings_service.get_setting(db_session, "welfare_common_code_used_count", "0")
+                                try:
+                                    current_used = int(used_raw or 0)
+                                except Exception:
+                                    current_used = 0
+                                await settings_service.set_setting(
+                                    db_session,
+                                    "welfare_common_code_used_count",
+                                    str(current_used + 1),
+                                    "福利通用兑换码已使用次数"
+                                )
+
                             record = RedemptionRecord(
                                 email=email,
                                 code=code,
                                 team_id=team_id_final,
                                 account_id=target_team.account_id,
-                                is_warranty_redemption=(rc.has_warranty and (not rc.reusable_by_seat))
+                                is_warranty_redemption=(bool(rc and rc.has_warranty and (not rc.reusable_by_seat)))
                             )
                             db_session.add(record)
                             target_team.current_members += 1

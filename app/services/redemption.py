@@ -259,10 +259,66 @@ class RedemptionService:
             redemption_code = result.scalar_one_or_none()
 
             if not redemption_code:
+                # 兼容福利通用兑换码：只存 settings，不写 redemption_codes 表
+                from app.services.settings import settings_service
+                welfare_code = (await settings_service.get_setting(db_session, "welfare_common_code", "") or "").strip()
+                if welfare_code and code == welfare_code:
+                    limit_raw = await settings_service.get_setting(db_session, "welfare_common_code_limit", "0")
+                    used_raw = await settings_service.get_setting(db_session, "welfare_common_code_used_count", "0")
+                    try:
+                        limit_count = int(limit_raw or 0)
+                    except Exception:
+                        limit_count = 0
+                    try:
+                        used_count = int(used_raw or 0)
+                    except Exception:
+                        used_count = 0
+
+                    if limit_count <= 0 or used_count >= limit_count:
+                        return {
+                            "success": True,
+                            "valid": False,
+                            "reason": "兑换码次数已用完，无法进行兑换",
+                            "redemption_code": None,
+                            "error": None
+                        }
+
+                    return {
+                        "success": True,
+                        "valid": True,
+                        "reason": "兑换码有效",
+                        "redemption_code": {
+                            "id": None,
+                            "code": code,
+                            "status": "virtual_welfare",
+                            "expires_at": None,
+                            "created_at": None,
+                            "has_warranty": False,
+                            "warranty_days": 0,
+                            "pool_type": "welfare",
+                            "reusable_by_seat": True,
+                            "virtual_welfare_code": True,
+                            "limit": limit_count,
+                            "used_count": used_count,
+                        },
+                        "error": None
+                    }
+
                 return {
                     "success": True,
                     "valid": False,
                     "reason": "兑换码不存在",
+                    "redemption_code": None,
+                    "error": None
+                }
+
+            # 兼容清理：历史版本中福利通用码可能被写入 redemption_codes。
+            # 现版本福利通用码以 settings 为准，旧的福利可复用码一律视为失效，避免绕过“新码替换旧码”的规则。
+            if redemption_code.pool_type == "welfare" and redemption_code.reusable_by_seat:
+                return {
+                    "success": True,
+                    "valid": False,
+                    "reason": "兑换码已失效，请使用最新福利通用兑换码",
                     "redemption_code": None,
                     "error": None
                 }

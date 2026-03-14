@@ -8,6 +8,7 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
@@ -17,7 +18,7 @@ from app.services.team import TeamService
 from app.services.redemption import RedemptionService
 from app.services.chatgpt import chatgpt_service
 from app.services.settings import settings_service
-from app.models import RedemptionCode
+from app.models import RedemptionCode, Team
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -233,30 +234,37 @@ async def generate_welfare_common_code(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """生成/更新福利通用兑换码。"""
+    """生成/更新福利通用兑换码（不落库到 redemption_codes，仅存 settings）。"""
     try:
-        existing_code = await settings_service.get_setting(db, "welfare_common_code", "")
-        if existing_code:
-            stmt = select(RedemptionCode).where(RedemptionCode.code == existing_code)
-            res = await db.execute(stmt)
-            old = res.scalar_one_or_none()
-            if old:
-                await db.delete(old)
-                await db.commit()
+        seats_stmt = select(func.sum(Team.max_members)).where(Team.pool_type == "welfare")
+        seats_result = await db.execute(seats_stmt)
+        total_seats = int(seats_result.scalar() or 0)
 
-        generate_result = await redemption_service.generate_code_single(
-            db_session=db,
-            has_warranty=False,
-            pool_type="welfare",
-            reusable_by_seat=True
+        if total_seats <= 0:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "当前没有可用的福利车位，无法生成通用兑换码"}
+            )
+
+        code = redemption_service._generate_random_code()
+
+        # 兼容清理：历史版本可能把福利通用码写入 redemption_codes，这里统一失效处理
+        await db.execute(
+            update(RedemptionCode)
+            .where(RedemptionCode.pool_type == "welfare", RedemptionCode.reusable_by_seat == True)
+            .values(status="expired")
         )
-        if not generate_result.get("success"):
-            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=generate_result)
+        await db.commit()
 
-        code = generate_result.get("code", "")
-        await settings_service.set_setting(db, "welfare_common_code", code, "福利车位通用兑换码")
+        # 每次生成新码都会立即替换旧码（旧码自动失效）
+        await settings_service.update_settings(db, {
+            "welfare_common_code": code,
+            "welfare_common_code_limit": str(total_seats),
+            "welfare_common_code_used_count": "0",
+            "welfare_common_code_generated_at": get_now().isoformat()
+        })
 
-        return JSONResponse(content={"success": True, "code": code})
+        return JSONResponse(content={"success": True, "code": code, "limit": total_seats})
     except Exception as e:
         logger.error(f"生成福利通用兑换码失败: {e}")
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
