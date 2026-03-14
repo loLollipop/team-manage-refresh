@@ -107,6 +107,22 @@ def run_auto_migration():
             cursor.execute("ALTER TABLE teams ADD COLUMN device_code_auth_enabled BOOLEAN DEFAULT 0")
             migrations_applied.append("teams.device_code_auth_enabled")
         
+
+        if not column_exists(cursor, "teams", "pool_type"):
+            logger.info("添加 teams.pool_type 字段")
+            cursor.execute("ALTER TABLE teams ADD COLUMN pool_type VARCHAR(20) DEFAULT 'normal'")
+            migrations_applied.append("teams.pool_type")
+
+        if not column_exists(cursor, "redemption_codes", "pool_type"):
+            logger.info("添加 redemption_codes.pool_type 字段")
+            cursor.execute("ALTER TABLE redemption_codes ADD COLUMN pool_type VARCHAR(20) DEFAULT 'normal'")
+            migrations_applied.append("redemption_codes.pool_type")
+
+        if not column_exists(cursor, "redemption_codes", "reusable_by_seat"):
+            logger.info("添加 redemption_codes.reusable_by_seat 字段")
+            cursor.execute("ALTER TABLE redemption_codes ADD COLUMN reusable_by_seat BOOLEAN DEFAULT 0")
+            migrations_applied.append("redemption_codes.reusable_by_seat")
+
         # 提交更改
         conn.commit()
         

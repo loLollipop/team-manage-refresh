@@ -1,3 +1,8 @@
+function getCurrentPoolType() {
+    const pool = (document.body && document.body.dataset && document.body.dataset.poolType) || "normal";
+    return pool === "welfare" ? "welfare" : "normal";
+}
+
 /**
  * GPT Team 管理系统 - 通用 JavaScript
  */
@@ -91,6 +96,17 @@ function confirmAction(message) {
     return confirm(message);
 }
 
+
+function setSingleImportMode(mode = 'quick') {
+    const quickSection = document.getElementById('oauthQuickSection');
+    const manualSection = document.getElementById('manualTokenSection');
+    if (!quickSection || !manualSection) return;
+
+    const isManual = mode === 'manual';
+    quickSection.style.display = isManual ? 'none' : 'block';
+    manualSection.style.display = isManual ? 'block' : 'none';
+}
+
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
@@ -117,6 +133,35 @@ document.addEventListener('DOMContentLoaded', function () {
             exportOAuthJsonTemplateFile();
         });
     }
+
+    const switchToManualFill = document.getElementById('switchToManualFill');
+    if (switchToManualFill) {
+        switchToManualFill.addEventListener('click', () => setSingleImportMode('manual'));
+    }
+
+    const switchToQuickToken = document.getElementById('switchToQuickToken');
+    if (switchToQuickToken) {
+        switchToQuickToken.addEventListener('click', () => setSingleImportMode('quick'));
+    }
+
+    const chooseJsonFileBtn = document.getElementById('chooseJsonFileBtn');
+    const jsonImportFile = document.getElementById('jsonImportFile');
+    if (chooseJsonFileBtn && jsonImportFile) {
+        chooseJsonFileBtn.addEventListener('click', () => jsonImportFile.click());
+        jsonImportFile.addEventListener('change', async () => {
+            const fileNameNode = document.getElementById('jsonImportFileName');
+            if (fileNameNode) {
+                fileNameNode.textContent = jsonImportFile.files && jsonImportFile.files[0]
+                    ? `已选择：${jsonImportFile.files[0].name}`
+                    : '支持单对象、对象数组，或 {"teams": [...]} 格式';
+            }
+            if (jsonImportFile.files && jsonImportFile.files.length > 0) {
+                await handleJsonFileImport();
+            }
+        });
+    }
+
+    setSingleImportMode('quick');
 });
 
 // 检查认证状态
@@ -146,6 +191,10 @@ function showModal(modalId) {
     if (modal) {
         modal.classList.add('show');
         document.body.style.overflow = 'hidden'; // 防止背景滚动
+
+        if (modalId === 'importTeamModal') {
+            setSingleImportMode('quick');
+        }
     }
 }
 
@@ -240,6 +289,9 @@ let oauthDraft = {
     clientId: ''
 };
 
+let oauthParsedCache = null;
+let oauthParsedCacheKey = '';
+
 async function generateOAuthAuthorizeLink() {
     const form = document.getElementById('singleImportForm');
     if (!form) return;
@@ -268,6 +320,8 @@ async function generateOAuthAuthorizeLink() {
         oauthDraft.codeVerifier = data.code_verifier || '';
         oauthDraft.state = data.state || '';
         oauthDraft.clientId = data.client_id || clientId;
+        oauthParsedCache = null;
+        oauthParsedCacheKey = '';
 
         document.getElementById('oauthAuthorizeUrlOutput').value = data.authorize_url || '';
         if (form.clientId) form.clientId.value = oauthDraft.clientId;
@@ -289,12 +343,16 @@ async function generateOAuthAuthorizeLink() {
     }
 }
 
-async function parseOAuthCallbackData() {
+async function parseOAuthCallbackData(forceRefresh = false) {
     const callbackText = document.getElementById('oauthCallbackInput').value.trim();
     const form = document.getElementById('singleImportForm');
 
     if (!callbackText) {
         throw new Error('请先粘贴回调 URL');
+    }
+
+    if (!forceRefresh && oauthParsedCache && oauthParsedCacheKey === callbackText) {
+        return oauthParsedCache;
     }
 
     const result = await apiCall('/admin/oauth/openai/parse-callback', {
@@ -312,7 +370,10 @@ async function parseOAuthCallbackData() {
         throw new Error(result.error || '解析回调失败');
     }
 
-    return unwrapApiPayload(result) || {};
+    const parsed = unwrapApiPayload(result) || {};
+    oauthParsedCache = parsed;
+    oauthParsedCacheKey = callbackText;
+    return parsed;
 }
 
 function decodeJwtPayload(token) {
@@ -348,20 +409,21 @@ function buildOAuthJsonTemplate(parsedData) {
     const accessAuth = accessPayload['https://api.openai.com/auth'] || {};
     const accessProfile = accessPayload['https://api.openai.com/profile'] || {};
 
-    const accountId = raw.account_id || accessAuth.chatgpt_account_id || '';
-    const email = raw.email || accessProfile.email || '';
+    const accountId = raw.account_id || parsedData.account_id || accessAuth.chatgpt_account_id || '';
+    const email = raw.email || parsedData.email || accessProfile.email || '';
     const exp = accessPayload.exp ? new Date(accessPayload.exp * 1000) : null;
+    const expired = raw.expired || parsedData.expired || (exp ? toIsoStringWithOffset8(exp) : '');
 
     return {
         access_token: accessToken,
         account_id: accountId,
-        disabled: false,
+        disabled: typeof raw.disabled === 'boolean' ? raw.disabled : false,
         email,
-        expired: exp ? toIsoStringWithOffset8(exp) : '',
-        id_token: raw.id_token || '',
-        last_refresh: toIsoStringWithOffset8(new Date()),
+        expired,
+        id_token: raw.id_token || parsedData.id_token || '',
+        last_refresh: raw.last_refresh || parsedData.last_refresh || toIsoStringWithOffset8(new Date()),
         refresh_token: refreshToken,
-        type: 'codex',
+        type: raw.type || parsedData.type || 'codex',
         client_id: clientId
     };
 }
@@ -381,7 +443,7 @@ function downloadJsonFile(payload, filename) {
 
 async function exportOAuthJsonTemplateFile() {
     try {
-        const data = await parseOAuthCallbackData();
+        const data = oauthParsedCache || await parseOAuthCallbackData();
         const payload = buildOAuthJsonTemplate(data);
         const filename = `team-oauth-${Date.now()}.json`;
         downloadJsonFile(payload, filename);
@@ -395,7 +457,7 @@ async function parseOAuthCallbackAndFill() {
     const form = document.getElementById('singleImportForm');
 
     try {
-        const data = await parseOAuthCallbackData();
+        const data = await parseOAuthCallbackData(true);
         if (form.accessToken && data.access_token) form.accessToken.value = data.access_token;
         if (form.refreshToken && data.refresh_token) form.refreshToken.value = data.refresh_token;
         if (form.clientId && data.client_id) form.clientId.value = data.client_id;
@@ -431,7 +493,8 @@ async function handleSingleImport(event) {
                 session_token: sessionToken || null,
                 client_id: clientId || null,
                 email: email || null,
-                account_id: accountId || null
+                account_id: accountId || null,
+                pool_type: getCurrentPoolType()
             })
         });
 
@@ -453,8 +516,13 @@ async function handleSingleImport(event) {
 async function handleBatchImport(event) {
     event.preventDefault();
     const form = event.target;
-    const batchContent = form.batchContent.value.trim();
+    const batchContent = (form.batchContent && form.batchContent.value ? form.batchContent.value.trim() : "");
     const submitButton = form.querySelector('button[type="submit"]');
+
+    if (!batchContent) {
+        showToast('请输入批量导入内容', 'error');
+        return;
+    }
 
     // UI 元素
     const progressContainer = document.getElementById('batchProgressContainer');
@@ -489,79 +557,99 @@ async function handleBatchImport(event) {
             },
             body: JSON.stringify({
                 import_type: 'batch',
-                content: batchContent
+                content: batchContent,
+                pool_type: getCurrentPoolType()
             })
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.detail || '请求失败');
+            let msg = '请求失败';
+            try {
+                const errorData = await response.json();
+                msg = errorData.error || errorData.detail || msg;
+            } catch (_) {
+                const errorText = await response.text();
+                if (errorText) msg = errorText.slice(0, 200);
+            }
+            throw new Error(msg);
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
 
+        const processStreamLine = (line) => {
+            if (!line || !line.trim()) return;
+            try {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('{')) return;
+                const data = JSON.parse(trimmed);
+
+                if (data.type === 'start') {
+                    progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
+                    // 给用户即时反馈，避免看起来一直卡在 0%
+                    progressBar.style.width = '5%';
+                    progressPercent.textContent = '5%';
+                } else if (data.type === 'progress') {
+                    const percent = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressPercent.textContent = `${percent}%`;
+                    progressStage.textContent = `正在导入 ${data.current}/${data.total}...`;
+                    successCountEl.textContent = data.success_count;
+                    failedCountEl.textContent = data.failed_count;
+
+                    if (data.last_result) {
+                        resultsContainer.style.display = 'block';
+                        const res = data.last_result;
+                        const statusClass = res.success ? 'text-success' : 'text-danger';
+                        const statusText = res.success ? '成功' : '失败';
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${res.email}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                            <td>${res.success ? (res.message || '导入成功') : res.error}</td>
+                        `;
+                        resultsBody.insertBefore(row, resultsBody.firstChild);
+                    }
+                } else if (data.type === 'finish') {
+                    progressStage.textContent = '导入完成';
+                    progressBar.style.width = '100%';
+                    progressPercent.textContent = '100%';
+                    finalSummaryEl.textContent = `总数: ${data.total} | 成功: ${data.success_count} | 失败: ${data.failed_count}`;
+
+                    if (data.failed_count === 0) {
+                        showToast('全部导入成功！', 'success');
+                    } else {
+                        showToast(`导入完成，成功 ${data.success_count} 条，失败 ${data.failed_count} 条`, 'warning');
+                    }
+
+                    if (data.success_count > 0) {
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                } else if (data.type === 'error') {
+                    showToast(data.error, 'error');
+                }
+            } catch (e) {
+                console.error('解析流数据失败:', e, line);
+            }
+        };
+
         while (true) {
             const { value, done } = await reader.read();
-            if (done) break;
+            if (done) {
+                // 处理最后一段可能没有 \n 结尾的残余数据
+                if (buffer && buffer.trim()) {
+                    processStreamLine(buffer);
+                }
+                break;
+            }
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop(); // 最后一个可能是残缺的
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const data = JSON.parse(line);
-
-                    if (data.type === 'start') {
-                        progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
-                    } else if (data.type === 'progress') {
-                        const percent = Math.round((data.current / data.total) * 100);
-                        progressBar.style.width = `${percent}%`;
-                        progressPercent.textContent = `${percent}%`;
-                        progressStage.textContent = `正在导入 ${data.current}/${data.total}...`;
-                        successCountEl.textContent = data.success_count;
-                        failedCountEl.textContent = data.failed_count;
-
-                        // 实时添加到详情列表
-                        if (data.last_result) {
-                            resultsContainer.style.display = 'block';
-                            const res = data.last_result;
-                            const statusClass = res.success ? 'text-success' : 'text-danger';
-                            const statusText = res.success ? '成功' : '失败';
-                            const row = document.createElement('tr');
-                            row.innerHTML = `
-                                <td>${res.email}</td>
-                                <td class="${statusClass}">${statusText}</td>
-                                <td>${res.success ? (res.message || '导入成功') : res.error}</td>
-                            `;
-                            // 插入到最前面，方便看到最新的
-                            resultsBody.insertBefore(row, resultsBody.firstChild);
-                        }
-                    } else if (data.type === 'finish') {
-                        progressStage.textContent = '导入完成';
-                        progressBar.style.width = '100%';
-                        progressPercent.textContent = '100%';
-                        finalSummaryEl.textContent = `总数: ${data.total} | 成功: ${data.success_count} | 失败: ${data.failed_count}`;
-
-                        if (data.failed_count === 0) {
-                            showToast('全部导入成功！', 'success');
-                        } else {
-                            showToast(`导入完成，成功 ${data.success_count} 条，失败 ${data.failed_count} 条`, 'warning');
-                        }
-
-                        // 刷新页面以显示新数据
-                        if (data.success_count > 0) {
-                            setTimeout(() => location.reload(), 3000);
-                        }
-                    } else if (data.type === 'error') {
-                        showToast(data.error, 'error');
-                    }
-                } catch (e) {
-                    console.error('解析流数据失败:', e, line);
-                }
+                processStreamLine(line);
             }
         }
     } catch (error) {
@@ -627,76 +715,98 @@ async function handleJsonFileImport() {
             },
             body: JSON.stringify({
                 import_type: 'json',
-                content
+                content,
+                pool_type: getCurrentPoolType()
             })
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.detail || '请求失败');
+            let msg = '请求失败';
+            try {
+                const errorData = await response.json();
+                msg = errorData.error || errorData.detail || msg;
+            } catch (_) {
+                const errorText = await response.text();
+                if (errorText) msg = errorText.slice(0, 200);
+            }
+            throw new Error(msg);
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
 
+        const processStreamLine = (line) => {
+            if (!line || !line.trim()) return;
+            try {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('{')) return;
+                const data = JSON.parse(trimmed);
+
+                if (data.type === 'start') {
+                    progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
+                    // 让用户看到实时变化，避免看起来一直 0%
+                    progressBar.style.width = '5%';
+                    progressPercent.textContent = '5%';
+                } else if (data.type === 'progress') {
+                    const percent = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressPercent.textContent = `${percent}%`;
+                    progressStage.textContent = `正在导入 ${data.current}/${data.total}...`;
+                    successCountEl.textContent = data.success_count;
+                    failedCountEl.textContent = data.failed_count;
+
+                    if (data.last_result) {
+                        resultsContainer.style.display = 'block';
+                        const res = data.last_result;
+                        const statusClass = res.success ? 'text-success' : 'text-danger';
+                        const statusText = res.success ? '成功' : '失败';
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${res.email}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                            <td>${res.success ? (res.message || '导入成功') : res.error}</td>
+                        `;
+                        resultsBody.insertBefore(row, resultsBody.firstChild);
+                    }
+                } else if (data.type === 'finish') {
+                    progressStage.textContent = '导入完成';
+                    progressBar.style.width = '100%';
+                    progressPercent.textContent = '100%';
+                    finalSummaryEl.textContent = `总数: ${data.total} | 成功: ${data.success_count} | 失败: ${data.failed_count}`;
+
+                    if (data.failed_count === 0) {
+                        showToast('全部导入成功！', 'success');
+                    } else {
+                        showToast(`导入完成，成功 ${data.success_count} 条，失败 ${data.failed_count} 条`, 'warning');
+                    }
+
+                    if (data.success_count > 0) {
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                } else if (data.type === 'error') {
+                    showToast(data.error, 'error');
+                }
+            } catch (e) {
+                console.error('解析流数据失败:', e, line);
+            }
+        };
+
         while (true) {
             const { value, done } = await reader.read();
-            if (done) break;
+            if (done) {
+                if (buffer && buffer.trim()) {
+                    processStreamLine(buffer);
+                }
+                break;
+            }
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop();
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const data = JSON.parse(line);
-
-                    if (data.type === 'start') {
-                        progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
-                    } else if (data.type === 'progress') {
-                        const percent = Math.round((data.current / data.total) * 100);
-                        progressBar.style.width = `${percent}%`;
-                        progressPercent.textContent = `${percent}%`;
-                        progressStage.textContent = `正在导入 ${data.current}/${data.total}...`;
-                        successCountEl.textContent = data.success_count;
-                        failedCountEl.textContent = data.failed_count;
-
-                        if (data.last_result) {
-                            resultsContainer.style.display = 'block';
-                            const res = data.last_result;
-                            const statusClass = res.success ? 'text-success' : 'text-danger';
-                            const statusText = res.success ? '成功' : '失败';
-                            const row = document.createElement('tr');
-                            row.innerHTML = `
-                                <td>${res.email}</td>
-                                <td class="${statusClass}">${statusText}</td>
-                                <td>${res.success ? (res.message || '导入成功') : res.error}</td>
-                            `;
-                            resultsBody.insertBefore(row, resultsBody.firstChild);
-                        }
-                    } else if (data.type === 'finish') {
-                        progressStage.textContent = '导入完成';
-                        progressBar.style.width = '100%';
-                        progressPercent.textContent = '100%';
-                        finalSummaryEl.textContent = `总数: ${data.total} | 成功: ${data.success_count} | 失败: ${data.failed_count}`;
-
-                        if (data.failed_count === 0) {
-                            showToast('全部导入成功！', 'success');
-                        } else {
-                            showToast(`导入完成，成功 ${data.success_count} 条，失败 ${data.failed_count} 条`, 'warning');
-                        }
-
-                        if (data.success_count > 0) {
-                            setTimeout(() => location.reload(), 3000);
-                        }
-                    } else if (data.type === 'error') {
-                        showToast(data.error, 'error');
-                    }
-                } catch (e) {
-                    console.error('解析流数据失败:', e, line);
-                }
+                processStreamLine(line);
             }
         }
     } catch (error) {
@@ -850,6 +960,16 @@ function copyCode(code) {
 function copyBatchCodes() {
     const codes = document.getElementById('batchCodes').value;
     copyToClipboard(codes);
+}
+
+function copyWelfareCode() {
+    const el = document.getElementById('welfareCommonCodeValue');
+    const code = el ? String(el.value || '').trim() : '';
+    if (!code || code === '-') {
+        showToast('暂无可复制的通用兑换码', 'warning');
+        return;
+    }
+    copyToClipboard(code);
 }
 
 function downloadCodes() {
@@ -1059,4 +1179,41 @@ if (typeof window !== 'undefined') {
     window.parseOAuthCallbackAndFill = parseOAuthCallbackAndFill;
     window.exportOAuthJsonTemplateFile = exportOAuthJsonTemplateFile;
     window.handleJsonFileImport = handleJsonFileImport;
+    window.copyWelfareCode = copyWelfareCode;
+}
+
+
+async function generateWelfareCode() {
+    try {
+        const btn = document.getElementById('generateWelfareCodeBtn');
+        if (btn) { btn.disabled = true; }
+        const result = await apiCall('/admin/welfare/code/generate', { method: 'POST' });
+        if (!result.success) throw new Error(result.error || '生成失败');
+
+        const codeValueEl = document.getElementById('welfareCommonCodeValue');
+        const newCode = result.code || '';
+        if (codeValueEl) codeValueEl.value = newCode;
+
+        const codeTextEl = document.getElementById('welfareCommonCodeText');
+        if (codeTextEl) { codeTextEl.textContent = newCode || '-'; codeTextEl.title = newCode || ''; }
+
+        const usageTextEl = document.getElementById('welfareCodeUsageText');
+        if (usageTextEl) {
+            const used = typeof result.used === 'number' ? result.used : 0;
+            const limit = typeof result.limit === 'number' ? result.limit : 0;
+            const remaining = typeof result.remaining === 'number' ? result.remaining : Math.max(limit - used, 0);
+            usageTextEl.textContent = `剩余次数 ${remaining} / ${limit}`;
+        }
+
+        const copyBtn = document.getElementById('copyWelfareCodeBtn');
+        if (copyBtn) copyBtn.disabled = !result.code;
+
+        await copyToClipboard(result.code || '');
+        showToast(`通用兑换码已更新并复制，剩余次数 ${result.remaining}/${result.limit}`, 'success');
+    } catch (error) {
+        showToast(error.message || '生成通用兑换码失败', 'error');
+    } finally {
+        const btn = document.getElementById('generateWelfareCodeBtn');
+        if (btn) btn.disabled = false;
+    }
 }

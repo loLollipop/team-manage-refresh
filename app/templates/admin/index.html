@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}控制台 - GPT Team 管理系统{% endblock %}
+{% block title %}{% if active_page == "welfare" %}福利车位 - GPT Team 管理系统{% else %}控制台 - GPT Team 管理系统{% endif %}{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h2>控制台</h2>
+    <h2>{% if active_page == "welfare" %}福利车位{% else %}控制台{% endif %}</h2>
 </div>
 
 <!-- 统计卡片 -->
@@ -23,6 +23,29 @@
             <div class="stat-label">可用 Team</div>
         </div>
     </div>
+    {% if active_page == "welfare" %}
+    <div class="stat-card stat-info">
+        <div class="stat-icon"><i data-lucide="car-front"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.remaining_spots }}</div>
+            <div class="stat-label">福利剩余车位</div>
+        </div>
+    </div>
+    <div class="stat-card stat-warning welfare-code-card">
+        <div class="stat-icon"><i data-lucide="ticket"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-label">通用兑换码</div>
+            <div class="welfare-code-value" id="welfareCommonCodeText" title="{{ stats.welfare_code or '' }}">{{ stats.welfare_code or '-' }}</div>
+            <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
+            <div class="welfare-code-row">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
+                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
+                </button>
+            </div>
+            <input type="hidden" id="welfareCommonCodeValue" value="{{ stats.welfare_code or '' }}">
+        </div>
+    </div>
+    {% else %}
     <div class="stat-card stat-info">
         <div class="stat-icon"><i data-lucide="ticket"></i></div>
         <div class="stat-info-group">
@@ -37,12 +60,13 @@
             <div class="stat-label">已使用兑换码</div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <!-- Team 列表 -->
 <div class="content-section">
     <div class="section-header">
-        <h3>Team 列表</h3>
+        <h3>{% if active_page == "welfare" %}福利 Team 列表{% else %}Team 列表{% endif %}</h3>
         <div class="header-group">
             <!-- 批量操作 -->
             <div id="batchActions" class="batch-actions-group" style="display: none;">
@@ -96,13 +120,13 @@
             </div>
 
             <!-- 搜索框 -->
-            <form action="/admin" method="get" class="search-form">
+            <form action="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" method="get" class="search-form">
                 <div class="input-group-clean">
                     <i data-lucide="search" style="width: 14px; height: 14px;"></i>
                     <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索邮箱/Account ID..."
                         style="width: 200px;">
                     {% if search %}
-                    <a href="/admin" title="清除搜索">
+                    <a href="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" title="清除搜索">
                         <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
                     </a>
                     {% endif %}
@@ -122,6 +146,11 @@
                 </div>
             </div>
 
+            {% if active_page == "welfare" %}
+            <button onclick="generateWelfareCode()" class="btn btn-secondary" id="generateWelfareCodeBtn">
+                <i data-lucide="ticket-plus" style="width: 16px; height: 16px;"></i> 生成通用兑换码
+            </button>
+            {% endif %}
             <button onclick="showModal('importTeamModal')" class="btn btn-primary">
                 <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> 导入 Team
             </button>
@@ -136,7 +165,7 @@
             <tr>
                 <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)">
                 </th>
-                <th>ID</th>
+                <th>{% if active_page == "welfare" %}编号{% else %}ID{% endif %}</th>
                 <th>邮箱</th>
                 <th>Account ID</th>
                 <th>Team 名称</th>
@@ -153,7 +182,7 @@
             <tr>
                 <td><input type="checkbox" class="team-checkbox" value="{{ team.id }}" onchange="updateSelectedCount()">
                 </td>
-                <td><span class="text-muted">{{ team.id }}</span></td>
+                <td><span class="text-muted">{% if active_page == "welfare" %}{{ ((pagination.current_page - 1) * pagination.per_page) + loop.index }}{% else %}{{ team.id }}{% endif %}</span></td>
                 <td>
                     {{ team.email }}
                     {% if team.account_role and team.account_role != 'account-owner' %}
@@ -217,8 +246,9 @@
                             data-id="{{ team.id }}" title="一键开启设备代码验证">
                             <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
                         </button>
-                        <button class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
-                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除">
+                        <button type="button" class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除"
+                            onclick='deleteTeam({{ team.id }}, {{ team.email|tojson }})'>
                             <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
                         </button>
                     </div>
@@ -421,15 +451,6 @@
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-id');
                 refreshTeam(id);
-            });
-        });
-
-        // 绑定删除按钮
-        document.querySelectorAll('.btn-delete-team').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                const email = btn.getAttribute('data-email');
-                deleteTeam(id, email);
             });
         });
 
@@ -699,6 +720,8 @@
             document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
         }
     });
+
+    const dashboardBasePath = "{{ '/admin/welfare' if active_page == 'welfare' else '/admin' }}";
 
     function filterByStatus(status) {
         const url = new URL(window.location.href);
