@@ -563,8 +563,15 @@ async function handleBatchImport(event) {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.detail || '请求失败');
+            let msg = '请求失败';
+            try {
+                const errorData = await response.json();
+                msg = errorData.error || errorData.detail || msg;
+            } catch (_) {
+                const errorText = await response.text();
+                if (errorText) msg = errorText.slice(0, 200);
+            }
+            throw new Error(msg);
         }
 
         const reader = response.body.getReader();
@@ -582,7 +589,9 @@ async function handleBatchImport(event) {
             for (const line of lines) {
                 if (!line.trim()) continue;
                 try {
-                    const data = JSON.parse(line);
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('{')) continue;
+                    const data = JSON.parse(trimmed);
 
                     if (data.type === 'start') {
                         progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;
@@ -702,8 +711,15 @@ async function handleJsonFileImport() {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.detail || '请求失败');
+            let msg = '请求失败';
+            try {
+                const errorData = await response.json();
+                msg = errorData.error || errorData.detail || msg;
+            } catch (_) {
+                const errorText = await response.text();
+                if (errorText) msg = errorText.slice(0, 200);
+            }
+            throw new Error(msg);
         }
 
         const reader = response.body.getReader();
@@ -721,7 +737,9 @@ async function handleJsonFileImport() {
             for (const line of lines) {
                 if (!line.trim()) continue;
                 try {
-                    const data = JSON.parse(line);
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('{')) continue;
+                    const data = JSON.parse(trimmed);
 
                     if (data.type === 'start') {
                         progressStage.textContent = `开始导入 (共 ${data.total} 条)...`;

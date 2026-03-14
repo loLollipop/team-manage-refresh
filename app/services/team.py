@@ -860,7 +860,8 @@ class TeamService:
                     account_id=data.get("account_id"),
                     refresh_token=data.get("refresh_token"),
                     session_token=data.get("session_token"),
-                    client_id=data.get("client_id")
+                    client_id=data.get("client_id"),
+                    pool_type=pool_type
                 )
 
                 if result["success"]:
@@ -903,7 +904,8 @@ class TeamService:
     async def import_team_json(
         self,
         json_text: Optional[str],
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: str = "normal"
     ):
         """从 JSON 文本批量导入 Team（流式返回进度）。"""
         try:
@@ -967,7 +969,8 @@ class TeamService:
                     account_id=data.get("account_id"),
                     refresh_token=data.get("refresh_token"),
                     session_token=data.get("session_token"),
-                    client_id=data.get("client_id")
+                    client_id=data.get("client_id"),
+                    pool_type=pool_type
                 )
 
                 if result["success"]:
