@@ -284,6 +284,9 @@ let oauthDraft = {
     clientId: ''
 };
 
+let oauthParsedCache = null;
+let oauthParsedCacheKey = '';
+
 async function generateOAuthAuthorizeLink() {
     const form = document.getElementById('singleImportForm');
     if (!form) return;
@@ -312,6 +315,8 @@ async function generateOAuthAuthorizeLink() {
         oauthDraft.codeVerifier = data.code_verifier || '';
         oauthDraft.state = data.state || '';
         oauthDraft.clientId = data.client_id || clientId;
+        oauthParsedCache = null;
+        oauthParsedCacheKey = '';
 
         document.getElementById('oauthAuthorizeUrlOutput').value = data.authorize_url || '';
         if (form.clientId) form.clientId.value = oauthDraft.clientId;
@@ -333,12 +338,16 @@ async function generateOAuthAuthorizeLink() {
     }
 }
 
-async function parseOAuthCallbackData() {
+async function parseOAuthCallbackData(forceRefresh = false) {
     const callbackText = document.getElementById('oauthCallbackInput').value.trim();
     const form = document.getElementById('singleImportForm');
 
     if (!callbackText) {
         throw new Error('请先粘贴回调 URL');
+    }
+
+    if (!forceRefresh && oauthParsedCache && oauthParsedCacheKey === callbackText) {
+        return oauthParsedCache;
     }
 
     const result = await apiCall('/admin/oauth/openai/parse-callback', {
@@ -356,7 +365,10 @@ async function parseOAuthCallbackData() {
         throw new Error(result.error || '解析回调失败');
     }
 
-    return unwrapApiPayload(result) || {};
+    const parsed = unwrapApiPayload(result) || {};
+    oauthParsedCache = parsed;
+    oauthParsedCacheKey = callbackText;
+    return parsed;
 }
 
 function decodeJwtPayload(token) {
@@ -392,20 +404,21 @@ function buildOAuthJsonTemplate(parsedData) {
     const accessAuth = accessPayload['https://api.openai.com/auth'] || {};
     const accessProfile = accessPayload['https://api.openai.com/profile'] || {};
 
-    const accountId = raw.account_id || accessAuth.chatgpt_account_id || '';
-    const email = raw.email || accessProfile.email || '';
+    const accountId = raw.account_id || parsedData.account_id || accessAuth.chatgpt_account_id || '';
+    const email = raw.email || parsedData.email || accessProfile.email || '';
     const exp = accessPayload.exp ? new Date(accessPayload.exp * 1000) : null;
+    const expired = raw.expired || parsedData.expired || (exp ? toIsoStringWithOffset8(exp) : '');
 
     return {
         access_token: accessToken,
         account_id: accountId,
-        disabled: false,
+        disabled: typeof raw.disabled === 'boolean' ? raw.disabled : false,
         email,
-        expired: exp ? toIsoStringWithOffset8(exp) : '',
-        id_token: raw.id_token || '',
-        last_refresh: toIsoStringWithOffset8(new Date()),
+        expired,
+        id_token: raw.id_token || parsedData.id_token || '',
+        last_refresh: raw.last_refresh || parsedData.last_refresh || toIsoStringWithOffset8(new Date()),
         refresh_token: refreshToken,
-        type: 'codex',
+        type: raw.type || parsedData.type || 'codex',
         client_id: clientId
     };
 }
@@ -425,7 +438,7 @@ function downloadJsonFile(payload, filename) {
 
 async function exportOAuthJsonTemplateFile() {
     try {
-        const data = await parseOAuthCallbackData();
+        const data = oauthParsedCache || await parseOAuthCallbackData();
         const payload = buildOAuthJsonTemplate(data);
         const filename = `team-oauth-${Date.now()}.json`;
         downloadJsonFile(payload, filename);
@@ -439,7 +452,7 @@ async function parseOAuthCallbackAndFill() {
     const form = document.getElementById('singleImportForm');
 
     try {
-        const data = await parseOAuthCallbackData();
+        const data = await parseOAuthCallbackData(true);
         if (form.accessToken && data.access_token) form.accessToken.value = data.access_token;
         if (form.refreshToken && data.refresh_token) form.refreshToken.value = data.refresh_token;
         if (form.clientId && data.client_id) form.clientId.value = data.client_id;
