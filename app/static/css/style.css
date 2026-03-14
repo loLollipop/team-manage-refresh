@@ -167,6 +167,13 @@ body.admin-theme .data-table th {
     background: rgba(10, 20, 45, 0.98);
 }
 
+body.admin-theme .toast {
+    background: rgba(10, 20, 45, 0.92);
+    color: #e8edf7;
+    border-color: rgba(148, 163, 184, 0.3);
+    backdrop-filter: blur(14px);
+}
+
 /* Animations */
 @keyframes fadeInUp {
     from {
@@ -1098,23 +1105,28 @@ body.admin-theme .data-table th {
 /* Toast */
 .toast {
     position: fixed;
-    bottom: 2rem;
-    right: 2rem;
-    padding: 1rem 1.5rem;
-    background: white;
+    right: 1rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    width: min(420px, calc(100vw - 2rem));
+    min-height: 52px;
+    padding: 0.9rem 1rem;
+    background: var(--bg-surface);
+    color: var(--text-main);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    transform: translateY(200%);
-    transition: var(--transition-base);
-    z-index: 1000;
+    transform: translateY(calc(100% + 20px));
+    opacity: 0;
+    transition: transform var(--transition-base), opacity var(--transition-fast);
+    z-index: 1200;
     border: 1px solid var(--border-base);
 }
 
 .toast.show {
     transform: translateY(0);
+    opacity: 1;
 }
 
 .toast.success {
@@ -1426,15 +1438,22 @@ body.admin-theme .data-table th {
     .table-container {
         position: relative;
         background:
-            linear-gradient(to right, white 30%, rgba(255, 255, 255, 0)),
-            linear-gradient(to right, rgba(255, 255, 255, 0), white 70%) 0 100%,
+            linear-gradient(to right, var(--bg-surface) 30%, rgba(255, 255, 255, 0)),
+            linear-gradient(to right, rgba(255, 255, 255, 0), var(--bg-surface) 70%) 0 100%,
             radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .2), rgba(0, 0, 0, 0)),
             radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .2), rgba(0, 0, 0, 0)) 0 100%;
         background-repeat: no-repeat;
-        background-color: white;
+        background-color: var(--bg-surface);
         background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
         background-position: 0 0, 100% 0, 0 0, 100% 0;
         background-attachment: local, local, scroll, scroll;
+    }
+
+    .toast {
+        left: 0.75rem;
+        right: 0.75rem;
+        width: auto;
+        bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }
 
     .pagination {
@@ -1513,6 +1532,11 @@ body.admin-theme .data-table th {
 
 .bg-gray-50 {
     background-color: var(--bg-main);
+}
+
+html,
+body {
+    overflow-x: hidden;
 }
 
 /* Mobile optimizations */
