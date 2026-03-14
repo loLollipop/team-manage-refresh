@@ -53,7 +53,9 @@ class RedemptionService:
         code: Optional[str] = None,
         expires_days: Optional[int] = None,
         has_warranty: bool = False,
-        warranty_days: int = 30
+        warranty_days: int = 30,
+        pool_type: str = "normal",
+        reusable_by_seat: bool = False
     ) -> Dict[str, Any]:
         """
         生成单个兑换码
@@ -114,7 +116,9 @@ class RedemptionService:
                 status="unused",
                 expires_at=expires_at,
                 has_warranty=has_warranty,
-                warranty_days=warranty_days
+                warranty_days=warranty_days,
+                pool_type=pool_type,
+                reusable_by_seat=reusable_by_seat
             )
 
             db_session.add(redemption_code)
@@ -145,7 +149,9 @@ class RedemptionService:
         count: int,
         expires_days: Optional[int] = None,
         has_warranty: bool = False,
-        warranty_days: int = 30
+        warranty_days: int = 30,
+        pool_type: str = "normal",
+        reusable_by_seat: bool = False
     ) -> Dict[str, Any]:
         """
         批量生成兑换码
@@ -202,7 +208,9 @@ class RedemptionService:
                     status="unused",
                     expires_at=expires_at,
                     has_warranty=has_warranty,
-                    warranty_days=warranty_days
+                    warranty_days=warranty_days,
+                    pool_type=pool_type,
+                    reusable_by_seat=reusable_by_seat
                 )
                 db_session.add(redemption_code)
 
@@ -260,9 +268,12 @@ class RedemptionService:
                 }
 
             # 2. 检查状态
-            allowed_statuses = ["unused", "warranty_active"]
-            if redemption_code.has_warranty:
-                allowed_statuses.append("used")
+            if redemption_code.reusable_by_seat:
+                allowed_statuses = ["unused", "used", "warranty_active"]
+            else:
+                allowed_statuses = ["unused", "warranty_active"]
+                if redemption_code.has_warranty:
+                    allowed_statuses.append("used")
 
             if redemption_code.status not in allowed_statuses:
                 status_text = "已过期" if redemption_code.status == "expired" else redemption_code.status
@@ -275,7 +286,30 @@ class RedemptionService:
                     "error": None
                 }
 
-            # 3. 检查是否过期 (仅针对未使用的兑换码执行首次激活截止时间检查)
+            # 3. 席位可复用兑换码次数限制校验（按池内总席位）
+            if redemption_code.reusable_by_seat:
+                total_seats_stmt = select(func.sum(Team.max_members)).where(
+                    Team.pool_type == (redemption_code.pool_type or "normal")
+                )
+                total_seats_result = await db_session.execute(total_seats_stmt)
+                total_seats = int(total_seats_result.scalar() or 0)
+
+                used_count_stmt = select(func.count(RedemptionRecord.id)).where(
+                    RedemptionRecord.code == code
+                )
+                used_count_result = await db_session.execute(used_count_stmt)
+                used_count = int(used_count_result.scalar() or 0)
+
+                if total_seats <= 0 or used_count >= total_seats:
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "兑换码次数已用完，无法进行兑换",
+                        "redemption_code": None,
+                        "error": None
+                    }
+
+            # 4. 检查是否过期 (仅针对未使用的兑换码执行首次激活截止时间检查)
             if redemption_code.status == "unused" and redemption_code.expires_at:
                 if redemption_code.expires_at < get_now():
                     # 更新状态为 expired
@@ -291,7 +325,7 @@ class RedemptionService:
                         "error": None
                     }
 
-            # 4. 验证通过
+            # 5. 验证通过
             return {
                 "success": True,
                 "valid": True,
@@ -301,7 +335,11 @@ class RedemptionService:
                     "code": redemption_code.code,
                     "status": redemption_code.status,
                     "expires_at": redemption_code.expires_at.isoformat() if redemption_code.expires_at else None,
-                    "created_at": redemption_code.created_at.isoformat() if redemption_code.created_at else None
+                    "created_at": redemption_code.created_at.isoformat() if redemption_code.created_at else None,
+                    "has_warranty": redemption_code.has_warranty,
+                    "warranty_days": redemption_code.warranty_days,
+                    "pool_type": redemption_code.pool_type or "normal",
+                    "reusable_by_seat": bool(redemption_code.reusable_by_seat)
                 },
                 "error": None
             }
@@ -399,7 +437,8 @@ class RedemptionService:
         page: int = 1,
         per_page: int = 50,
         search: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        pool_type: Optional[str] = "normal"
     ) -> Dict[str, Any]:
         """
         获取所有兑换码
@@ -869,7 +908,8 @@ class RedemptionService:
 
     async def get_stats(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: Optional[str] = "normal"
     ) -> Dict[str, int]:
         """
         获取兑换码统计信息
@@ -883,6 +923,8 @@ class RedemptionService:
                 RedemptionCode.status,
                 func.count(RedemptionCode.id)
             ).group_by(RedemptionCode.status)
+            if pool_type:
+                stmt = stmt.where(RedemptionCode.pool_type == pool_type)
             
             result = await db_session.execute(stmt)
             status_counts = dict(result.all())
@@ -893,6 +935,8 @@ class RedemptionService:
             
             # 计算总数
             total_stmt = select(func.count(RedemptionCode.id))
+            if pool_type:
+                total_stmt = total_stmt.where(RedemptionCode.pool_type == pool_type)
             total_result = await db_session.execute(total_stmt)
             total = total_result.scalar() or 0
             

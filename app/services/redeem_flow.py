@@ -77,7 +77,9 @@ class RedeemFlowService:
                 }
 
             # 2. 获取可用 Team 列表
-            teams_result = await self.team_service.get_available_teams(db_session)
+            code_meta = validate_result.get("redemption_code") or {}
+            pool_type = code_meta.get("pool_type", "normal")
+            teams_result = await self.team_service.get_available_teams(db_session, pool_type=pool_type)
 
             if not teams_result["success"]:
                 return {
@@ -112,7 +114,8 @@ class RedeemFlowService:
     async def select_team_auto(
         self,
         db_session: AsyncSession,
-        exclude_team_ids: Optional[List[int]] = None
+        exclude_team_ids: Optional[List[int]] = None,
+        pool_type: str = "normal"
     ) -> Dict[str, Any]:
         """
         自动选择一个可用的 Team
@@ -121,7 +124,8 @@ class RedeemFlowService:
             # 查找所有 active 且未满的 Team
             stmt = select(Team).where(
                 Team.status == "active",
-                Team.current_members < Team.max_members
+                Team.current_members < Team.max_members,
+                Team.pool_type == pool_type
             )
             
             if exclude_team_ids:
@@ -182,10 +186,18 @@ class RedeemFlowService:
                 logger.info(f"兑换尝试 {attempt + 1}/{max_retries} (Code: {code}, Email: {email})")
                 
                 try:
+                    validate_result = await self.redemption_service.validate_code(code, db_session)
+                    if not validate_result.get("success"):
+                        return {"success": False, "error": validate_result.get("error") or "兑换码校验失败"}
+                    if not validate_result.get("valid"):
+                        return {"success": False, "error": validate_result.get("reason") or "兑换码无效"}
+                    code_meta = validate_result.get("redemption_code") or {}
+                    pool_type = code_meta.get("pool_type", "normal")
+
                     # 确定目标 Team (初选)
                     team_id_final = current_target_team_id
                     if not team_id_final:
-                        select_res = await self.select_team_auto(db_session)
+                        select_res = await self.select_team_auto(db_session, pool_type=pool_type)
                         if not select_res["success"]:
                             return {"success": False, "error": select_res["error"]}
                         team_id_final = select_res["team_id"]
@@ -218,20 +230,21 @@ class RedeemFlowService:
                                 await db_session.rollback()
                                 return {"success": False, "error": "兑换码不存在"}
                             
-                            if rc.status not in ["unused", "warranty_active"]:
-                                if rc.status == "used":
-                                    warranty_check = await self.warranty_service.validate_warranty_reuse(
-                                        db_session, code, email
-                                    )
-                                    if not warranty_check.get("can_reuse"):
+                            if not rc.reusable_by_seat:
+                                if rc.status not in ["unused", "warranty_active"]:
+                                    if rc.status == "used":
+                                        warranty_check = await self.warranty_service.validate_warranty_reuse(
+                                            db_session, code, email
+                                        )
+                                        if not warranty_check.get("can_reuse"):
+                                            await db_session.rollback()
+                                            return {"success": False, "error": warranty_check.get("reason") or "兑换码已使用"}
+                                    else:
                                         await db_session.rollback()
-                                        return {"success": False, "error": warranty_check.get("reason") or "兑换码已使用"}
-                                else:
-                                    await db_session.rollback()
-                                    return {"success": False, "error": f"兑换码状态无效: {rc.status}"}
+                                        return {"success": False, "error": f"兑换码状态无效: {rc.status}"}
 
                             # 2. 锁定并校验 Team
-                            stmt = select(Team).where(Team.id == team_id_final).with_for_update()
+                            stmt = select(Team).where(Team.id == team_id_final, Team.pool_type == pool_type).with_for_update()
                             res = await db_session.execute(stmt)
                             target_team = res.scalar_one_or_none()
                             
@@ -273,7 +286,7 @@ class RedeemFlowService:
                             # 重新载入，确保状态最新
                             res = await db_session.execute(select(RedemptionCode).where(RedemptionCode.code == code).with_for_update())
                             rc = res.scalar_one_or_none()
-                            res = await db_session.execute(select(Team).where(Team.id == team_id_final).with_for_update())
+                            res = await db_session.execute(select(Team).where(Team.id == team_id_final, Team.pool_type == pool_type).with_for_update())
                             target_team = res.scalar_one_or_none()
 
                             if not invite_res["success"]:
@@ -290,20 +303,21 @@ class RedeemFlowService:
                                     raise Exception(err)
 
                             # 成功逻辑
-                            rc.status = "used"
-                            rc.used_by_email = email
-                            rc.used_team_id = team_id_final
-                            rc.used_at = get_now()
-                            if rc.has_warranty:
-                                days = rc.warranty_days or 30
-                                rc.warranty_expires_at = get_now() + timedelta(days=days)
+                            if not rc.reusable_by_seat:
+                                rc.status = "used"
+                                rc.used_by_email = email
+                                rc.used_team_id = team_id_final
+                                rc.used_at = get_now()
+                                if rc.has_warranty:
+                                    days = rc.warranty_days or 30
+                                    rc.warranty_expires_at = get_now() + timedelta(days=days)
 
                             record = RedemptionRecord(
                                 email=email,
                                 code=code,
                                 team_id=team_id_final,
                                 account_id=target_team.account_id,
-                                is_warranty_redemption=rc.has_warranty
+                                is_warranty_redemption=(rc.has_warranty and (not rc.reusable_by_seat))
                             )
                             db_session.add(record)
                             target_team.current_members += 1
