@@ -6,9 +6,16 @@
 <div class="page-header">
     <h2>系统设置</h2>
 </div>
+<div class="settings-top-nav">
+    <a href="#settings-proxy" class="settings-nav-pill settings-nav-link" data-target="settings-proxy">代理配置</a>
+    <a href="#settings-password" class="settings-nav-pill settings-nav-link" data-target="settings-password">修改密码</a>
+    <a href="#settings-log" class="settings-nav-pill settings-nav-link" data-target="settings-log">日志级别</a>
+    <a href="#settings-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-refresh">Token 预刷新</a>
+    <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
+</div>
 
 <!-- 代理配置 -->
-<div class="content-section">
+<div class="content-section settings-panel" id="settings-proxy">
     <div class="section-header">
         <h3>代理配置</h3>
     </div>
@@ -35,7 +42,7 @@
 </div>
 
 <!-- 密码修改 -->
-<div class="content-section">
+<div class="content-section settings-panel" id="settings-password">
     <div class="section-header">
         <h3>修改密码</h3>
     </div>
@@ -65,7 +72,7 @@
 </div>
 
 <!-- 日志级别 -->
-<div class="content-section">
+<div class="content-section settings-panel" id="settings-log">
     <div class="section-header">
         <h3>日志级别</h3>
     </div>
@@ -90,7 +97,7 @@
 
 
 <!-- Token 自动刷新配置 -->
-<div class="content-section">
+<div class="content-section settings-panel" id="settings-refresh">
     <div class="section-header">
         <h3>Token 自动刷新</h3>
     </div>
@@ -122,7 +129,7 @@
 </div>
 
 <!-- Webhook 配置 -->
-<div class="content-section">
+<div class="content-section settings-panel" id="settings-webhook">
     <div class="section-header">
         <h3>库存预警 Webhook</h3>
     </div>
@@ -169,11 +176,51 @@
         color: var(--text-muted);
         margin-top: 0.375rem;
     }
+
+    .settings-panel {
+        display: none;
+    }
+
+    .settings-panel.active {
+        display: block;
+    }
+
+    .settings-nav-pill.active {
+        color: var(--text-main);
+        border-color: var(--primary);
+        background: var(--primary-soft);
+    }
 </style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // 系统设置分区导航（单屏切换）
+    (function initSettingsPanels() {
+        const links = Array.from(document.querySelectorAll('.settings-nav-link'));
+        const panels = Array.from(document.querySelectorAll('.settings-panel'));
+
+        const activate = (targetId, pushHash = true) => {
+            const safeTarget = panels.some(p => p.id === targetId) ? targetId : 'settings-proxy';
+            panels.forEach(panel => panel.classList.toggle('active', panel.id === safeTarget));
+            links.forEach(link => link.classList.toggle('active', link.dataset.target === safeTarget));
+            if (pushHash) {
+                history.replaceState(null, '', `#${safeTarget}`);
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        links.forEach(link => {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                activate(link.dataset.target);
+            });
+        });
+
+        const initial = (window.location.hash || '').replace('#', '') || 'settings-proxy';
+        activate(initial, false);
+    })();
+
     // 代理配置表单
     document.getElementById('proxyForm').addEventListener('submit', async (e) => {
         e.preventDefault();

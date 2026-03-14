@@ -327,7 +327,8 @@ class TeamService:
         account_id: Optional[str] = None,
         refresh_token: Optional[str] = None,
         session_token: Optional[str] = None,
-        client_id: Optional[str] = None
+        client_id: Optional[str] = None,
+        pool_type: str = "normal"
     ) -> Dict[str, Any]:
         """
         单个导入 Team
@@ -497,7 +498,8 @@ class TeamService:
             for selected_account in accounts_to_import:
                 # 检查是否已存在 (根据 account_id)
                 stmt = select(Team).where(
-                    Team.account_id == selected_account["account_id"]
+                    Team.account_id == selected_account["account_id"],
+                    Team.pool_type == pool_type
                 )
                 result = await db_session.execute(stmt)
                 existing_team = result.scalar_one_or_none()
@@ -548,8 +550,8 @@ class TeamService:
                     beta_settings = settings_result["data"].get("beta_settings", {})
                     device_code_auth_enabled = beta_settings.get("codex_device_code_auth", False)
 
-                # 确定状态和最大成员数 (默认 6)
-                max_members = 6
+                # 确定状态和最大成员数 (默认 5)
+                max_members = 5
                 status = "active"
                 if current_members >= max_members:
                     status = "full"
@@ -579,7 +581,8 @@ class TeamService:
                     status=status,
                     account_role=selected_account.get("account_user_role"),
                     device_code_auth_enabled=device_code_auth_enabled,
-                    last_sync=get_now()
+                    last_sync=get_now(),
+                    pool_type=pool_type
                 )
 
                 db_session.add(team)
@@ -656,7 +659,8 @@ class TeamService:
         account_id: Optional[str] = None,
         max_members: Optional[int] = None,
         team_name: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        pool_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         更新 Team 信息
@@ -789,7 +793,8 @@ class TeamService:
     async def import_team_batch(
         self,
         text: str,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: str = "normal"
     ):
         """
         批量导入 Team (流式返回进度)
@@ -855,7 +860,8 @@ class TeamService:
                     account_id=data.get("account_id"),
                     refresh_token=data.get("refresh_token"),
                     session_token=data.get("session_token"),
-                    client_id=data.get("client_id")
+                    client_id=data.get("client_id"),
+                    pool_type=pool_type
                 )
 
                 if result["success"]:
@@ -898,7 +904,8 @@ class TeamService:
     async def import_team_json(
         self,
         json_text: Optional[str],
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: str = "normal"
     ):
         """从 JSON 文本批量导入 Team（流式返回进度）。"""
         try:
@@ -962,7 +969,8 @@ class TeamService:
                     account_id=data.get("account_id"),
                     refresh_token=data.get("refresh_token"),
                     session_token=data.get("session_token"),
-                    client_id=data.get("client_id")
+                    client_id=data.get("client_id"),
+                    pool_type=pool_type
                 )
 
                 if result["success"]:
@@ -1938,7 +1946,8 @@ class TeamService:
 
     async def get_available_teams(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: str = "normal"
     ) -> Dict[str, Any]:
         """
         获取可用的 Team 列表 (用于用户兑换页面)
@@ -1953,7 +1962,8 @@ class TeamService:
             # 查询 status='active' 且 current_members < max_members 的 Team
             stmt = select(Team).where(
                 Team.status == "active",
-                Team.current_members < Team.max_members
+                Team.current_members < Team.max_members,
+                Team.pool_type == pool_type
             )
             result = await db_session.execute(stmt)
             teams = result.scalars().all()
@@ -2088,7 +2098,8 @@ class TeamService:
         page: int = 1,
         per_page: int = 20,
         search: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        pool_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         获取所有 Team 列表 (用于管理员页面)
@@ -2123,6 +2134,9 @@ class TeamService:
             # 3. 如果有状态过滤,添加过滤条件
             if status:
                 stmt = stmt.where(Team.status == status)
+
+            if pool_type:
+                stmt = stmt.where(Team.pool_type == pool_type)
 
             # 4. 获取总数
             count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -2160,7 +2174,8 @@ class TeamService:
                     "status": team.status,
                     "device_code_auth_enabled": getattr(team, 'device_code_auth_enabled', False),
                     "last_sync": team.last_sync.isoformat() if team.last_sync else None,
-                    "created_at": team.created_at.isoformat() if team.created_at else None
+                    "created_at": team.created_at.isoformat() if team.created_at else None,
+                    "pool_type": getattr(team, "pool_type", "normal")
                 })
 
             logger.info(f"获取所有 Team 列表成功: 第 {page} 页, 共 {len(team_list)} 个 / 总数 {total}")
@@ -2282,7 +2297,8 @@ class TeamService:
 
     async def get_total_available_seats(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: str = "normal"
     ) -> int:
         """
         获取所有活跃 Team 的总剩余车位数
@@ -2291,7 +2307,8 @@ class TeamService:
             # 统计所有状态为 active 的 Team 的剩余位置
             stmt = select(func.sum(Team.max_members - Team.current_members)).where(
                 Team.status == "active",
-                Team.current_members < Team.max_members
+                Team.current_members < Team.max_members,
+                Team.pool_type == pool_type
             )
             result = await db_session.execute(stmt)
             return result.scalar() or 0
@@ -2301,12 +2318,15 @@ class TeamService:
 
     async def get_stats(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        pool_type: Optional[str] = None
     ) -> Dict[str, int]:
         """获取 Team 统计信息"""
         try:
             # 总数
             total_stmt = select(func.count(Team.id))
+            if pool_type:
+                total_stmt = total_stmt.where(Team.pool_type == pool_type)
             total_result = await db_session.execute(total_stmt)
             total = total_result.scalar() or 0
             
@@ -2315,6 +2335,8 @@ class TeamService:
                 Team.status == "active",
                 Team.current_members < Team.max_members
             )
+            if pool_type:
+                available_stmt = available_stmt.where(Team.pool_type == pool_type)
             available_result = await db_session.execute(available_stmt)
             available = available_result.scalar() or 0
             
