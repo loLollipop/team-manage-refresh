@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}公告通知 - GPT Team 管理系统{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>公告通知</h2>
+    <p class="text-muted" style="margin-top: 0.25rem;">发布后会在用户打开兑换页时以弹窗形式展示，支持 Markdown 格式。</p>
+</div>
+
+<div class="content-section" style="max-width: 900px;">
+    <form id="announcementForm" class="settings-form">
+        <div class="form-group">
+            <label for="announcementEnabled" style="display:flex;align-items:center;gap:0.5rem;">
+                <input type="checkbox" id="announcementEnabled" {% if announcement_enabled %}checked{% endif %}>
+                启用兑换页公告弹窗
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="announcementMarkdown">公告内容（Markdown）</label>
+            <textarea id="announcementMarkdown" class="form-control" rows="12" placeholder="# 系统公告\n\n- 支持 **Markdown**\n- 支持 [链接](https://example.com)\n- 支持列表">{{ announcement_markdown or '' }}</textarea>
+            <small class="form-text">留空则不展示弹窗。</small>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存公告</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('announcementForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const enabled = document.getElementById('announcementEnabled').checked;
+    const markdown = document.getElementById('announcementMarkdown').value;
+
+    try {
+        const response = await fetch('/admin/announcement', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled, markdown })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showToast('公告保存成功', 'success');
+        } else {
+            showToast(data.error || '保存失败', 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+});
+</script>
+{% endblock %}
