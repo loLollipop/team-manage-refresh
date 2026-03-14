@@ -34,9 +34,13 @@ async def redeem_page(
     try:
         from app.main import templates
         from app.services.team import TeamService
-        
+        from app.services.settings import settings_service
+
         team_service = TeamService()
         remaining_spots = await team_service.get_total_available_seats(db)
+        announcement_enabled_raw = await settings_service.get_setting(db, "announcement_enabled", "false")
+        announcement_enabled = str(announcement_enabled_raw).lower() in {"1", "true", "yes", "on"}
+        announcement_markdown = await settings_service.get_setting(db, "announcement_markdown", "")
 
         logger.info(f"用户访问兑换页面，剩余车位: {remaining_spots}")
 
@@ -44,7 +48,9 @@ async def redeem_page(
             "user/redeem.html",
             {
                 "request": request,
-                "remaining_spots": remaining_spots
+                "remaining_spots": remaining_spots,
+                "announcement_enabled": announcement_enabled,
+                "announcement_markdown": announcement_markdown,
             }
         )
 

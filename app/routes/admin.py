@@ -1510,6 +1510,78 @@ class TokenRefreshSettingsRequest(BaseModel):
     client_id: str = Field("", description="OAuth Client ID（用于 RT 刷新）")
 
 
+class AnnouncementUpdateRequest(BaseModel):
+    """公告配置请求"""
+    enabled: bool = Field(False, description="是否启用公告")
+    markdown: str = Field("", description="公告 Markdown 内容")
+
+
+@router.get("/announcement", response_class=HTMLResponse)
+async def announcement_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """公告通知配置页面。"""
+    try:
+        from app.main import templates
+        from app.services.settings import settings_service
+
+        logger.info("管理员访问公告通知页面")
+
+        enabled_raw = await settings_service.get_setting(db, "announcement_enabled", "false")
+        announcement_enabled = str(enabled_raw).lower() in {"1", "true", "yes", "on"}
+        announcement_markdown = await settings_service.get_setting(db, "announcement_markdown", "")
+
+        return templates.TemplateResponse(
+            "admin/announcement/index.html",
+            {
+                "request": request,
+                "user": current_user,
+                "active_page": "announcement",
+                "announcement_enabled": announcement_enabled,
+                "announcement_markdown": announcement_markdown,
+            }
+        )
+    except Exception as e:
+        logger.error(f"获取公告设置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取公告设置失败: {str(e)}"
+        )
+
+
+@router.post("/announcement")
+async def update_announcement(
+    payload: AnnouncementUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """保存公告配置。"""
+    try:
+        from app.services.settings import settings_service
+
+        settings_payload = {
+            "announcement_enabled": "true" if payload.enabled else "false",
+            "announcement_markdown": payload.markdown.strip(),
+        }
+        success = await settings_service.update_settings(db, settings_payload)
+
+        if success:
+            return JSONResponse(content={"success": True, "message": "公告已保存"})
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
+    except Exception as e:
+        logger.error(f"保存公告设置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"保存失败: {str(e)}"}
+        )
+
+
 @router.post("/settings/proxy")
 async def update_proxy_config(
     proxy_data: ProxyConfigRequest,

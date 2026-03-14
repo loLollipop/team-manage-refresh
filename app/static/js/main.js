@@ -91,6 +91,17 @@ function confirmAction(message) {
     return confirm(message);
 }
 
+
+function setSingleImportMode(mode = 'quick') {
+    const quickSection = document.getElementById('oauthQuickSection');
+    const manualSection = document.getElementById('manualTokenSection');
+    if (!quickSection || !manualSection) return;
+
+    const isManual = mode === 'manual';
+    quickSection.style.display = isManual ? 'none' : 'block';
+    manualSection.style.display = isManual ? 'block' : 'none';
+}
+
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
@@ -117,6 +128,35 @@ document.addEventListener('DOMContentLoaded', function () {
             exportOAuthJsonTemplateFile();
         });
     }
+
+    const switchToManualFill = document.getElementById('switchToManualFill');
+    if (switchToManualFill) {
+        switchToManualFill.addEventListener('click', () => setSingleImportMode('manual'));
+    }
+
+    const switchToQuickToken = document.getElementById('switchToQuickToken');
+    if (switchToQuickToken) {
+        switchToQuickToken.addEventListener('click', () => setSingleImportMode('quick'));
+    }
+
+    const chooseJsonFileBtn = document.getElementById('chooseJsonFileBtn');
+    const jsonImportFile = document.getElementById('jsonImportFile');
+    if (chooseJsonFileBtn && jsonImportFile) {
+        chooseJsonFileBtn.addEventListener('click', () => jsonImportFile.click());
+        jsonImportFile.addEventListener('change', async () => {
+            const fileNameNode = document.getElementById('jsonImportFileName');
+            if (fileNameNode) {
+                fileNameNode.textContent = jsonImportFile.files && jsonImportFile.files[0]
+                    ? `已选择：${jsonImportFile.files[0].name}`
+                    : '支持单对象、对象数组，或 {"teams": [...]} 格式';
+            }
+            if (jsonImportFile.files && jsonImportFile.files.length > 0) {
+                await handleJsonFileImport();
+            }
+        });
+    }
+
+    setSingleImportMode('quick');
 });
 
 // 检查认证状态
@@ -146,6 +186,10 @@ function showModal(modalId) {
     if (modal) {
         modal.classList.add('show');
         document.body.style.overflow = 'hidden'; // 防止背景滚动
+
+        if (modalId === 'importTeamModal') {
+            setSingleImportMode('quick');
+        }
     }
 }
 
@@ -453,8 +497,13 @@ async function handleSingleImport(event) {
 async function handleBatchImport(event) {
     event.preventDefault();
     const form = event.target;
-    const batchContent = form.batchContent.value.trim();
+    const batchContent = (form.batchContent && form.batchContent.value ? form.batchContent.value.trim() : "");
     const submitButton = form.querySelector('button[type="submit"]');
+
+    if (!batchContent) {
+        showToast('请输入批量导入内容', 'error');
+        return;
+    }
 
     // UI 元素
     const progressContainer = document.getElementById('batchProgressContainer');
