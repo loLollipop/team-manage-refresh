@@ -41,6 +41,99 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+
+function escapeForHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderMarkdownSafe(markdownText) {
+    const escaped = escapeForHtml(markdownText || '');
+    const lines = escaped.split(/\r?\n/);
+    let html = '';
+    let inList = false;
+
+    const applyInline = (line) => line
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+
+        if (!line) {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            continue;
+        }
+
+        const heading = line.match(/^(#{1,3})\s+(.*)$/);
+        if (heading) {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            const level = heading[1].length;
+            html += `<h${level}>${applyInline(heading[2])}</h${level}>`;
+            continue;
+        }
+
+        const bullet = line.match(/^[-*]\s+(.*)$/);
+        if (bullet) {
+            if (!inList) {
+                html += '<ul>';
+                inList = true;
+            }
+            html += `<li>${applyInline(bullet[1])}</li>`;
+            continue;
+        }
+
+        if (inList) {
+            html += '</ul>';
+            inList = false;
+        }
+        html += `<p>${applyInline(line)}</p>`;
+    }
+
+    if (inList) html += '</ul>';
+    return html || '<p>暂无公告内容</p>';
+}
+
+function initAnnouncementModal() {
+    const announcement = window.REDEEM_ANNOUNCEMENT || {};
+    if (!announcement.enabled || !announcement.markdown || !String(announcement.markdown).trim()) {
+        return;
+    }
+
+    const modal = document.getElementById('announcementModal');
+    const content = document.getElementById('announcementContent');
+    const closeBtn = document.getElementById('announcementCloseBtn');
+    const confirmBtn = document.getElementById('announcementConfirmBtn');
+    const backdrop = document.getElementById('announcementBackdrop');
+
+    if (!modal || !content) return;
+
+    content.innerHTML = renderMarkdownSafe(String(announcement.markdown));
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+
+    const closeModal = () => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (confirmBtn) confirmBtn.addEventListener('click', closeModal);
+    if (backdrop) backdrop.addEventListener('click', closeModal);
+}
+
 // 切换步骤
 function showStep(stepNumber) {
     document.querySelectorAll('.step').forEach(step => {
@@ -51,6 +144,14 @@ function showStep(stepNumber) {
     if (targetStep) {
         targetStep.classList.add('active');
     }
+}
+
+function updateTabIndicator(activeTab) {
+    const indicator = document.getElementById('tabIndicator');
+    if (!indicator || !activeTab) return;
+
+    indicator.style.left = `${activeTab.offsetLeft}px`;
+    indicator.style.width = `${activeTab.offsetWidth}px`;
 }
 
 function switchTopTab(tabName) {
@@ -65,6 +166,8 @@ function switchTopTab(tabName) {
     if (warrantyPanel) warrantyPanel.classList.toggle('active', tabName === 'warranty');
     if (tabRedeem) tabRedeem.classList.toggle('active', tabName === 'redeem');
     if (tabWarranty) tabWarranty.classList.toggle('active', tabName === 'warranty');
+
+    updateTabIndicator(tabName === 'redeem' ? tabRedeem : tabWarranty);
 }
 
 // 返回步骤1
@@ -82,6 +185,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabWarranty) tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
 
     switchTopTab('redeem');
+    initAnnouncementModal();
+    window.addEventListener('resize', () => {
+        const activeTab = document.querySelector('.top-tab.active');
+        updateTabIndicator(activeTab);
+    });
 });
 
 // 步骤1: 验证兑换码并直接兑换
@@ -104,14 +212,16 @@ document.getElementById('verifyForm').addEventListener('submit', async (e) => {
 
     // 禁用按钮
     verifyBtn.disabled = true;
-    verifyBtn.textContent = '正在兑换...';
+    verifyBtn.innerHTML = '<i data-lucide="loader-circle" class="spinning"></i> 正在兑换...';
+    if (window.lucide) lucide.createIcons();
 
     // 直接调用兑换接口 (team_id = null 表示自动选择)
     await confirmRedeem(null);
 
     // 恢复按钮状态 (如果 confirmRedeem 失败并显示了错误也没关系，因为用户可以点返回重试)
     verifyBtn.disabled = false;
-    verifyBtn.textContent = '验证兑换码';
+    verifyBtn.innerHTML = '<i data-lucide="shield-check"></i> 验证并激活兑换码';
+    if (window.lucide) lucide.createIcons();
 });
 
 // 渲染Team列表

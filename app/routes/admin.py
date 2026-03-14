@@ -8,6 +8,7 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,8 @@ from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
 from app.services.chatgpt import chatgpt_service
+from app.services.settings import settings_service
+from app.models import RedemptionCode, Team
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,7 @@ class TeamImportRequest(BaseModel):
     email: Optional[str] = Field(None, description="邮箱 (单个导入)")
     account_id: Optional[str] = Field(None, description="Account ID (单个导入)")
     content: Optional[str] = Field(None, description="批量导入内容")
+    pool_type: str = Field("normal", description="导入池类型: normal/welfare")
 
 
 
@@ -117,7 +121,7 @@ async def admin_dashboard(
     page: int = 1,
     per_page: int = 20,
     search: Optional[str] = None,
-    status: Optional[str] = None,
+    status_filter: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -132,11 +136,11 @@ async def admin_dashboard(
         # per_page = 20 (Removed hardcoded value)
         
         # 获取 Team 列表 (分页)
-        teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search, status=status)
+        teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search, status=status_filter, pool_type="normal")
         
         # 获取统计信息 (使用专用统计方法优化)
-        team_stats = await team_service.get_stats(db)
-        code_stats = await redemption_service.get_stats(db)
+        team_stats = await team_service.get_stats(db, pool_type="normal")
+        code_stats = await redemption_service.get_stats(db, pool_type="normal")
 
         # 计算统计数据
         stats = {
@@ -155,7 +159,7 @@ async def admin_dashboard(
                 "teams": teams_result.get("teams", []),
                 "stats": stats,
                 "search": search,
-                "status_filter": status,
+                "status_filter": status_filter,
                 "pagination": {
                     "current_page": teams_result.get("current_page", page),
                     "total_pages": teams_result.get("total_pages", 1),
@@ -173,6 +177,125 @@ async def admin_dashboard(
             detail=f"加载管理员面板失败: {str(e)}"
         )
 
+
+
+
+@router.get("/welfare", response_class=HTMLResponse)
+async def welfare_dashboard(
+    request: Request,
+    page: int = 1,
+    per_page: int = 20,
+    search: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """福利车位管理页"""
+    try:
+        from app.main import templates
+
+        teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search, status=status_filter, pool_type="welfare")
+        team_stats = await team_service.get_stats(db, pool_type="welfare")
+        remaining_spots = await team_service.get_total_available_seats(db, pool_type="welfare")
+        welfare_code = await settings_service.get_setting(db, "welfare_common_code", "")
+        welfare_limit_raw = await settings_service.get_setting(db, "welfare_common_code_limit", "0")
+        welfare_used_raw = await settings_service.get_setting(db, "welfare_common_code_used_count", "0")
+
+        # 福利通用码的可用次数应按“可邀请席位”计算：sum(max_members - 1)
+        usable_capacity_stmt = select(func.sum(Team.max_members - 1)).where(
+            Team.pool_type == "welfare",
+            Team.max_members > 1
+        )
+        usable_capacity_result = await db.execute(usable_capacity_stmt)
+        usable_capacity = int(usable_capacity_result.scalar() or 0)
+
+        try:
+            welfare_limit = int(str(welfare_limit_raw or "0").strip() or 0)
+        except Exception:
+            welfare_limit = 0
+        try:
+            welfare_used = int(str(welfare_used_raw or "0").strip() or 0)
+        except Exception:
+            welfare_used = 0
+
+        # 兼容历史错误值：展示时按真实可邀请席位收敛
+        effective_limit = usable_capacity if usable_capacity >= 0 else 0
+
+        stats = {
+            "total_teams": team_stats["total"],
+            "available_teams": team_stats["available"],
+            "remaining_spots": remaining_spots,
+            "welfare_code": welfare_code,
+            "welfare_code_limit": effective_limit,
+            "welfare_code_used": welfare_used,
+            "welfare_code_remaining": max(effective_limit - welfare_used, 0),
+        }
+
+        return templates.TemplateResponse(
+            "admin/index.html",
+            {
+                "request": request,
+                "user": current_user,
+                "active_page": "welfare",
+                "teams": teams_result.get("teams", []),
+                "stats": stats,
+                "search": search,
+                "status_filter": status_filter,
+                "pagination": {
+                    "current_page": teams_result.get("current_page", page),
+                    "total_pages": teams_result.get("total_pages", 1),
+                    "total": teams_result.get("total", 0),
+                    "per_page": per_page
+                }
+            }
+        )
+    except Exception as e:
+        logger.error(f"加载福利车位页面失败: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"加载福利车位页面失败: {str(e)}")
+
+
+@router.post("/welfare/code/generate")
+async def generate_welfare_common_code(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """生成/更新福利通用兑换码（不落库到 redemption_codes，仅存 settings）。"""
+    try:
+        seats_stmt = select(func.sum(Team.max_members - 1)).where(
+            Team.pool_type == "welfare",
+            Team.max_members > 1
+        )
+        seats_result = await db.execute(seats_stmt)
+        total_seats = int(seats_result.scalar() or 0)
+
+        if total_seats <= 0:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "当前没有可用的福利车位，无法生成通用兑换码"}
+            )
+
+        code = redemption_service._generate_random_code()
+
+        # 兼容清理：历史版本可能把福利通用码写入 redemption_codes，这里统一失效处理
+        await db.execute(
+            update(RedemptionCode)
+            .where(RedemptionCode.pool_type == "welfare", RedemptionCode.reusable_by_seat == True)
+            .values(status="expired")
+        )
+        await db.commit()
+
+        # 每次生成新码都会立即替换旧码（旧码自动失效）
+        await settings_service.update_settings(db, {
+            "welfare_common_code": code,
+            "welfare_common_code_limit": str(total_seats),
+            "welfare_common_code_used_count": "0",
+            "welfare_common_code_generated_at": get_now().isoformat()
+        })
+
+        return JSONResponse(content={"success": True, "code": code, "limit": total_seats, "used": 0, "remaining": total_seats})
+    except Exception as e:
+        logger.error(f"生成福利通用兑换码失败: {e}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
 
 @router.post("/teams/{team_id}/delete")
 async def delete_team(
@@ -292,7 +415,8 @@ async def team_import(
         导入结果
     """
     try:
-        logger.info(f"管理员导入 Team: {import_data.import_type}")
+        pool_type = "welfare" if (import_data.pool_type or "normal") == "welfare" else "normal"
+        logger.info(f"管理员导入 Team: {import_data.import_type}, pool={pool_type}")
 
         if import_data.import_type == "single":
             # 单个导入 - 允许通过 AT, RT 或 ST 导入
@@ -312,7 +436,8 @@ async def team_import(
                 account_id=import_data.account_id,
                 refresh_token=import_data.refresh_token,
                 session_token=import_data.session_token,
-                client_id=import_data.client_id
+                client_id=import_data.client_id,
+                pool_type=pool_type
             )
 
             if not result["success"]:
@@ -328,7 +453,8 @@ async def team_import(
             async def progress_generator():
                 async for status_item in team_service.import_team_batch(
                     text=import_data.content,
-                    db_session=db
+                    db_session=db,
+                    pool_type=pool_type
                 ):
                     yield json.dumps(status_item, ensure_ascii=False) + "\n"
 
@@ -341,7 +467,8 @@ async def team_import(
             async def progress_generator():
                 async for status_item in team_service.import_team_json(
                     json_text=import_data.content,
-                    db_session=db
+                    db_session=db,
+                    pool_type=pool_type
                 ):
                     yield json.dumps(status_item, ensure_ascii=False) + "\n"
 
@@ -878,7 +1005,7 @@ async def codes_list_page(
         # 获取兑换码 (分页)
         # per_page = 50 (Removed hardcoded value)
         codes_result = await redemption_service.get_all_codes(
-            db, page=page, per_page=per_page, search=search, status=status_filter
+            db, page=page, per_page=per_page, search=search, status=status_filter, pool_type="normal"
         )
         codes = codes_result.get("codes", [])
         total_codes = codes_result.get("total", 0)
@@ -886,7 +1013,7 @@ async def codes_list_page(
         current_page = codes_result.get("current_page", 1)
 
         # 获取统计信息
-        stats = await redemption_service.get_stats(db)
+        stats = await redemption_service.get_stats(db, pool_type="normal")
         # 兼容旧模版中的 status 统计名 (unused/used/expired)
         # 注意: get_stats 返回的 used 已经包含了 warranty_active
 
@@ -959,7 +1086,8 @@ async def generate_codes(
                 code=generate_data.code,
                 expires_days=generate_data.expires_days,
                 has_warranty=generate_data.has_warranty,
-                warranty_days=generate_data.warranty_days
+                warranty_days=generate_data.warranty_days,
+                pool_type="normal"
             )
 
             if not result["success"]:
@@ -986,7 +1114,8 @@ async def generate_codes(
                 count=generate_data.count,
                 expires_days=generate_data.expires_days,
                 has_warranty=generate_data.has_warranty,
-                warranty_days=generate_data.warranty_days
+                warranty_days=generate_data.warranty_days,
+                pool_type="normal"
             )
 
             if not result["success"]:
@@ -1084,7 +1213,7 @@ async def export_codes(
         logger.info("管理员导出兑换码为Excel")
 
         # 获取所有兑换码 (导出不分页，传入大数量)
-        codes_result = await redemption_service.get_all_codes(db, page=1, per_page=100000, search=search)
+        codes_result = await redemption_service.get_all_codes(db, page=1, per_page=100000, search=search, pool_type="normal")
         all_codes = codes_result.get("codes", [])
         
         # 结果可能带统计信息，我们只取 codes
@@ -1508,6 +1637,78 @@ class TokenRefreshSettingsRequest(BaseModel):
     interval_minutes: int = Field(30, ge=5, le=1440, description="定时刷新间隔（分钟）")
     window_hours: int = Field(2, ge=1, le=24, description="过期前提前刷新窗口（小时）")
     client_id: str = Field("", description="OAuth Client ID（用于 RT 刷新）")
+
+
+class AnnouncementUpdateRequest(BaseModel):
+    """公告配置请求"""
+    enabled: bool = Field(False, description="是否启用公告")
+    markdown: str = Field("", description="公告 Markdown 内容")
+
+
+@router.get("/announcement", response_class=HTMLResponse)
+async def announcement_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """公告通知配置页面。"""
+    try:
+        from app.main import templates
+        from app.services.settings import settings_service
+
+        logger.info("管理员访问公告通知页面")
+
+        enabled_raw = await settings_service.get_setting(db, "announcement_enabled", "false")
+        announcement_enabled = str(enabled_raw).lower() in {"1", "true", "yes", "on"}
+        announcement_markdown = await settings_service.get_setting(db, "announcement_markdown", "")
+
+        return templates.TemplateResponse(
+            "admin/announcement/index.html",
+            {
+                "request": request,
+                "user": current_user,
+                "active_page": "announcement",
+                "announcement_enabled": announcement_enabled,
+                "announcement_markdown": announcement_markdown,
+            }
+        )
+    except Exception as e:
+        logger.error(f"获取公告设置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取公告设置失败: {str(e)}"
+        )
+
+
+@router.post("/announcement")
+async def update_announcement(
+    payload: AnnouncementUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """保存公告配置。"""
+    try:
+        from app.services.settings import settings_service
+
+        settings_payload = {
+            "announcement_enabled": "true" if payload.enabled else "false",
+            "announcement_markdown": payload.markdown.strip(),
+        }
+        success = await settings_service.update_settings(db, settings_payload)
+
+        if success:
+            return JSONResponse(content={"success": True, "message": "公告已保存"})
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
+    except Exception as e:
+        logger.error(f"保存公告设置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"保存失败: {str(e)}"}
+        )
 
 
 @router.post("/settings/proxy")

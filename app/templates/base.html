@@ -12,7 +12,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 text-slate-900">
+<body class="bg-gray-50 text-slate-900{% if user %} admin-theme{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
     {% if user %}
     <!-- 导航栏 -->
     <nav class="navbar">
@@ -58,6 +58,18 @@
                         <span class="menu-text">使用记录</span>
                     </a>
                 </li>
+                <li class="menu-item {% if active_page == 'welfare' %}active{% endif %}">
+                    <a href="/admin/welfare">
+                        <span class="menu-icon" data-lucide="heart-handshake"></span>
+                        <span class="menu-text">福利车位</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'announcement' %}active{% endif %}">
+                    <a href="/admin/announcement">
+                        <span class="menu-icon" data-lucide="megaphone"></span>
+                        <span class="menu-text">公告通知</span>
+                    </a>
+                </li>
                 <li class="menu-item {% if active_page == 'settings' %}active{% endif %}">
                     <a href="/admin/settings">
                         <span class="menu-icon" data-lucide="settings"></span>
@@ -81,7 +93,7 @@
 
     <!-- 页脚 -->
     <footer class="footer">
-        <p>&copy; 2026 <a href="https://github.com/tibbar213/team-manage" target="_blank" class="footer-link">GPT Team
+        <p>&copy; 2026 <a href="https://github.com/loLollipop/team-manage-refresh" target="_blank" class="footer-link">GPT Team
                 管理系统</a> v0.1.0</p>
     </footer>
 
@@ -111,71 +123,86 @@
 
                 <div id="singleImport" class="import-panel">
                     <form id="singleImportForm" onsubmit="handleSingleImport(event)">
-                        <div class="form-group" style="padding: 0.75rem; border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 1rem;">
-                            <label style="margin-bottom: 0.5rem; display: block;">一键获取 Token（默认 Client ID）</label>
-                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
-                                <button type="button" id="btnOneClickToken" class="btn btn-secondary">一键获取 Token</button>
-                                <small class="form-text" style="margin: 0; align-self: center;">点击后自动复制授权链接，请到浏览器登录并复制回调。</small>
+                        <input type="hidden" name="poolType" value="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+                        <div id="oauthQuickSection" class="import-mode-card oauth-quick-card">
+                            <div class="oauth-quick-head">
+                                <label>一键获取 Token</label>
+                                <p class="oauth-quick-subtitle">三步完成：获取授权链接 → 粘贴回调 → 自动填充。</p>
                             </div>
-                            <input type="text" id="oauthAuthorizeUrlOutput" class="form-control" placeholder="授权链接会自动复制，这里仅作备份显示" readonly style="margin-bottom: 0.5rem;">
-                            <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后把完整回调 URL 粘贴到这里"></textarea>
-                            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                <button type="button" id="btnParseOAuthCallback" class="btn btn-secondary">解析并自动填充</button>
-                                <button type="button" id="btnExportOAuthJson" class="btn btn-secondary">导出 JSON 文件</button>
-                                <small class="form-text" style="margin: 0; align-self: center;">粘贴回调后可自动填充 AT / RT / Client ID，或导出 JSON 模板文件。</small>
+
+                            <div class="oauth-quick-action-row">
+                                <button type="button" id="btnOneClickToken" class="btn btn-primary oauth-main-btn">获取授权链接</button>
+                            </div>
+
+                            <div class="oauth-quick-fields">
+                                <input type="text" id="oauthAuthorizeUrlOutput" class="form-control" placeholder="授权链接会自动复制，这里仅作备份显示" readonly>
+                                <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后粘贴完整回调 URL"></textarea>
+                            </div>
+
+                            <div class="oauth-quick-btn-row">
+                                <button type="button" id="btnParseOAuthCallback" class="btn btn-primary">解析并自动填充</button>
+                                <button type="button" id="btnExportOAuthJson" class="btn btn-primary">导出 JSON</button>
+                                <button type="submit" id="btnQuickImportTeam" class="btn btn-primary">导入 Team</button>
+                            </div>
+
+                            <div class="import-mode-toggle-wrap">
+                                <button type="button" id="switchToManualFill" class="import-mode-toggle-btn">已有 Token？直接填写</button>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Access Token (AT) <span class="required">*</span></label>
-                            <input type="text" name="accessToken" class="form-control"
-                                placeholder="eyJhbGciOiJSUzI1Ni..." required>
-                            <small class="form-text">必填项，以 eyJ 开头的 JWT Token</small>
+
+                        <div id="manualTokenSection" class="import-mode-card" style="display: none;">
+                            <div class="manual-import-action-top" style="margin-bottom: 0.85rem;">
+                                <button type="submit" class="btn btn-primary">导入 Team</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Access Token (AT) <span class="required">*</span></label>
+                                <input type="text" name="accessToken" class="form-control"
+                                    placeholder="eyJhbGciOiJSUzI1Ni..." required>
+                                <small class="form-text">必填项，以 eyJ 开头的 JWT Token</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Refresh Token (RT)</label>
+                                <input type="text" name="refreshToken" class="form-control" placeholder="rt-...">
+                                <small class="form-text">可选，用于自动刷新 AT</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Session Token</label>
+                                <input type="text" name="sessionToken" class="form-control" placeholder="eyJ...">
+                                <small class="form-text">可选，作为备选刷新方式</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Client ID</label>
+                                <input type="text" name="clientId" class="form-control" placeholder="Client ID">
+                                <small class="form-text">使用 Refresh Token 时必填</small>
+                            </div>
+                            <div class="form-group">
+                                <label>邮箱</label>
+                                <input type="email" name="email" class="form-control" placeholder="admin@example.com">
+                                <small class="form-text">可选，如果不填写将从 Token 中自动提取</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Account ID</label>
+                                <input type="text" name="accountId" class="form-control"
+                                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                <small class="form-text">可选，如果不填写将从 API 自动获取</small>
+                            </div>
+                            <div class="import-mode-toggle-wrap">
+                                <button type="button" id="switchToQuickToken" class="import-mode-toggle-btn">返回一键获取 Token</button>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Refresh Token (RT)</label>
-                            <input type="text" name="refreshToken" class="form-control" placeholder="rt-...">
-                            <small class="form-text">可选，用于自动刷新 AT</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Session Token</label>
-                            <input type="text" name="sessionToken" class="form-control" placeholder="eyJ...">
-                            <small class="form-text">可选，作为备选刷新方式</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Client ID</label>
-                            <input type="text" name="clientId" class="form-control" placeholder="Client ID">
-                            <small class="form-text">使用 Refresh Token 时必填</small>
-                        </div>
-                        <div class="form-group">
-                            <label>邮箱</label>
-                            <input type="email" name="email" class="form-control" placeholder="admin@example.com">
-                            <small class="form-text">可选，如果不填写将从 Token 中自动提取</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Account ID</label>
-                            <input type="text" name="accountId" class="form-control"
-                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-                            <small class="form-text">可选，如果不填写将从 API 自动获取</small>
-                        </div>
-                        <button type="submit" class="btn btn-primary">导入</button>
                     </form>
                 </div>
 
                 <div id="batchImport" class="import-panel" style="display: none;">
                     <form id="batchImportForm" onsubmit="handleBatchImport(event)">
-                        <div class="form-group" style="padding: 0.75rem; border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 1rem;">
-                            <label style="margin-bottom: 0.5rem; display: block;">JSON 文件导入</label>
-                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-                                <input type="file" id="jsonImportFile" accept=".json,application/json" class="form-control" style="max-width: 300px;">
-                                <button type="button" class="btn btn-secondary" onclick="handleJsonFileImport()">导入 JSON</button>
-                                <small class="form-text" style="margin: 0;">支持单对象、对象数组，或 {"teams": [...]} 格式。</small>
-                            </div>
+                        <input type="hidden" name="poolType" value="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+                        <div class="json-import-box" id="jsonImportBox">
+                            <input type="file" id="jsonImportFile" accept=".json,application/json" style="display: none;">
+                            <div class="json-import-box-title">JSON 文件导入</div>
+                            <button type="button" id="chooseJsonFileBtn" class="btn btn-primary">选择 JSON 文件</button>
+                            <div class="json-import-file-hint" id="jsonImportFileName">支持单对象、对象数组，或 {"teams": [...]} 格式</div>
                         </div>
-                        <div class="form-group">
-                            <label>批量导入内容 <span class="required">*</span></label>
-                            <textarea name="batchContent" class="form-control" rows="8" placeholder="一行一个 AT Token..."
-                                required></textarea>
-                        </div>
+                        <textarea name="batchContent" style="display:none"></textarea>
                         <div id="batchProgressContainer" style="display: none; margin-bottom: 1.5rem;">
                             <div class="progress-info"
                                 style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.875rem;">
@@ -202,7 +229,7 @@
                             </div>
                             <div id="batchResults"></div>
                         </div>
-                        <button type="submit" class="btn btn-primary">批量导入</button>
+                        
                     </form>
                 </div>
             </div>
@@ -369,7 +396,7 @@
     </div>
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', path='/js/main.js') }}?v=20260312-oauth-click-fix"></script>
+    <script src="{{ url_for('static', path='/js/main.js') }}?v=20260314-welfare-ui-tune-2"></script>
     <script>
         lucide.createIcons();
     </script>

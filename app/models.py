@@ -33,6 +33,7 @@ class Team(Base):
     error_count = Column(Integer, default=0, comment="连续报错次数")
     last_sync = Column(DateTime, comment="最后同步时间")
     created_at = Column(DateTime, default=get_now, comment="创建时间")
+    pool_type = Column(String(20), default="normal", comment="池类型: normal/welfare")
 
     # 关系
     team_accounts = relationship("TeamAccount", back_populates="team", cascade="all, delete-orphan")
@@ -79,6 +80,8 @@ class RedemptionCode(Base):
     has_warranty = Column(Boolean, default=False, comment="是否为质保兑换码")
     warranty_days = Column(Integer, default=30, comment="质保时长(天)")
     warranty_expires_at = Column(DateTime, comment="质保到期时间(首次使用后根据质保时长计算)")
+    pool_type = Column(String(20), default="normal", comment="兑换池类型: normal/welfare")
+    reusable_by_seat = Column(Boolean, default=False, comment="是否可按席位重复使用")
 
     # 关系
     redemption_records = relationship("RedemptionRecord", back_populates="redemption_code")
