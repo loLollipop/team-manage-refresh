@@ -53,6 +53,14 @@ function showStep(stepNumber) {
     }
 }
 
+function updateTabIndicator(activeTab) {
+    const indicator = document.getElementById('tabIndicator');
+    if (!indicator || !activeTab) return;
+
+    indicator.style.left = `${activeTab.offsetLeft}px`;
+    indicator.style.width = `${activeTab.offsetWidth}px`;
+}
+
 function switchTopTab(tabName) {
     currentTopTab = tabName;
 
@@ -65,6 +73,8 @@ function switchTopTab(tabName) {
     if (warrantyPanel) warrantyPanel.classList.toggle('active', tabName === 'warranty');
     if (tabRedeem) tabRedeem.classList.toggle('active', tabName === 'redeem');
     if (tabWarranty) tabWarranty.classList.toggle('active', tabName === 'warranty');
+
+    updateTabIndicator(tabName === 'redeem' ? tabRedeem : tabWarranty);
 }
 
 // 返回步骤1
@@ -82,6 +92,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabWarranty) tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
 
     switchTopTab('redeem');
+    window.addEventListener('resize', () => {
+        const activeTab = document.querySelector('.top-tab.active');
+        updateTabIndicator(activeTab);
+    });
 });
 
 // 步骤1: 验证兑换码并直接兑换
@@ -104,14 +118,16 @@ document.getElementById('verifyForm').addEventListener('submit', async (e) => {
 
     // 禁用按钮
     verifyBtn.disabled = true;
-    verifyBtn.textContent = '正在兑换...';
+    verifyBtn.innerHTML = '<i data-lucide="loader-circle" class="spinning"></i> 正在兑换...';
+    if (window.lucide) lucide.createIcons();
 
     // 直接调用兑换接口 (team_id = null 表示自动选择)
     await confirmRedeem(null);
 
     // 恢复按钮状态 (如果 confirmRedeem 失败并显示了错误也没关系，因为用户可以点返回重试)
     verifyBtn.disabled = false;
-    verifyBtn.textContent = '验证兑换码';
+    verifyBtn.innerHTML = '<i data-lucide="shield-check"></i> 验证并激活兑换码';
+    if (window.lucide) lucide.createIcons();
 });
 
 // 渲染Team列表
