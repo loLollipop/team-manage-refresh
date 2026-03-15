@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - GPT Team 管理系统{% endblock %}
+
+{% block auth_content %}
+<div class="login-container">
+    <div class="login-box">
+        <h2>管理员登录</h2>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="form-control"
+                    placeholder="请输入管理员密码"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+            <button type="submit" class="btn btn-primary btn-block">登录</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function handleLogin(event) {
+    event.preventDefault();
+
+    const password = document.getElementById('password').value;
+    const errorMessage = document.getElementById('errorMessage');
+    const submitButton = event.target.querySelector('button[type="submit"]');
+
+    // 禁用提交按钮
+    submitButton.disabled = true;
+    submitButton.textContent = '登录中...';
+    errorMessage.style.display = 'none';
+
+    try {
+        const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // 登录成功,跳转到管理员面板
+            window.location.href = '/admin';
+        } else {
+            // 显示错误信息
+            errorMessage.textContent = data.error || '登录失败';
+            errorMessage.style.display = 'block';
+            submitButton.disabled = false;
+            submitButton.textContent = '登录';
+        }
+    } catch (error) {
+        errorMessage.textContent = '网络错误,请稍后重试';
+        errorMessage.style.display = 'block';
+        submitButton.disabled = false;
+        submitButton.textContent = '登录';
+    }
+}
+</script>
+{% endblock %}

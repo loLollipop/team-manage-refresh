@@ -1,0 +1,824 @@
+{% extends "base.html" %}
+
+{% block title %}{% if active_page == "welfare" %}福利车位 - GPT Team 管理系统{% else %}控制台 - GPT Team 管理系统{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>{% if active_page == "welfare" %}福利车位{% else %}控制台{% endif %}</h2>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-container">
+    <div class="stat-card">
+        <div class="stat-icon"><i data-lucide="users"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.total_teams }}</div>
+            <div class="stat-label">Team 总数</div>
+        </div>
+    </div>
+    <div class="stat-card stat-success">
+        <div class="stat-icon"><i data-lucide="check-circle"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.available_teams }}</div>
+            <div class="stat-label">可用 Team</div>
+        </div>
+    </div>
+    {% if active_page == "welfare" %}
+    <div class="stat-card stat-info">
+        <div class="stat-icon"><i data-lucide="car-front"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.remaining_spots }}</div>
+            <div class="stat-label">福利剩余车位</div>
+        </div>
+    </div>
+    <div class="stat-card stat-warning welfare-code-card">
+        <div class="stat-icon"><i data-lucide="ticket"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-label">通用兑换码</div>
+            <div class="welfare-code-value" id="welfareCommonCodeText" title="{{ stats.welfare_code or '' }}">{{ stats.welfare_code or '-' }}</div>
+            <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
+            <div class="welfare-code-row">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
+                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
+                </button>
+            </div>
+            <input type="hidden" id="welfareCommonCodeValue" value="{{ stats.welfare_code or '' }}">
+        </div>
+    </div>
+    {% else %}
+    <div class="stat-card stat-info">
+        <div class="stat-icon"><i data-lucide="ticket"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.total_codes }}</div>
+            <div class="stat-label">兑换码总数</div>
+        </div>
+    </div>
+    <div class="stat-card stat-warning">
+        <div class="stat-icon"><i data-lucide="clipboard-list"></i></div>
+        <div class="stat-info-group">
+            <div class="stat-value">{{ stats.used_codes }}</div>
+            <div class="stat-label">已使用兑换码</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Team 列表 -->
+<div class="content-section">
+    <div class="section-header">
+        <h3>{% if active_page == "welfare" %}福利 Team 列表{% else %}Team 列表{% endif %}</h3>
+        <div class="header-group">
+            <!-- 批量操作 -->
+            <div id="batchActions" class="batch-actions-group" style="display: none;">
+                <button onclick="handleBatchRefresh()" class="btn btn-secondary btn-sm">
+                    <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> 批量刷新
+                </button>
+                <button onclick="handleBatchEnableDeviceAuth()" class="btn btn-success btn-sm">
+                    <i data-lucide="shield-check" style="width: 14px; height: 14px;"></i> 批量开启验证
+                </button>
+                <button onclick="handleBatchDelete()" class="btn btn-danger btn-sm">
+                    <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
+                </button>
+                <span class="selected-count text-muted small" style="margin-left: 8px;">已选 0 项</span>
+            </div>
+
+            <!-- 状态筛选 -->
+            <div class="dropdown-wrapper">
+                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('statusFilterDropdown')">
+                    <i data-lucide="filter" style="width: 16px; height: 16px;"></i>
+                    <span>
+                        {% if status_filter == 'active' %}可用
+                        {% elif status_filter == 'full' %}已满
+                        {% elif status_filter == 'expired' %}已过期
+                        {% elif status_filter == 'error' %}异常
+                        {% elif status_filter == 'banned' %}已封禁
+                        {% else %}状态筛选
+                        {% endif %}
+                    </span>
+                </button>
+                <div id="statusFilterDropdown" class="dropdown-menu">
+                    <div class="dropdown-header">选择状态</div>
+                    <div class="dropdown-item" onclick="filterByStatus('')">
+                        <span class="text-muted">所有状态</span>
+                    </div>
+                    <div class="dropdown-item" onclick="filterByStatus('active')">
+                        <span class="status-badge status-active">可用 (Active)</span>
+                    </div>
+                    <div class="dropdown-item" onclick="filterByStatus('full')">
+                        <span class="status-badge status-full">已满 (Full)</span>
+                    </div>
+                    <div class="dropdown-item" onclick="filterByStatus('expired')">
+                        <span class="status-badge status-expired">已过期 (Expired)</span>
+                    </div>
+                    <div class="dropdown-item" onclick="filterByStatus('error')">
+                        <span class="status-badge status-error">异常 (Error)</span>
+                    </div>
+                    <div class="dropdown-item" onclick="filterByStatus('banned')">
+                        <span class="status-badge status-banned">已封禁 (Banned)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 搜索框 -->
+            <form action="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" method="get" class="search-form">
+                <div class="input-group-clean">
+                    <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+                    <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索邮箱/Account ID..."
+                        style="width: 200px;">
+                    {% if search %}
+                    <a href="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" title="清除搜索">
+                        <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
+                    </a>
+                    {% endif %}
+                    {% if status_filter %}
+                    <input type="hidden" name="status" value="{{ status_filter }}">
+                    {% endif %}
+                </div>
+            </form>
+
+            <!-- 列设置 -->
+            <div class="dropdown-wrapper">
+                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
+                    <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
+                </button>
+                <div id="columnToggleDropdown" class="dropdown-menu">
+                    <!-- Column checkboxes will be generated here -->
+                </div>
+            </div>
+
+            {% if active_page == "welfare" %}
+            <button onclick="generateWelfareCode()" class="btn btn-secondary" id="generateWelfareCodeBtn">
+                <i data-lucide="ticket-plus" style="width: 16px; height: 16px;"></i> 生成通用兑换码
+            </button>
+            {% endif %}
+            <button onclick="showModal('importTeamModal')" class="btn btn-primary">
+                <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> 导入 Team
+            </button>
+        </div>
+    </div>
+</div>
+
+{% if teams %}
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)">
+                </th>
+                <th>{% if active_page == "welfare" %}编号{% else %}ID{% endif %}</th>
+                <th>邮箱</th>
+                <th>Account ID</th>
+                <th>Team 名称</th>
+                <th>成员数</th>
+                <th>订阅计划</th>
+                <th>到期时间</th>
+                <th>设备验证</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for team in teams %}
+            <tr>
+                <td><input type="checkbox" class="team-checkbox" value="{{ team.id }}" onchange="updateSelectedCount()">
+                </td>
+                <td><span class="text-muted">{% if active_page == "welfare" %}{{ ((pagination.current_page - 1) * pagination.per_page) + loop.index }}{% else %}{{ team.id }}{% endif %}</span></td>
+                <td>
+                    {{ team.email }}
+                    {% if team.account_role and team.account_role != 'account-owner' %}
+                    <span class="role-hint" title="账号角色: {{ team.account_role }}">已降级</span>
+                    {% endif %}
+                </td>
+                <td><span class="text-muted small">{{ team.account_id or '-' }}</span></td>
+                <td>{{ team.team_name or '-' }}</td>
+                <td>
+                    <span class="member-count">
+                        {{ team.current_members }}/{{ team.max_members }}
+                    </span>
+                </td>
+                <td>{{ team.subscription_plan or '-' }}</td>
+                <td>
+                    {% if team.expires_at %}
+                    {{ team.expires_at|format_datetime }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if team.device_code_auth_enabled %}
+                    <span class="status-badge status-active">已开启</span>
+                    {% else %}
+                    <span class="status-badge status-banned">未开启</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="status-badge status-{{ team.status }}">
+                        {% if team.status == 'active' %}
+                        可用
+                        {% elif team.status == 'full' %}
+                        已满
+                        {% elif team.status == 'expired' %}
+                        已过期
+                        {% elif team.status == 'banned' %}
+                        已封禁
+                        {% elif team.status == 'error' %}
+                        异常
+                        {% else %}
+                        未知
+                        {% endif %}
+                    </span>
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-icon btn-minimal btn-info btn-view-members"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="查看成员">
+                            <i data-lucide="users" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button class="btn btn-sm btn-icon btn-minimal btn-primary btn-edit-team"
+                            data-id="{{ team.id }}" title="编辑">
+                            <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button class="btn btn-sm btn-icon btn-minimal btn-secondary btn-refresh-team"
+                            data-id="{{ team.id }}" title="刷新">
+                            <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button class="btn btn-sm btn-icon btn-minimal btn-success btn-enable-device-auth"
+                            data-id="{{ team.id }}" title="一键开启设备代码验证">
+                            <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除"
+                            onclick='deleteTeam({{ team.id }}, {{ team.email|tojson }})'>
+                            <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 分页 -->
+<!-- 分页 -->
+{% if pagination %}
+<div class="pagination">
+    <div class="per-page-selector">
+        每页
+        <select class="per-page-select" onchange="changePerPage(this.value)">
+            <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
+            <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
+            <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
+        </select>
+    </div>
+
+    {% if pagination.total_pages > 1 %}
+    {% set search_param = '&search=' + search|urlencode if search else '' %}
+    {% set per_page_param = '&per_page=' + pagination.per_page|string if pagination.per_page != 20 else '' %}
+    {% set base_query = search_param + per_page_param %}
+
+    <div class="pagination-controls">
+        <!-- 首页 -->
+        <a href="?page=1{{ base_query }}"
+            class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
+            <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
+        </a>
+
+        <!-- 上一页 -->
+        {% if pagination.current_page > 1 %}
+        <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="上一页">
+            <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+        </a>
+        {% else %}
+        <button class="btn btn-sm btn-secondary" disabled>
+            <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+        </button>
+        {% endif %}
+
+        <!-- 页码 -->
+        <div class="pagination-numbers">
+            {% set start_page = pagination.current_page - 2 %}
+            {% set end_page = pagination.current_page + 2 %}
+
+            {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif %} {%
+                if end_page> pagination.total_pages %}
+                {% set start_page = start_page - (end_page - pagination.total_pages) %}
+                {% set end_page = pagination.total_pages %}
+                {% if start_page < 1 %} {% set start_page=1 %} {% endif %} {% endif %} {% if start_page> 1 %}
+                    <a href="?page=1{{ base_query }}" class="page-number">1</a>
+                    {% if start_page > 2 %}
+                    <span class="page-dots">...</span>
+                    {% endif %}
+                    {% endif %}
+
+                    {% for p in range(start_page, end_page + 1) %}
+                    <a href="?page={{ p }}{{ base_query }}"
+                        class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
+                    {% endfor %}
+
+                    {% if end_page < pagination.total_pages %} {% if end_page < pagination.total_pages - 1 %} <span
+                        class="page-dots">...</span>
+                        {% endif %}
+                        <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{
+                            pagination.total_pages }}</a>
+                        {% endif %}
+        </div>
+
+        <!-- 下一页 -->
+        {% if pagination.current_page < pagination.total_pages %} <a
+            href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="下一页">
+            <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+            </a>
+            {% else %}
+            <button class="btn btn-sm btn-secondary" disabled>
+                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+            </button>
+            {% endif %}
+
+            <!-- 末页 -->
+            <a href="?page={{ pagination.total_pages }}{{ base_query }}"
+                class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}"
+                title="末页">
+                <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
+            </a>
+    </div>
+    <span class="pagination-info" style="margin-left: 1rem;">共 {{ pagination.total }} 条</span>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="empty-state">
+    <p>暂无 Team 数据</p>
+    <button onclick="showModal('importTeamModal')" class="btn btn-primary">立即导入</button>
+</div>
+{% endif %}
+</div>
+
+<!-- 编辑 Team 模态框 -->
+<div id="editTeamModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>编辑 Team 信息</h3>
+            <button class="modal-close" onclick="hideModal('editTeamModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="editTeamForm" onsubmit="handleEditTeam(event)">
+                <input type="hidden" id="edit-team-id" name="teamId">
+                <div class="form-group">
+                    <label>邮箱 <span class="required">*</span></label>
+                    <input type="email" id="edit-team-email" name="email" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Access Token (AT) <span class="required">*</span></label>
+                    <div class="input-group-btn">
+                        <input type="text" id="edit-team-token" name="accessToken" class="form-control" required>
+                        <button type="button" class="btn btn-secondary" onclick="refreshATInModal()"
+                            title="立即从 ST/RT 刷新 AT">
+                            <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> 刷新
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Refresh Token (RT)</label>
+                    <input type="text" id="edit-team-refresh-token" name="refreshToken" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Session Token</label>
+                    <input type="text" id="edit-team-session-token" name="sessionToken" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Client ID</label>
+                    <input type="text" id="edit-team-client-id" name="clientId" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Account ID <span class="required">*</span></label>
+                    <input type="text" id="edit-team-account-id" name="accountId" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Team 名称</label>
+                    <input type="text" id="edit-team-name" name="teamName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>账号角色</label>
+                    <input type="text" id="edit-team-role" class="form-control" readonly title="检测到的账号角色">
+                </div>
+                <div class="form-group">
+                    <label>设备代码身份验证</label>
+                    <input type="text" id="edit-team-device-auth" class="form-control" readonly title="检测到的验证开启状态">
+                </div>
+                <div class="form-group">
+                    <label>最大成员数 <span class="required">*</span></label>
+                    <input type="number" id="edit-team-max-members" name="maxMembers" class="form-control" min="1"
+                        max="100" required>
+                </div>
+                <div class="form-group">
+                    <label>状态 <span class="required">*</span></label>
+                    <select id="edit-team-status" name="status" class="form-control" required>
+                        <option value="active">活跃 (Active)</option>
+                        <option value="full">已满 (Full)</option>
+                        <option value="expired">已过期 (Expired)</option>
+                        <option value="error">异常 (Error)</option>
+                        <option value="banned">已封禁 (Banned)</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">保存修改</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Init Column Toggler
+        initColumnToggler('.data-table', 'team_list_columns');
+
+        // 绑定查看成员按钮
+        document.querySelectorAll('.btn-view-members').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                const email = btn.getAttribute('data-email');
+                viewMembers(id, email);
+            });
+        });
+
+        // 绑定刷新按钮
+        document.querySelectorAll('.btn-refresh-team').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                refreshTeam(id);
+            });
+        });
+
+        // 绑定编辑按钮
+        document.querySelectorAll('.btn-edit-team').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                editTeam(id);
+            });
+        });
+
+        // 绑定开启设备认证按钮
+        document.querySelectorAll('.btn-enable-device-auth').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                enableDeviceAuth(id);
+            });
+        });
+    });
+
+    async function enableDeviceAuth(teamId) {
+        if (!confirm('确定要为该 Team 开启设备代码身份验证吗?')) {
+            return;
+        }
+
+        try {
+            showToast('正在开启...', 'info');
+            const response = await fetch(`/admin/teams/${teamId}/enable-device-auth`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('开启成功', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error || '开启失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function refreshTeam(teamId) {
+        if (!confirm('确定要刷新此 Team 的信息吗?')) {
+            return;
+        }
+
+        try {
+            showToast('正在刷新...', 'info');
+            const response = await fetch(`/api/teams/${teamId}/refresh?force=true`, {
+                method: 'GET'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('刷新成功', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error || '刷新失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function refreshATInModal() {
+        const teamId = document.getElementById('edit-team-id').value;
+        if (!teamId) return;
+
+        if (!confirm('确定要刷新此 Team 的 Access Token 吗?')) {
+            return;
+        }
+
+        try {
+            showToast('正在刷新...', 'info');
+            const response = await fetch(`/api/teams/${teamId}/refresh?force=true`, {
+                method: 'GET'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('刷新成功', 'success');
+
+                // 刷新成功后，重新获取 Team 信息以更新模态框中的 AT
+                const infoResponse = await fetch(`/admin/teams/${teamId}/info`);
+                const infoData = await infoResponse.json();
+
+                if (infoResponse.ok && infoData.success) {
+                    const team = infoData.team;
+                    document.getElementById('edit-team-token').value = team.access_token || '';
+                    document.getElementById('edit-team-refresh-token').value = team.refresh_token || '';
+                    document.getElementById('edit-team-session-token').value = team.session_token || '';
+                    document.getElementById('edit-team-role').value = team.account_role || '未知';
+
+                    // 重新创建图标以免刷新后丢失
+                    if (window.lucide) {
+                        lucide.createIcons();
+                    }
+                }
+            } else {
+                showToast(data.error || '刷新失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function deleteTeam(teamId, email) {
+        if (!confirm(`确定要删除 Team "${email}" 吗?\n\n此操作不可恢复!`)) {
+            return;
+        }
+
+        try {
+            showToast('正在删除...', 'info');
+            const response = await fetch(`/admin/teams/${teamId}/delete`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('删除成功', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error || '删除失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+    async function editTeam(teamId) {
+        try {
+            const response = await fetch(`/admin/teams/${teamId}/info`);
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                const team = data.team;
+                document.getElementById('edit-team-id').value = team.id;
+                document.getElementById('edit-team-email').value = team.email;
+                document.getElementById('edit-team-token').value = team.access_token || '';
+                document.getElementById('edit-team-refresh-token').value = team.refresh_token || '';
+                document.getElementById('edit-team-session-token').value = team.session_token || '';
+                document.getElementById('edit-team-client-id').value = team.client_id || '';
+                document.getElementById('edit-team-account-id').value = team.account_id || '';
+                document.getElementById('edit-team-max-members').value = team.max_members || 6;
+                document.getElementById('edit-team-name').value = team.team_name || '';
+                document.getElementById('edit-team-status').value = team.status || 'active';
+                document.getElementById('edit-team-role').value = team.account_role || '未知';
+                document.getElementById('edit-team-device-auth').value = team.device_code_auth_enabled ? '已开启' : '未开启';
+                showModal('editTeamModal');
+            } else {
+                showToast(data.error || '获取信息失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function handleEditTeam(event) {
+        event.preventDefault();
+        const teamId = document.getElementById('edit-team-id').value;
+        const payload = {
+            email: document.getElementById('edit-team-email').value,
+            access_token: document.getElementById('edit-team-token').value,
+            refresh_token: document.getElementById('edit-team-refresh-token').value,
+            session_token: document.getElementById('edit-team-session-token').value,
+            client_id: document.getElementById('edit-team-client-id').value,
+            account_id: document.getElementById('edit-team-account-id').value,
+            max_members: parseInt(document.getElementById('edit-team-max-members').value),
+            team_name: document.getElementById('edit-team-name').value,
+            status: document.getElementById('edit-team-status').value
+        };
+
+        try {
+            const response = await fetch(`/admin/teams/${teamId}/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('更新成功', 'success');
+                hideModal('editTeamModal');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(result.error || '更新失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    // Column Toggler Logic
+    function initColumnToggler(tableSelector, storageKey) {
+        const table = document.querySelector(tableSelector);
+        if (!table) return;
+
+        const headers = table.querySelectorAll('thead th');
+        const container = document.getElementById('columnToggleDropdown');
+        if (!container) return;
+
+        container.innerHTML = '<div class="dropdown-header">显示/隐藏列</div>';
+
+        // Load saved preferences
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+        headers.forEach((th, index) => {
+            const text = th.innerText.trim();
+            if (!text || text === '操作' || th.querySelector('input')) return; // Checkbox column or Action
+
+            const isVisible = !saved.includes(index);
+            if (!isVisible) {
+                th.style.display = 'none';
+                table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`).forEach(td => td.style.display = 'none');
+            }
+
+            const item = document.createElement('label');
+            item.className = 'dropdown-item';
+            item.innerHTML = `
+                <input type="checkbox" ${isVisible ? 'checked' : ''}>
+                <span>${text}</span>
+            `;
+
+            item.querySelector('input').addEventListener('change', (e) => {
+                const checked = e.target.checked;
+                // Toggle header
+                th.style.display = checked ? '' : 'none';
+                // Toggle cells
+                table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`).forEach(td => td.style.display = checked ? '' : 'none');
+
+                // Save to localStorage
+                const currentSaved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                if (checked) {
+                    const idx = currentSaved.indexOf(index);
+                    if (idx > -1) currentSaved.splice(idx, 1);
+                } else {
+                    if (!currentSaved.includes(index)) currentSaved.push(index);
+                }
+                localStorage.setItem(storageKey, JSON.stringify(currentSaved));
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    function toggleDropdown(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.toggle('show');
+            document.querySelectorAll('.dropdown-menu').forEach(d => {
+                if (d.id !== id) d.classList.remove('show');
+            });
+        }
+    }
+
+    // Close dropdowns
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle')) {
+            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+        }
+    });
+
+    const dashboardBasePath = "{{ '/admin/welfare' if active_page == 'welfare' else '/admin' }}";
+
+    function filterByStatus(status) {
+        const url = new URL(window.location.href);
+        if (status) {
+            url.searchParams.set('status', status);
+        } else {
+            url.searchParams.delete('status');
+        }
+        url.searchParams.set('page', 1);
+        window.location.href = url.toString();
+    }
+
+    function toggleSelectAll(checked) {
+        document.querySelectorAll('.team-checkbox').forEach(cb => {
+            cb.checked = checked;
+        });
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const checkboxes = document.querySelectorAll('.team-checkbox');
+        const selectedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+        const totalCount = checkboxes.length;
+
+        const batchActions = document.getElementById('batchActions');
+        const countSpan = batchActions.querySelector('.selected-count');
+        const selectAll = document.getElementById('selectAll');
+
+        if (selectedCount > 0) {
+            batchActions.style.display = 'flex';
+            batchActions.style.alignItems = 'center';
+            countSpan.innerText = `已选 ${selectedCount} 项`;
+        } else {
+            batchActions.style.display = 'none';
+        }
+
+        // Update Select All state
+        if (selectAll) {
+            selectAll.checked = selectedCount === totalCount && totalCount > 0;
+            selectAll.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+        }
+    }
+
+    async function handleBatchAction(endpoint, actionName) {
+        const selectedIds = Array.from(document.querySelectorAll('.team-checkbox:checked'))
+            .map(cb => parseInt(cb.value));
+
+        if (selectedIds.length === 0) {
+            showToast('请选择要操作的 Team', 'warning');
+            return;
+        }
+
+        if (!confirm(`确定要对选中的 ${selectedIds.length} 个 Team 进行 "${actionName}" 操作吗？`)) {
+            return;
+        }
+
+        try {
+            showToast(`正在${actionName}...`, 'info');
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast(result.message || `${actionName}成功`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showToast(result.error || `${actionName}失败`, 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('网络错误', 'error');
+        }
+    }
+
+    function handleBatchRefresh() {
+        handleBatchAction('/admin/teams/batch-refresh', '批量刷新');
+    }
+
+    function handleBatchDelete() {
+        handleBatchAction('/admin/teams/batch-delete', '批量删除');
+    }
+
+    function handleBatchEnableDeviceAuth() {
+        handleBatchAction('/admin/teams/batch-enable-device-auth', '批量开启验证');
+    }
+
+    function changePerPage(val) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', val);
+        url.searchParams.set('page', 1);
+        window.location.href = url.toString();
+    }
+</script>
+{% endblock %}

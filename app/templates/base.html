@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GPT Team 管理系统{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', path='/favicon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    {% block extra_css %}{% endblock %}
+</head>
+
+<body class="bg-gray-50 text-slate-900{% if user %} admin-theme{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+    {% if user %}
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-left">
+                <button class="mobile-menu-toggle" onclick="toggleSidebar()">
+                    <i data-lucide="menu"></i>
+                </button>
+                <div class="navbar-brand">
+                    <h1>GPT Team 管理系统</h1>
+                </div>
+            </div>
+            <div class="navbar-menu">
+                <span class="navbar-user">管理员</span>
+                <button onclick="logout()" class="btn btn-secondary">登出</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 移动端侧边栏遮罩 -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <!-- 主容器 -->
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar" id="adminSidebar">
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">
+                    <a href="/admin">
+                        <span class="menu-icon" data-lucide="layout-dashboard"></span>
+                        <span class="menu-text">控制台</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'codes' %}active{% endif %}">
+                    <a href="/admin/codes">
+                        <span class="menu-icon" data-lucide="ticket"></span>
+                        <span class="menu-text">兑换码管理</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'records' %}active{% endif %}">
+                    <a href="/admin/records">
+                        <span class="menu-icon" data-lucide="file-text"></span>
+                        <span class="menu-text">使用记录</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'welfare' %}active{% endif %}">
+                    <a href="/admin/welfare">
+                        <span class="menu-icon" data-lucide="heart-handshake"></span>
+                        <span class="menu-text">福利车位</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'announcement' %}active{% endif %}">
+                    <a href="/admin/announcement">
+                        <span class="menu-icon" data-lucide="megaphone"></span>
+                        <span class="menu-text">公告通知</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'settings' %}active{% endif %}">
+                    <a href="/admin/settings">
+                        <span class="menu-icon" data-lucide="settings"></span>
+                        <span class="menu-text">系统设置</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% else %}
+    <!-- 未登录时的内容 -->
+    <div class="auth-container">
+        {% block auth_content %}{% endblock %}
+    </div>
+    {% endif %}
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <p>&copy; 2026 <a href="https://github.com/loLollipop/team-manage-refresh" target="_blank" class="footer-link">GPT Team
+                管理系统</a> v0.1.0</p>
+    </footer>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (sidebar) sidebar.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('show');
+        }
+    </script>
+
+    <!-- 导入 Team 模态框 -->
+    <div id="importTeamModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>导入 Team</h3>
+                <button class="modal-close" onclick="hideModal('importTeamModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-tabs">
+                    <button class="modal-tab-btn active"
+                        onclick="switchModalTab('importTeamModal', 'singleImport')">单个导入</button>
+                    <button class="modal-tab-btn"
+                        onclick="switchModalTab('importTeamModal', 'batchImport')">批量导入</button>
+                </div>
+
+                <div id="singleImport" class="import-panel">
+                    <form id="singleImportForm" onsubmit="handleSingleImport(event)">
+                        <input type="hidden" name="poolType" value="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+                        <div id="oauthQuickSection" class="import-mode-card oauth-quick-card">
+                            <div class="oauth-quick-head">
+                                <label>一键获取 Token</label>
+                                <p class="oauth-quick-subtitle">三步完成：获取授权链接 → 粘贴回调 → 自动填充。</p>
+                            </div>
+
+                            <div class="oauth-quick-action-row">
+                                <button type="button" id="btnOneClickToken" class="btn btn-primary oauth-main-btn">获取授权链接</button>
+                            </div>
+
+                            <div class="oauth-quick-fields">
+                                <input type="text" id="oauthAuthorizeUrlOutput" class="form-control" placeholder="授权链接会自动复制，这里仅作备份显示" readonly>
+                                <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后粘贴完整回调 URL"></textarea>
+                            </div>
+
+                            <div class="oauth-quick-btn-row">
+                                <button type="button" id="btnParseOAuthCallback" class="btn btn-primary">解析并自动填充</button>
+                                <button type="button" id="btnExportOAuthJson" class="btn btn-primary">导出 JSON</button>
+                                <button type="submit" id="btnQuickImportTeam" class="btn btn-primary">导入 Team</button>
+                            </div>
+
+                            <div class="import-mode-toggle-wrap">
+                                <button type="button" id="switchToManualFill" class="import-mode-toggle-btn">已有 Token？直接填写</button>
+                            </div>
+                        </div>
+
+                        <div id="manualTokenSection" class="import-mode-card" style="display: none;">
+                            <div class="manual-import-action-top" style="margin-bottom: 0.85rem;">
+                                <button type="submit" class="btn btn-primary">导入 Team</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Access Token (AT) <span class="required">*</span></label>
+                                <input type="text" name="accessToken" class="form-control"
+                                    placeholder="eyJhbGciOiJSUzI1Ni..." required>
+                                <small class="form-text">必填项，以 eyJ 开头的 JWT Token</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Refresh Token (RT)</label>
+                                <input type="text" name="refreshToken" class="form-control" placeholder="rt-...">
+                                <small class="form-text">可选，用于自动刷新 AT</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Session Token</label>
+                                <input type="text" name="sessionToken" class="form-control" placeholder="eyJ...">
+                                <small class="form-text">可选，作为备选刷新方式</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Client ID</label>
+                                <input type="text" name="clientId" class="form-control" placeholder="Client ID">
+                                <small class="form-text">使用 Refresh Token 时必填</small>
+                            </div>
+                            <div class="form-group">
+                                <label>邮箱</label>
+                                <input type="email" name="email" class="form-control" placeholder="admin@example.com">
+                                <small class="form-text">可选，如果不填写将从 Token 中自动提取</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Account ID</label>
+                                <input type="text" name="accountId" class="form-control"
+                                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                <small class="form-text">可选，如果不填写将从 API 自动获取</small>
+                            </div>
+                            <div class="import-mode-toggle-wrap">
+                                <button type="button" id="switchToQuickToken" class="import-mode-toggle-btn">返回一键获取 Token</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="batchImport" class="import-panel" style="display: none;">
+                    <form id="batchImportForm" onsubmit="handleBatchImport(event)">
+                        <input type="hidden" name="poolType" value="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+                        <div class="json-import-box" id="jsonImportBox">
+                            <input type="file" id="jsonImportFile" accept=".json,application/json" style="display: none;">
+                            <div class="json-import-box-title">JSON 文件导入</div>
+                            <button type="button" id="chooseJsonFileBtn" class="btn btn-primary">选择 JSON 文件</button>
+                            <div class="json-import-file-hint" id="jsonImportFileName">支持单对象、对象数组，或 {"teams": [...]} 格式</div>
+                        </div>
+                        <textarea name="batchContent" style="display:none"></textarea>
+                        <div id="batchProgressContainer" style="display: none; margin-bottom: 1.5rem;">
+                            <div class="progress-info"
+                                style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.875rem;">
+                                <span id="batchProgressStage">正在准备...</span>
+                                <span id="batchProgressPercent">0%</span>
+                            </div>
+                            <div class="progress-bar-bg"
+                                style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">
+                                <div id="batchProgressBar"
+                                    style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.3s ease;">
+                                </div>
+                            </div>
+                            <div id="batchProgressStats"
+                                style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-dim); display: flex; gap: 1rem;">
+                                <span>成功: <span id="batchSuccessCount" class="text-success">0</span></span>
+                                <span>失败: <span id="batchFailedCount" class="text-danger">0</span></span>
+                            </div>
+                        </div>
+                        <div id="batchResultsContainer" style="display: none; margin-bottom: 1rem;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <h4 style="margin: 0;">导入详情</h4>
+                                <small id="batchFinalSummary" class="text-muted"></small>
+                            </div>
+                            <div id="batchResults"></div>
+                        </div>
+                        
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 生成兑换码 模态框 -->
+    <div id="generateCodeModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>生成兑换码</h3>
+                <button class="modal-close" onclick="hideModal('generateCodeModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-tabs">
+                    <button class="modal-tab-btn active"
+                        onclick="switchModalTab('generateCodeModal', 'singleGenerate')">单个生成</button>
+                    <button class="modal-tab-btn"
+                        onclick="switchModalTab('generateCodeModal', 'batchGenerate')">批量生成</button>
+                </div>
+
+                <div id="singleGenerate" class="card-body">
+                    <form onsubmit="generateSingle(event)">
+                        <div class="form-group">
+                            <label>自定义兑换码 (可选)</label>
+                            <input type="text" name="customCode" class="form-control" placeholder="留空则自动生成"
+                                maxlength="32">
+                        </div>
+                        <div class="form-group">
+                            <label>有效期 (天数, 可选)</label>
+                            <input type="number" name="expiresDays" class="form-control" placeholder="留空则永久有效" min="1"
+                                max="3650">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="hasWarranty" value="true" style="width: auto; margin: 0;"
+                                    onchange="toggleWarrantyDays(this, 'single-warranty-days-group')">
+                                <span>质保兑换码 (可重复使用)</span>
+                            </label>
+                            <small class="form-text">如果是质保兑换码，在质保期内，如果加入的 Team 被封号，可以重复使用</small>
+                        </div>
+                        <div class="form-group" id="single-warranty-days-group" style="display: none;">
+                            <label>质保时长 (天) *</label>
+                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650">
+                        </div>
+                        <button type="submit" class="btn btn-primary">生成兑换码</button>
+                    </form>
+                    <div id="singleResult" class="result-box" style="display: none;">
+                        <h4>生成成功</h4>
+                        <div class="code-display">
+                            <code id="generatedCode"></code>
+                            <button onclick="copyCode()" class="btn btn-sm btn-secondary">复制</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="batchGenerate" class="card-body" style="display: none;">
+                    <form onsubmit="generateBatch(event)">
+                        <div class="form-group">
+                            <label>生成数量 *</label>
+                            <input type="number" name="count" class="form-control" placeholder="请输入生成数量" min="1"
+                                max="1000" required>
+                        </div>
+                        <div class="form-group">
+                            <label>有效期 (天数, 可选)</label>
+                            <input type="number" name="expiresDays" class="form-control" placeholder="留空则永久有效" min="1"
+                                max="3650">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="hasWarranty" value="true" style="width: auto; margin: 0;"
+                                    onchange="toggleWarrantyDays(this, 'batch-warranty-days-group')">
+                                <span>质保兑换码 (可重复使用)</span>
+                            </label>
+                            <small class="form-text">如果是质保兑换码，在质保期内，如果加入的 Team 被封号，可以重复使用</small>
+                        </div>
+                        <div class="form-group" id="batch-warranty-days-group" style="display: none;">
+                            <label>质保时长 (天) *</label>
+                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650">
+                        </div>
+                        <button type="submit" class="btn btn-primary">批量生成</button>
+                    </form>
+                    <div id="batchResult" class="result-box" style="display: none;">
+                        <h4>批量生成成功</h4>
+                        <p>成功生成 <strong id="batchTotal">0</strong> 个兑换码</p>
+                        <textarea id="batchCodes" readonly rows="5" class="form-control"
+                            style="margin: 10px 0;"></textarea>
+                        <button onclick="copyBatchCodes()" class="btn btn-sm btn-secondary">复制全部</button>
+                        <button onclick="downloadCodes()" class="btn btn-sm btn-secondary">下载</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 成员管理 模态框 -->
+    <div id="manageMembersModal" class="modal-overlay">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="modalTeamName">Team 成员管理</h3>
+                    <small id="modalTeamEmail" class="text-muted" style="display: block; margin-top: 4px;"></small>
+                </div>
+                <button class="modal-close" onclick="hideModal('manageMembersModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 添加成员表单 -->
+                <div class="content-section"
+                    style="padding: 1.25rem; margin-bottom: 1.5rem; background: rgba(255,255,255,0.03);">
+                    <form id="addMemberForm" onsubmit="handleAddMember(event)"
+                        style="display: flex; gap: 1rem; align-items: flex-end;">
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label for="memberEmail">新增成员邮箱</label>
+                            <input type="email" id="memberEmail" name="email" class="form-control"
+                                placeholder="user@example.com" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="addMemberSubmitBtn">
+                            <i data-lucide="user-plus"></i> 添加
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 已加入成员 -->
+                <div class="content-section" style="margin-bottom: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: var(--success);">已加入成员</h4>
+                    <div class="table-container" style="max-height: 250px; overflow-y: auto; margin: 0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>邮箱</th>
+                                    <th style="width: 100px;">角色</th>
+                                    <th style="width: 160px;">加入时间</th>
+                                    <th style="text-align: right; width: 100px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalJoinedMembersTableBody">
+                                <!-- 动态加载内容 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 待加入成员 -->
+                <div class="content-section" style="margin: 0;">
+                    <h4 style="margin-bottom: 1rem; color: var(--warning);">待加入成员 (邀请中)</h4>
+                    <div class="table-container" style="max-height: 250px; overflow-y: auto; margin: 0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>邮箱</th>
+                                    <th style="width: 100px;">角色</th>
+                                    <th style="width: 160px;">邀请时间</th>
+                                    <th style="text-align: right; width: 100px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalInvitedMembersTableBody">
+                                <!-- 动态加载内容 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', path='/js/main.js') }}?v=20260314-settings-anchor-4"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT Team 兑换</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/user.css') }}?v=20260314-announcement-fixes-1">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body class="redeem-page">
+    <div class="bg-scene" aria-hidden="true">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+    <div class="grid-overlay" aria-hidden="true"></div>
+
+    <div class="page-wrap">
+        <div class="container full-layout">
+            <header class="hero-header">
+                <div class="logo-badge">ChatGPT Team · 官方授权</div>
+                <h1>GPT Team 兑换中心</h1>
+                <p class="hero-subtitle">使用兑换码自助上车，或在质保期内查询重兑资格</p>
+                {% if remaining_spots is not none %}
+                <div class="spots-badge">
+                    <i data-lucide="users" style="width: 14px; height: 14px;"></i>
+                    常规剩余名额 <span class="seats-count">{{ remaining_spots }}</span> 位
+                </div>
+                {% endif %}
+                {% if welfare_remaining_spots is not none %}
+                <div class="spots-badge welfare-spots-badge">
+                    <i data-lucide="heart-handshake" style="width: 14px; height: 14px;"></i>
+                    福利车位剩余 <span class="seats-count">{{ welfare_remaining_spots }}</span> 位
+                </div>
+                {% endif %}
+            </header>
+
+            <section class="main-shell">
+                <nav class="top-nav-tabs">
+                    <div class="tab-indicator" id="tabIndicator" aria-hidden="true"></div>
+                    <button type="button" id="tabRedeem" class="top-tab active" data-tab="redeem">
+                        <i data-lucide="gift"></i> 自助上车
+                    </button>
+                    <button type="button" id="tabWarranty" class="top-tab" data-tab="warranty">
+                        <i data-lucide="shield"></i> 质保查询
+                    </button>
+                </nav>
+
+                <div id="step1" class="step active">
+                    <section id="redeemPanel" class="tab-panel active">
+                        <div class="panel-head">
+                            <h2>激活 ChatGPT Team</h2>
+                            <p>填写邮箱与兑换码后，系统将自动分配可用 Team 并发送邀请。</p>
+                        </div>
+
+                        <div class="info-box">
+                            <i data-lucide="info" class="info-icon"></i>
+                            <p>请确保填写 <strong>ChatGPT 注册邮箱</strong>，兑换成功后绑定账号无法变更。</p>
+                        </div>
+
+                        <form id="verifyForm" class="stack-form">
+                            <div class="form-group">
+                                <label for="email">邮箱地址 <span class="required-star">*</span></label>
+                                <div class="field-wrap">
+                                    <i data-lucide="mail" class="field-icon"></i>
+                                    <input type="email" id="email" name="email" required placeholder="your@email.com" class="form-input">
+                                </div>
+                                <p class="field-hint">邀请邮件将发送到该地址，请确认可正常接收。</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="code">兑换码 <span class="required-star">*</span></label>
+                                <div class="field-wrap">
+                                    <i data-lucide="key-round" class="field-icon"></i>
+                                    <input type="text" id="code" name="code" required placeholder="XXXX-XXXX-XXXX-XXXX" class="form-input">
+                                </div>
+                                <p class="field-hint">兑换码区分大小写，请复制粘贴避免输错。</p>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary" id="verifyBtn">
+                                <i data-lucide="shield-check"></i> 验证并激活兑换码
+                            </button>
+                        </form>
+                    </section>
+
+                    <section id="warrantyPanel" class="tab-panel">
+                        <div class="panel-head">
+                            <h2>质保查询</h2>
+                            <p>若您加入的 Team 失效，可在质保期内查询并自助处理。</p>
+                        </div>
+
+                        <div class="info-box">
+                            <i data-lucide="clipboard-check" class="info-icon"></i>
+                            <p>质保期为 <strong>一个月</strong>，在有效期内可用原兑换码重新加入 Team。</p>
+                        </div>
+
+                        <div class="warranty-query-row">
+                            <div class="field-wrap">
+                                <i data-lucide="search" class="field-icon"></i>
+                                <input type="text" id="warrantyInput" placeholder="请输入原兑换码或邮箱进行查询" class="form-input">
+                            </div>
+                            <button type="button" class="btn btn-secondary" id="checkWarrantyBtn" onclick="checkWarranty()">
+                                <i data-lucide="search-check"></i> 查询质保状态
+                            </button>
+                        </div>
+
+                        <div id="warrantyResultContainer" class="warranty-result-container" style="display: none;">
+                            <div id="warrantyContent"></div>
+                        </div>
+
+                        <div class="warning-box">
+                            <i data-lucide="alert-triangle"></i>
+                            <p>质保仅限账号封禁或 Team 异常，不包含主动退出 Team 的情况。</p>
+                        </div>
+                    </section>
+                </div>
+
+                <div id="step2" class="step" style="display: none;">
+                    <div class="result-shell">
+                        <h2>选择 Team</h2>
+                        <div id="teamsList" class="teams-list"></div>
+                        <div class="actions">
+                            <button onclick="backToStep1()" class="btn btn-secondary">返回</button>
+                            <button onclick="autoSelectTeam()" class="btn btn-primary">自动选择</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="step3" class="step">
+                    <div class="result-shell">
+                        <div id="resultContent"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div id="announcementModal" class="announcement-modal" aria-hidden="true">
+        <div class="announcement-backdrop" id="announcementBackdrop"></div>
+        <div class="announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="announcementTitle">
+            <div class="announcement-header">
+                <h3 id="announcementTitle"><i data-lucide="megaphone"></i> 公告通知</h3>
+                <button type="button" class="announcement-close" id="announcementCloseBtn" aria-label="关闭公告">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="announcement-body" id="announcementContent"></div>
+            <div class="announcement-footer">
+                <button type="button" class="btn btn-primary" id="announcementConfirmBtn">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.REDEEM_ANNOUNCEMENT = {
+            enabled: {{ announcement_enabled|tojson }},
+            markdown: {{ announcement_markdown|tojson }}
+        };
+    </script>
+
+    <script src="{{ url_for('static', path='/js/redeem.js') }}?v=20260314-announcement-fixes-1"></script>
+    <script>
+        if (window.lucide) lucide.createIcons();
+    </script>
+</body>
+
+</html>
