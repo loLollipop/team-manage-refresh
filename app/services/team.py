@@ -1774,6 +1774,19 @@ class TeamService:
                     "error": f"发送邀请失败: {invite_result['error']}"
                 }
 
+            invite_data = invite_result.get("data", {})
+            if "account_invites" in invite_data and not invite_data.get("account_invites"):
+                await self._handle_api_error(
+                    {"success": False, "error": "官方拦截下发(响应空列表)", "error_code": "ghost_success"},
+                    team,
+                    db_session
+                )
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": "Team账号受限: 官方拦截下发(响应空列表)，请检查账单/风控状态"
+                }
+
             # 5. 更新成员数并二次校验邀请是否真的生效 (循环检测 3 次，防止接口返回 200 但实际延迟入库)
             is_verified = False
             for i in range(3):
