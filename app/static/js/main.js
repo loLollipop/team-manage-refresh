@@ -7,6 +7,86 @@ function getCurrentPoolType() {
  * GPT Team 管理系统 - 通用 JavaScript
  */
 
+function applySystemTheme(themeName) {
+    const body = document.body;
+    if (!body) return;
+
+    const normalized = String(themeName || '').toLowerCase() === 'warm' ? 'warm' : 'ocean';
+    body.dataset.uiTheme = normalized;
+    body.classList.remove('theme-ocean', 'theme-warm');
+    body.classList.add(`theme-${normalized}`);
+}
+
+function getCurrentSystemTheme() {
+    const bodyTheme = document.body?.dataset?.uiTheme;
+    if (bodyTheme === 'warm' || bodyTheme === 'ocean') return bodyTheme;
+    if (window.SYSTEM_UI_THEME === 'warm' || window.SYSTEM_UI_THEME === 'ocean') return window.SYSTEM_UI_THEME;
+    return 'ocean';
+}
+
+async function saveSystemTheme(theme) {
+    const response = await fetch('/admin/settings/ui-theme', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ theme })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || '保存失败');
+    }
+
+    return data.theme || theme;
+}
+
+function updateThemeToggleButton(theme) {
+    const openBtn = document.getElementById('openThemeSwitcherBtn');
+    if (!openBtn) return;
+    const targetLabel = theme === 'warm' ? '暖色' : '深色';
+    openBtn.innerHTML = `<i data-lucide="palette" style="width: 15px; height: 15px;"></i> ${targetLabel}`;
+    if (window.lucide) {
+        lucide.createIcons();
+    }
+}
+
+async function initThemeSwitcher() {
+    const isAdmin = !!document.body?.classList.contains('admin-theme');
+    applySystemTheme(getCurrentSystemTheme());
+
+    if (!isAdmin) return;
+
+    try {
+        const response = await fetch('/admin/settings/ui-theme');
+        const data = await response.json();
+        if (response.ok && data.success) {
+            applySystemTheme(data.theme);
+        }
+    } catch (error) {
+        console.error('load ui theme failed:', error);
+    }
+
+    updateThemeToggleButton(getCurrentSystemTheme());
+
+    const openBtn = document.getElementById('openThemeSwitcherBtn');
+    if (!openBtn) return;
+
+    openBtn.addEventListener('click', async () => {
+        const current = getCurrentSystemTheme();
+        const nextTheme = current === 'warm' ? 'ocean' : 'warm';
+        try {
+            const savedTheme = await saveSystemTheme(nextTheme);
+            applySystemTheme(savedTheme);
+            updateThemeToggleButton(savedTheme);
+            showToast(`已切换为${savedTheme === 'warm' ? '暖色' : '深色'}主题`, 'success');
+        } catch (error) {
+            showToast(error.message || '保存失败', 'error');
+        }
+    });
+}
+
+
 // Toast 提示函数
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -111,6 +191,8 @@ function setSingleImportMode(mode = 'quick') {
 document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
     checkAuthStatus();
+
+    initThemeSwitcher();
 
     // OAuth 一键导入按钮绑定（避免仅依赖内联 onclick）
     const btnOneClickToken = document.getElementById('btnOneClickToken');

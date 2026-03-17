@@ -12,7 +12,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 text-slate-900{% if user %} admin-theme{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
+<body class="bg-gray-50 text-slate-900{% if user %} admin-theme theme-{{ ui_theme|default('ocean') }}{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}">
     {% if user %}
     <!-- 导航栏 -->
     <nav class="navbar">
@@ -27,6 +27,9 @@
             </div>
             <div class="navbar-menu">
                 <span class="navbar-user">管理员</span>
+                <button type="button" class="btn btn-secondary" id="openThemeSwitcherBtn">
+                    <i data-lucide="palette" style="width: 15px; height: 15px;"></i> 深色
+                </button>
                 <button onclick="logout()" class="btn btn-secondary">登出</button>
             </div>
         </div>
@@ -106,7 +109,7 @@
         }
     </script>
 
-    <!-- 导入 Team 模态框 -->
+        <!-- 导入 Team 模态框 -->
     <div id="importTeamModal" class="modal-overlay">
         <div class="modal">
             <div class="modal-header">
@@ -396,6 +399,7 @@
     </div>
     <div id="toast" class="toast"></div>
 
+    <script>window.SYSTEM_UI_THEME = {{ ui_theme|default("ocean")|tojson }};</script>
     <script src="/static/js/main.js?v=20260314-settings-anchor-4"></script>
     <script>
         lucide.createIcons();

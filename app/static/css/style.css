@@ -80,7 +80,50 @@ body.admin-theme {
     --success-soft: rgba(16, 185, 129, 0.18);
     --warning-soft: rgba(245, 158, 11, 0.18);
     --danger-soft: rgba(239, 68, 68, 0.18);
+    --grid-color: rgba(79, 142, 247, 0.04);
+    --menu-active-start: rgba(79, 142, 247, 0.28);
+    --menu-active-end: rgba(123, 94, 167, 0.28);
+    --button-gradient-start: #4f8ef7;
+    --button-gradient-end: #7b5ea7;
+    --button-gradient-start-hover: #5896fb;
+    --button-gradient-end-hover: #8667b5;
+    --menu-active-text: #eaf1ff;
+    --menu-active-shadow: rgba(79, 142, 247, 0.35);
+    --menu-hover-bg: rgba(79, 142, 247, 0.12);
+    --status-banned-text: #cbd5e1;
+    --toast-bg: rgba(10, 20, 45, 0.92);
+    --toast-border: rgba(148, 163, 184, 0.3);
     background: radial-gradient(130% 120% at 0% 0%, #111b3a 0%, #060c1f 52%, #040714 100%);
+    color: var(--text-main);
+}
+
+body.admin-theme.theme-warm {
+    --primary: #d4692a;
+    --primary-hover: #b8521c;
+    --primary-soft: #fdeeDE;
+    --bg-main: #fdf8f2;
+    --bg-surface: #ffffff;
+    --text-main: #2d2519;
+    --text-muted: #6b5a4a;
+    --text-dim: #9b8c7e;
+    --border-base: #eae2d8;
+    --success-soft: #e8f5ee;
+    --warning-soft: #fef8e6;
+    --danger-soft: #fef2f2;
+    --grid-color: rgba(196, 185, 172, 0.18);
+    --menu-active-start: #fdeeDE;
+    --menu-active-end: #fef3e8;
+    --button-gradient-start: #d4692a;
+    --button-gradient-end: #b8521c;
+    --button-gradient-start-hover: #de7435;
+    --button-gradient-end-hover: #a74a1a;
+    --menu-active-text: #5b391f;
+    --menu-active-shadow: rgba(212, 105, 42, 0.22);
+    --menu-hover-bg: rgba(212, 105, 42, 0.08);
+    --status-banned-text: #7d7063;
+    --toast-bg: #ffffff;
+    --toast-border: #e3d6c5;
+    background: radial-gradient(120% 120% at 0% 0%, #fff7eb 0%, #fdf8f2 52%, #f8f1e7 100%);
     color: var(--text-main);
 }
 
@@ -90,8 +133,8 @@ body.admin-theme::before {
     inset: 0;
     pointer-events: none;
     background-image:
-        linear-gradient(rgba(79, 142, 247, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(79, 142, 247, 0.04) 1px, transparent 1px);
+        linear-gradient(var(--grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
     background-size: 48px 48px;
     mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.72), transparent 90%);
     z-index: 0;
@@ -135,22 +178,22 @@ body.admin-theme .page-header {
 body.admin-theme .menu-item a:hover,
 body.admin-theme .data-table tbody tr:hover td,
 body.admin-theme .dropdown-item:hover {
-    background: rgba(79, 142, 247, 0.12);
+    background: var(--menu-hover-bg);
 }
 
 body.admin-theme .menu-item.active a {
-    background: linear-gradient(135deg, rgba(79, 142, 247, 0.28), rgba(123, 94, 167, 0.28));
-    color: #eaf1ff;
-    box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.35);
+    background: linear-gradient(135deg, var(--menu-active-start), var(--menu-active-end));
+    color: var(--menu-active-text);
+    box-shadow: inset 0 0 0 1px var(--menu-active-shadow);
 }
 
 body.admin-theme .btn-primary {
-    background: linear-gradient(135deg, #4f8ef7, #7b5ea7);
+    background: linear-gradient(135deg, var(--button-gradient-start), var(--button-gradient-end));
     border-color: transparent;
 }
 
 body.admin-theme .btn-primary:hover {
-    background: linear-gradient(135deg, #5896fb, #8667b5);
+    background: linear-gradient(135deg, var(--button-gradient-start-hover), var(--button-gradient-end-hover));
 }
 
 body.admin-theme .stat-card,
@@ -160,7 +203,7 @@ body.admin-theme .status-badge.status-banned {
 }
 
 body.admin-theme .status-badge.status-banned {
-    color: #cbd5e1;
+    color: var(--status-banned-text);
 }
 
 body.admin-theme .data-table th {
@@ -168,9 +211,9 @@ body.admin-theme .data-table th {
 }
 
 body.admin-theme .toast {
-    background: rgba(10, 20, 45, 0.92);
-    color: #e8edf7;
-    border-color: rgba(148, 163, 184, 0.3);
+    background: var(--toast-bg);
+    color: var(--text-main);
+    border-color: var(--toast-border);
     backdrop-filter: blur(14px);
 }
 
@@ -1710,4 +1753,60 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+}
+
+
+body.admin-theme.theme-warm .data-table th {
+    background: #faf6f0;
+}
+
+body.admin-theme.theme-warm .status-badge.status-banned {
+    background: #f5efe6;
+}
+
+.theme-options { display: grid; gap: 0.75rem; }
+.theme-option-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid var(--border-base);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 0.95rem;
+    cursor: pointer;
+}
+.theme-option-card input { accent-color: var(--primary); }
+.theme-option-card span { display: flex; flex-direction: column; gap: 0.2rem; }
+.theme-option-card small { color: var(--text-muted); }
+
+
+body.admin-theme.theme-warm .stat-card {
+    background: #fffaf5;
+    border-color: #eadfce;
+}
+
+body.admin-theme.theme-warm .menu-item.active a {
+    box-shadow: inset 0 0 0 1px rgba(212, 105, 42, 0.24);
+}
+
+body.admin-theme.theme-warm .menu-item .menu-icon,
+body.admin-theme.theme-warm .navbar-user,
+body.admin-theme.theme-warm .text-muted,
+body.admin-theme.theme-warm .small,
+body.admin-theme.theme-warm .stat-label {
+    color: var(--text-muted);
+}
+
+body.admin-theme.theme-warm .btn-secondary {
+    background: #faf6f0;
+}
+
+body.admin-theme.theme-warm .btn-secondary:hover {
+    background: #f6eee4;
+}
+
+body.admin-theme.theme-warm .table-container,
+body.admin-theme.theme-warm .content-section,
+body.admin-theme.theme-warm .modal,
+body.admin-theme.theme-warm .dropdown-menu {
+    box-shadow: 0 6px 28px rgba(45, 37, 25, 0.08);
 }

@@ -18,6 +18,14 @@ VALID_WARRANTY_EXPIRATION_MODES = {
     WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
 }
 
+UI_THEME_OCEAN = "ocean"
+UI_THEME_WARM = "warm"
+DEFAULT_UI_THEME = UI_THEME_OCEAN
+VALID_UI_THEMES = {
+    UI_THEME_OCEAN,
+    UI_THEME_WARM,
+}
+
 
 class SettingsService:
     """系统设置服务类"""
@@ -32,6 +40,14 @@ class SettingsService:
         if normalized in VALID_WARRANTY_EXPIRATION_MODES:
             return normalized
         return DEFAULT_WARRANTY_EXPIRATION_MODE
+
+    @staticmethod
+    def normalize_ui_theme(theme: Optional[str]) -> str:
+        """规范化系统配色主题。"""
+        normalized = str(theme or "").strip().lower()
+        if normalized in VALID_UI_THEMES:
+            return normalized
+        return DEFAULT_UI_THEME
 
     async def get_setting(self, session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
         """
