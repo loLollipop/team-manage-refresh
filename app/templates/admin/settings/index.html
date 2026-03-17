@@ -14,6 +14,7 @@
     <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
     <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
     <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
+    <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
     <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
 </div>
 
@@ -205,6 +206,26 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 导入配置</button>
+    </form>
+</div>
+
+<!-- 系统配色 -->
+<div class="content-section settings-panel" id="settings-ui-theme">
+    <div class="section-header">
+        <h3>系统配色</h3>
+    </div>
+
+    <form id="uiThemeForm" class="settings-form">
+        <div class="form-group">
+            <label for="uiThemeSelect">当前配色方案</label>
+            <select id="uiThemeSelect" name="theme" class="form-control">
+                <option value="ocean" {% if ui_theme == 'ocean' %}selected{% endif %}>深海蓝（默认）</option>
+                <option value="warm" {% if ui_theme == 'warm' %}selected{% endif %}>暖杏米（新配色）</option>
+            </select>
+            <p class="form-help">保存后控制台和兑换页会统一使用同一套配色。</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存系统配色</button>
     </form>
 </div>
 
@@ -538,6 +559,36 @@
 
             if (response.ok && data.success) {
                 showToast(data.message || 'Team 导入配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // 系统配色表单
+    document.getElementById('uiThemeForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const theme = document.getElementById('uiThemeSelect').value;
+
+        try {
+            const response = await fetch('/admin/settings/ui-theme', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ theme })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(data.message || '系统配色已保存', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 300);
             } else {
                 showToast(data.error || '保存失败', 'error');
             }
