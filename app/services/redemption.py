@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import RedemptionCode, RedemptionRecord, Team
+from app.services.settings import (
+    settings_service,
+    WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
+)
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,63 @@ class RedemptionService:
             code = f"{code[0:4]}-{code[4:8]}-{code[8:12]}-{code[12:16]}"
 
         return code
+
+    @staticmethod
+    def _record_sort_key(record: RedemptionRecord) -> tuple[datetime, int]:
+        """按兑换时间和记录 ID 排序，确保重建状态时顺序稳定。"""
+        return (record.redeemed_at or datetime.min, record.id or 0)
+
+    @staticmethod
+    def _clear_code_usage_state(redemption_code: RedemptionCode) -> None:
+        """清空兑换码的使用态字段。"""
+        redemption_code.status = "unused"
+        redemption_code.used_by_email = None
+        redemption_code.used_team_id = None
+        redemption_code.used_at = None
+        redemption_code.warranty_expires_at = None
+
+    async def _rebuild_code_usage_state(
+        self,
+        db_session: AsyncSession,
+        redemption_code: RedemptionCode,
+        excluding_record_id: Optional[int] = None
+    ) -> int:
+        """根据剩余兑换记录重建兑换码状态。"""
+        stmt = select(RedemptionRecord).where(RedemptionRecord.code == redemption_code.code)
+        if excluding_record_id is not None:
+            stmt = stmt.where(RedemptionRecord.id != excluding_record_id)
+
+        stmt = stmt.order_by(RedemptionRecord.redeemed_at.asc(), RedemptionRecord.id.asc())
+        result = await db_session.execute(stmt)
+        remaining_records = result.scalars().all()
+
+        if not remaining_records:
+            self._clear_code_usage_state(redemption_code)
+            return 0
+
+        first_record = remaining_records[0]
+        latest_record = max(remaining_records, key=self._record_sort_key)
+
+        redemption_code.status = "used"
+        redemption_code.used_by_email = latest_record.email
+        redemption_code.used_team_id = latest_record.team_id
+
+        if redemption_code.has_warranty:
+            expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+            base_record = (
+                latest_record
+                if expiration_mode == WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM
+                else first_record
+            )
+            base_time = base_record.redeemed_at or get_now()
+            redemption_code.used_at = base_time
+            days = redemption_code.warranty_days or 30
+            redemption_code.warranty_expires_at = base_time + timedelta(days=days)
+        else:
+            redemption_code.used_at = latest_record.redeemed_at or get_now()
+            redemption_code.warranty_expires_at = None
+
+        return len(remaining_records)
 
     async def generate_code_single(
         self,
@@ -888,19 +949,15 @@ class RedemptionService:
                         "error": f"从 Team 移除成员失败: {team_result.get('error') or team_result.get('message')}"
                     }
 
-            # 3. 恢复兑换码状态
+            # 3. 根据剩余记录重建兑换码状态
             code = record.redemption_code
+            remaining_records_count = 0
             if code:
-                # 如果是质保兑换，且还有其他记录，状态可能不应该直接回 unused
-                # 但根据逻辑，目前一个码一个记录（除了质保补发可能产生新记录，但那是两个不同的码吧？）
-                # 查了一下模型，RedemptionCode 有 used_by_email 等字段，说明它是单次使用的设计
-                code.status = "unused"
-                code.used_by_email = None
-                code.used_team_id = None
-                code.used_at = None
-                # 特殊处理质保字段
-                if code.has_warranty:
-                    code.warranty_expires_at = None
+                remaining_records_count = await self._rebuild_code_usage_state(
+                    db_session,
+                    code,
+                    excluding_record_id=record.id
+                )
 
             # 4. 删除使用记录
             await db_session.delete(record)
@@ -908,9 +965,14 @@ class RedemptionService:
 
             logger.info(f"撤回记录成功: {record_id}, 邮箱: {record.email}, 兑换码: {record.code}")
 
+            if code and remaining_records_count > 0:
+                message = f"成功撤回记录，兑换码 {record.code} 已按剩余 {remaining_records_count} 条记录重建状态"
+            else:
+                message = f"成功撤回记录并恢复兑换码 {record.code}"
+
             return {
                 "success": True,
-                "message": f"成功撤回记录并恢复兑换码 {record.code}"
+                "message": message
             }
 
         except Exception as e:

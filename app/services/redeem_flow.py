@@ -17,7 +17,10 @@ from app.services.redemption import RedemptionService
 from app.services.team import TeamService
 from app.services.warranty import warranty_service
 from app.services.notification import notification_service
-from app.services.settings import settings_service
+from app.services.settings import (
+    settings_service,
+    WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
+)
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -315,13 +318,38 @@ class RedeemFlowService:
 
                             # 成功逻辑
                             if rc and (not rc.reusable_by_seat):
+                                warranty_expiration_mode = None
+                                if rc.has_warranty:
+                                    warranty_expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+
+                                previous_used_at = rc.used_at
+                                current_use_time = get_now()
                                 rc.status = "used"
                                 rc.used_by_email = email
                                 rc.used_team_id = team_id_final
-                                rc.used_at = get_now()
+                                should_refresh_warranty_window = bool(
+                                    rc.has_warranty and (
+                                        previous_used_at is None
+                                        or warranty_expiration_mode == WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM
+                                    )
+                                )
+
+                                if (not rc.has_warranty) or should_refresh_warranty_window:
+                                    rc.used_at = current_use_time
                                 if rc.has_warranty:
                                     days = rc.warranty_days or 30
-                                    rc.warranty_expires_at = get_now() + timedelta(days=days)
+                                    if should_refresh_warranty_window:
+                                        rc.warranty_expires_at = current_use_time + timedelta(days=days)
+                                    elif not rc.warranty_expires_at:
+                                        base_time = previous_used_at or current_use_time
+                                        first_use_result = await db_session.execute(
+                                            select(func.min(RedemptionRecord.redeemed_at))
+                                            .where(RedemptionRecord.code == code)
+                                        )
+                                        first_use_time = first_use_result.scalar()
+                                        if first_use_time:
+                                            base_time = first_use_time
+                                        rc.warranty_expires_at = base_time + timedelta(days=days)
 
                             if is_virtual_welfare_code:
                                 setting_res = await db_session.execute(

@@ -10,12 +10,28 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+WARRANTY_EXPIRATION_MODE_FIRST_USE = "first_use"
+WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM = "refresh_on_redeem"
+DEFAULT_WARRANTY_EXPIRATION_MODE = WARRANTY_EXPIRATION_MODE_FIRST_USE
+VALID_WARRANTY_EXPIRATION_MODES = {
+    WARRANTY_EXPIRATION_MODE_FIRST_USE,
+    WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
+}
+
 
 class SettingsService:
     """系统设置服务类"""
 
     def __init__(self):
         self._cache: Dict[str, str] = {}
+
+    @staticmethod
+    def normalize_warranty_expiration_mode(mode: Optional[str]) -> str:
+        """规范化质保时长计算模式。"""
+        normalized = str(mode or "").strip().lower()
+        if normalized in VALID_WARRANTY_EXPIRATION_MODES:
+            return normalized
+        return DEFAULT_WARRANTY_EXPIRATION_MODE
 
     async def get_setting(self, session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
         """
@@ -214,6 +230,15 @@ class SettingsService:
             logger.info(f"日志级别已更新为: {level.upper()}")
 
         return success
+
+    async def get_warranty_expiration_mode(self, session: AsyncSession) -> str:
+        """获取质保时长计算模式。"""
+        raw_value = await self.get_setting(
+            session,
+            "warranty_expiration_mode",
+            DEFAULT_WARRANTY_EXPIRATION_MODE,
+        )
+        return self.normalize_warranty_expiration_mode(raw_value)
 
 
 # 创建全局实例

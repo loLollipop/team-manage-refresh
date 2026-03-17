@@ -265,7 +265,7 @@
 {% block extra_js %}
 <script>
     async function withdrawRecord(recordId, email) {
-        if (!confirm(`确定要撤回针对 ${email} 的兑换记录吗？\n\n这将执行以下操作：\n1. 在 ChatGPT Team 中撤回邀请或删除成员\n2. 恢复对应的兑换码为“未使用”状态\n3. 删除此条使用记录`)) {
+        if (!confirm(`确定要撤回针对 ${email} 的兑换记录吗？\n\n这将执行以下操作：\n1. 在 ChatGPT Team 中撤回邀请或删除成员\n2. 按剩余使用记录重建兑换码状态\n3. 删除此条使用记录`)) {
             return;
         }
 

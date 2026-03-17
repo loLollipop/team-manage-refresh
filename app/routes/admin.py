@@ -4,7 +4,7 @@
 """
 import logging
 import re
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Literal
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
@@ -17,7 +17,10 @@ from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
 from app.services.chatgpt import chatgpt_service
-from app.services.settings import settings_service
+from app.services.settings import (
+    settings_service,
+    DEFAULT_WARRANTY_EXPIRATION_MODE,
+)
 from app.models import RedemptionCode, Team
 from app.utils.time_utils import get_now
 
@@ -1609,6 +1612,7 @@ async def settings_page(
                 "periodic_team_sync_interval_hours": await settings_service.get_setting(db, "periodic_team_sync_interval_hours", "12"),
                 "periodic_team_sync_days": await settings_service.get_setting(db, "periodic_team_sync_days", "7"),
                 "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
+                "warranty_expiration_mode": await settings_service.get_warranty_expiration_mode(db),
             }
         )
 
@@ -1655,6 +1659,14 @@ class TeamAutoRefreshSettingsRequest(BaseModel):
     enabled: bool = Field(True, description="是否启用 Team 周期状态自动刷新")
     interval_hours: int = Field(12, ge=1, le=168, description="检查间隔（小时）")
     refresh_interval_days: int = Field(7, ge=1, le=30, description="同步周期（天）")
+
+
+class WarrantyExpirationSettingsRequest(BaseModel):
+    """质保时长计算模式设置请求"""
+    expiration_mode: Literal["first_use", "refresh_on_redeem"] = Field(
+        DEFAULT_WARRANTY_EXPIRATION_MODE,
+        description="质保时长计算模式"
+    )
 
 
 class AnnouncementUpdateRequest(BaseModel):
@@ -1971,6 +1983,50 @@ async def update_team_auto_refresh_settings(
         )
     except Exception as e:
         logger.error(f"更新 Team 自动刷新设置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )
+
+
+@router.post("/settings/warranty")
+async def update_warranty_settings(
+    warranty_data: WarrantyExpirationSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新质保时长计算模式。"""
+    try:
+        expiration_mode = settings_service.normalize_warranty_expiration_mode(
+            warranty_data.expiration_mode
+        )
+        logger.info("管理员更新质保计算模式: %s", expiration_mode)
+
+        success = await settings_service.update_setting(
+            db,
+            "warranty_expiration_mode",
+            expiration_mode,
+        )
+        if not success:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "保存失败"}
+            )
+
+        message = (
+            "质保设置已保存：按首次使用时间计算质保期"
+            if expiration_mode == DEFAULT_WARRANTY_EXPIRATION_MODE
+            else "质保设置已保存：质保重兑成功后刷新完整质保期"
+        )
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": message,
+                "expiration_mode": expiration_mode,
+            }
+        )
+    except Exception as e:
+        logger.error(f"更新质保设置失败: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": f"更新失败: {str(e)}"}

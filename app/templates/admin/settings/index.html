@@ -12,6 +12,7 @@
     <a href="#settings-log" class="settings-nav-pill settings-nav-link" data-target="settings-log">日志级别</a>
     <a href="#settings-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-refresh">Token 预刷新</a>
     <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
+    <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
     <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
     <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
 </div>
@@ -160,6 +161,31 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 自动刷新配置</button>
+    </form>
+</div>
+
+
+<!-- 质保设置 -->
+<div class="content-section settings-panel" id="settings-warranty">
+    <div class="section-header">
+        <h3>质保设置</h3>
+    </div>
+
+    <form id="warrantySettingsForm" class="settings-form">
+        <div class="form-group">
+            <label for="warrantyExpirationMode">质保时长计算方式</label>
+            <select id="warrantyExpirationMode" name="expiration_mode" class="form-control">
+                <option value="first_use" {% if (warranty_expiration_mode or 'first_use') == 'first_use' %}selected{% endif %}>
+                    首次使用后开始计算
+                </option>
+                <option value="refresh_on_redeem" {% if warranty_expiration_mode == 'refresh_on_redeem' %}selected{% endif %}>
+                    每次质保重兑成功后刷新
+                </option>
+            </select>
+            <p class="form-help">默认推荐“首次使用后开始计算”。开启刷新模式后，用户每次质保重兑成功都会重新获得完整质保时长。</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存质保设置</button>
     </form>
 </div>
 
@@ -453,6 +479,33 @@
 
             if (response.ok && data.success) {
                 showToast(data.message || 'Team 自动刷新配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // 质保设置表单
+    document.getElementById('warrantySettingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const expiration_mode = document.getElementById('warrantyExpirationMode').value;
+
+        try {
+            const response = await fetch('/admin/settings/warranty', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ expiration_mode })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(data.message || '质保设置已保存', 'success');
             } else {
                 showToast(data.error || '保存失败', 'error');
             }

@@ -59,6 +59,11 @@ async def create_default_settings():
                 value="6",
                 description="新导入 Team 的默认总席位"
             ),
+            Setting(
+                key="warranty_expiration_mode",
+                value="first_use",
+                description="质保时长计算模式: first_use/refresh_on_redeem"
+            ),
         ]
 
         session.add_all(default_settings)
