@@ -7,6 +7,21 @@ function getCurrentPoolType() {
  * GPT Team 管理系统 - 通用 JavaScript
  */
 
+function cleanupLegacyThemeSettingsSection() {
+    const legacyLinks = document.querySelectorAll('[data-target="settings-ui-theme"], a[href="#settings-ui-theme"]');
+    legacyLinks.forEach((node) => node.remove());
+
+    const legacyPanel = document.getElementById('settings-ui-theme');
+    if (legacyPanel) {
+        legacyPanel.remove();
+    }
+
+    if (window.location.hash === '#settings-ui-theme') {
+        history.replaceState(null, '', '#settings-proxy');
+    }
+}
+
+
 function applySystemTheme(themeName) {
     const body = document.body;
     if (!body) return;
@@ -192,6 +207,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 检查认证状态
     checkAuthStatus();
 
+    cleanupLegacyThemeSettingsSection();
     initThemeSwitcher();
 
     // OAuth 一键导入按钮绑定（避免仅依赖内联 onclick）
