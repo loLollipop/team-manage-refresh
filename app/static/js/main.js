@@ -525,7 +525,6 @@ function buildOAuthJsonTemplate(parsedData) {
     return {
         access_token: accessToken,
         account_id: accountId,
-        disabled: typeof raw.disabled === 'boolean' ? raw.disabled : false,
         email,
         expired,
         id_token: idToken,

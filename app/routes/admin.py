@@ -576,11 +576,27 @@ async def parse_openai_oauth_callback(
                 if k not in merged:
                     merged[k] = v
 
+        # 兼容直接粘贴 JSON 的场景
+        if "{" in text and "}" in text:
+            try:
+                json_candidate = json.loads(text)
+                if isinstance(json_candidate, dict):
+                    for key in ("access_token", "refresh_token", "id_token", "client_id", "account_id", "email", "expired", "last_refresh", "type"):
+                        value = json_candidate.get(key)
+                        if value and key not in merged:
+                            merged[key] = str(value)
+            except Exception:
+                pass
+
         # 兜底直接提取 token/client_id
         if not merged.get("access_token"):
             m = re.search(r'(eyJ[a-zA-Z0-9_\-.]+\.[a-zA-Z0-9_\-.]+\.[a-zA-Z0-9_\-.]+)', text)
             if m:
                 merged["access_token"] = m.group(1)
+        if not merged.get("id_token"):
+            token_matches = re.findall(r'(eyJ[a-zA-Z0-9_\-.]+\.[a-zA-Z0-9_\-.]+\.[a-zA-Z0-9_\-.]+)', text)
+            if len(token_matches) >= 2:
+                merged["id_token"] = token_matches[1]
         if not merged.get("refresh_token"):
             m = re.search(r'(rt[_-][A-Za-z0-9._-]+)', text)
             if m:
@@ -595,6 +611,7 @@ async def parse_openai_oauth_callback(
 
         access_token = merged.get("access_token")
         refresh_token = merged.get("refresh_token")
+        id_token = merged.get("id_token")
         client_id = merged.get("client_id") or payload.client_id
 
         # 如果回调中只有 code，尝试自动换取 AT/RT
@@ -624,6 +641,9 @@ async def parse_openai_oauth_callback(
 
             access_token = exchange.get("access_token")
             refresh_token = exchange.get("refresh_token")
+            id_token = exchange.get("id_token")
+            if id_token:
+                merged["id_token"] = id_token
 
         if not access_token and not refresh_token:
             return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={
@@ -636,6 +656,7 @@ async def parse_openai_oauth_callback(
             "data": {
                 "access_token": access_token or "",
                 "refresh_token": refresh_token or "",
+                "id_token": id_token or "",
                 "client_id": client_id or "",
                 "raw": merged
             }
