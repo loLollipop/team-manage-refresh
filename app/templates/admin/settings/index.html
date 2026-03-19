@@ -14,6 +14,7 @@
     <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
     <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
     <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
+    <a href="#settings-cliproxyapi" class="settings-nav-pill settings-nav-link" data-target="settings-cliproxyapi">CliproxyAPI 推送</a>
     <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
     <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
 </div>
@@ -206,6 +207,31 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 导入配置</button>
+    </form>
+</div>
+
+<!-- CliproxyAPI 推送配置 -->
+<div class="content-section settings-panel" id="settings-cliproxyapi">
+    <div class="section-header">
+        <h3>CliproxyAPI 推送</h3>
+    </div>
+
+    <form id="cliproxyapiForm" class="settings-form">
+        <div class="form-group">
+            <label for="cliproxyapiBaseUrl">站点地址</label>
+            <input type="text" id="cliproxyapiBaseUrl" name="base_url" value="{{ cliproxyapi_base_url or '' }}"
+                placeholder="https://cli-proxy-api.example.com" class="form-control">
+            <p class="form-help">填写 CliproxyAPI 站点根地址，保存时会自动去掉末尾斜杠。</p>
+        </div>
+
+        <div class="form-group">
+            <label for="cliproxyapiApiKey">管理密钥</label>
+            <input type="password" id="cliproxyapiApiKey" name="api_key" value="{{ cliproxyapi_api_key or '' }}"
+                placeholder="Bearer 管理密钥中的原始 token 值" class="form-control">
+            <p class="form-help">保存后，Team 列表中的单条/批量推送都会使用该密钥调用 `/v0/management/auth-files`。</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存 CliproxyAPI 配置</button>
     </form>
 </div>
 
@@ -559,6 +585,50 @@
 
             if (response.ok && data.success) {
                 showToast(data.message || 'Team 导入配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // CliproxyAPI 推送配置表单
+    document.getElementById('cliproxyapiForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const base_url = document.getElementById('cliproxyapiBaseUrl').value.trim();
+        const api_key = document.getElementById('cliproxyapiApiKey').value.trim();
+
+        if (!base_url) {
+            showToast('请输入 CliproxyAPI 站点地址', 'error');
+            return;
+        }
+
+        if (!/^https?:\/\//i.test(base_url)) {
+            showToast('CliproxyAPI 地址必须以 http:// 或 https:// 开头', 'error');
+            return;
+        }
+
+        if (!api_key) {
+            showToast('请输入 CliproxyAPI 管理密钥', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/settings/cliproxyapi', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ base_url, api_key })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                document.getElementById('cliproxyapiBaseUrl').value = data.base_url || base_url.replace(/\/+$/, '');
+                showToast(data.message || 'CliproxyAPI 配置已保存', 'success');
             } else {
                 showToast(data.error || '保存失败', 'error');
             }

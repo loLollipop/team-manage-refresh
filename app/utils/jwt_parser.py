@@ -70,7 +70,7 @@ class JWTParser:
         try:
             # ChatGPT Token 的邮箱字段路径
             profile = payload.get("https://api.openai.com/profile", {})
-            email = profile.get("email")
+            email = profile.get("email") or payload.get("email")
             return email
         except Exception as e:
             logger.error(f"提取邮箱失败: {e}")

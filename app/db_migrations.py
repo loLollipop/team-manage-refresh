@@ -82,6 +82,11 @@ def run_auto_migration():
             cursor.execute("ALTER TABLE teams ADD COLUMN refresh_token_encrypted TEXT")
             migrations_applied.append("teams.refresh_token_encrypted")
 
+        if not column_exists(cursor, "teams", "id_token_encrypted"):
+            logger.info("添加 teams.id_token_encrypted 字段")
+            cursor.execute("ALTER TABLE teams ADD COLUMN id_token_encrypted TEXT")
+            migrations_applied.append("teams.id_token_encrypted")
+
         if not column_exists(cursor, "teams", "session_token_encrypted"):
             logger.info("添加 teams.session_token_encrypted 字段")
             cursor.execute("ALTER TABLE teams ADD COLUMN session_token_encrypted TEXT")

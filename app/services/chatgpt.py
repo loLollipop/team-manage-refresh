@@ -390,8 +390,14 @@ class ChatGPTService:
                 
                 at = data.get("accessToken")
                 st = data.get("sessionToken")
+                id_token = data.get("idToken") or data.get("id_token")
                 if at:
-                    return {"success": True, "access_token": at, "session_token": st}
+                    return {
+                        "success": True,
+                        "access_token": at,
+                        "session_token": st,
+                        "id_token": id_token,
+                    }
                 
                 # 如果 200 但没有 token，可能是被拦截或格式变了
                 error_msg = str(data.get("detail") or data.get("error") or "响应中未包含 accessToken")
@@ -438,6 +444,7 @@ class ChatGPTService:
             return {
                 "success": True,
                 "access_token": data.get("access_token"),
+                "id_token": data.get("id_token"),
                 "refresh_token": data.get("refresh_token"),
                 "data": data
             }
@@ -464,6 +471,7 @@ class ChatGPTService:
                 return {
                     "success": True,
                     "access_token": data.get("access_token"),
+                    "id_token": data.get("id_token"),
                     "refresh_token": data.get("refresh_token"),
                     "data": data
                 }

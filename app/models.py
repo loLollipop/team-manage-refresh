@@ -16,6 +16,7 @@ class Team(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), nullable=False, comment="Team 管理员邮箱")
     access_token_encrypted = Column(Text, nullable=False, comment="加密存储的 AT")
+    id_token_encrypted = Column(Text, comment="加密存储的 ID Token")
     refresh_token_encrypted = Column(Text, comment="加密存储的 RT")
     session_token_encrypted = Column(Text, comment="加密存储的 Session Token")
     client_id = Column(String(100), comment="OAuth Client ID")
