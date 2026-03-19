@@ -142,11 +142,7 @@ class WarrantyService:
                     .order_by(RedemptionRecord.redeemed_at.desc())
                 )
                 result = await db_session.execute(stmt)
-                first_record = result.first()
-                if first_record:
-                    records_data = [first_record]
-                else:
-                    records_data = []
+                records_data = result.all()
 
                 # 如果没有记录，可能是码还没被使用或不存在
                 if not records_data:

@@ -127,7 +127,7 @@
                     </td>
                     <td style="text-align: right;">{{ record.redeemed_at }}</td>
                     <td style="text-align: right;">
-                        <button onclick="withdrawRecord('{{ record.id }}', '{{ record.email }}')"
+                        <button onclick='withdrawRecord({{ record.id|tojson }}, {{ record.email|tojson }}, this)'
                             class="btn btn-sm btn-danger" title="撤回邀请并恢复兑换码">
                             <i data-lucide="undo-2" style="width: 14px; height: 14px;"></i> 撤回
                         </button>
@@ -264,17 +264,18 @@
 
 {% block extra_js %}
 <script>
-    async function withdrawRecord(recordId, email) {
+    async function withdrawRecord(recordId, email, btn) {
         if (!confirm(`确定要撤回针对 ${email} 的兑换记录吗？\n\n这将执行以下操作：\n1. 在 ChatGPT Team 中撤回邀请或删除成员\n2. 按剩余使用记录重建兑换码状态\n3. 删除此条使用记录`)) {
             return;
         }
 
+        const originalContent = btn ? btn.innerHTML : "";
+
         try {
-            // 获取当前点击的按钮
-            const btn = event.currentTarget;
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+            }
             lucide.createIcons();
 
             const response = await fetch(`/admin/records/${recordId}/withdraw`, {
@@ -292,16 +293,20 @@
                 setTimeout(() => location.reload(), 1000);
             } else {
                 showToast(result.error || '撤回失败', 'error');
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-                lucide.createIcons();
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                    lucide.createIcons();
+                }
             }
         } catch (error) {
             console.error('撤回失败:', error);
             showToast('请求失败，请检查网络或日志', 'error');
             // 如果出错，尝试恢复按钮
-            if (event && event.currentTarget) {
-                event.currentTarget.disabled = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+                lucide.createIcons();
             }
         }
     }

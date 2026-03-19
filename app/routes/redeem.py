@@ -100,11 +100,11 @@ async def verify_code(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"验证兑换码失败: {e}")
+    except Exception:
+        logger.exception("验证兑换码失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"验证失败: {str(e)}"
+            detail="验证失败，请稍后重试"
         )
 
 
@@ -160,9 +160,9 @@ async def confirm_redeem(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"兑换失败: {e}")
+    except Exception:
+        logger.exception("兑换失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"兑换失败: {str(e)}"
+            detail="兑换失败，请稍后重试"
         )

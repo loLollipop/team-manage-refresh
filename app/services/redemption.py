@@ -65,6 +65,37 @@ class RedemptionService:
         redemption_code.used_at = None
         redemption_code.warranty_expires_at = None
 
+    async def get_virtual_welfare_code_usage(
+        self,
+        db_session: AsyncSession,
+        welfare_code: Optional[str] = None
+    ) -> Dict[str, int | str | None]:
+        """获取当前福利通用兑换码的实际使用情况。"""
+        if welfare_code is None:
+            welfare_code = (await settings_service.get_setting(db_session, "welfare_common_code", "") or "").strip()
+
+        used_count = 0
+        if welfare_code:
+            used_result = await db_session.execute(
+                select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code == welfare_code)
+            )
+            used_count = int(used_result.scalar() or 0)
+
+        capacity_result = await db_session.execute(
+            select(func.sum(Team.max_members - Team.current_members)).where(
+                Team.pool_type == "welfare",
+                Team.status == "active",
+                Team.current_members < Team.max_members
+            )
+        )
+        usable_capacity = int(capacity_result.scalar() or 0)
+
+        return {
+            "welfare_code": welfare_code,
+            "used_count": used_count,
+            "usable_capacity": usable_capacity,
+        }
+
     async def _rebuild_code_usage_state(
         self,
         db_session: AsyncSession,
@@ -194,14 +225,14 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"生成兑换码失败: {e}")
+            logger.exception("生成兑换码失败")
             return {
                 "success": False,
                 "code": None,
                 "message": None,
-                "error": f"生成兑换码失败: {str(e)}"
+                "error": "生成兑换码失败，请稍后重试"
             }
 
     async def generate_code_batch(
@@ -287,15 +318,15 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"批量生成兑换码失败: {e}")
+            logger.exception("批量生成兑换码失败")
             return {
                 "success": False,
                 "codes": [],
                 "total": 0,
                 "message": None,
-                "error": f"批量生成兑换码失败: {str(e)}"
+                "error": "批量生成兑换码失败，请稍后重试"
             }
 
     async def validate_code(
@@ -324,28 +355,9 @@ class RedemptionService:
                 from app.services.settings import settings_service
                 welfare_code = (await settings_service.get_setting(db_session, "welfare_common_code", "") or "").strip()
                 if welfare_code and code == welfare_code:
-                    limit_raw = await settings_service.get_setting(db_session, "welfare_common_code_limit", "0")
-                    used_raw = await settings_service.get_setting(db_session, "welfare_common_code_used_count", "0")
-                    try:
-                        limit_count = int(limit_raw or 0)
-                    except Exception:
-                        limit_count = 0
-                    try:
-                        used_count = int(used_raw or 0)
-                    except Exception:
-                        used_count = 0
-
-                    # 真实可兑换次数按当前可用车位计算：sum(max_members - current_members)
-                    capacity_stmt = select(func.sum(Team.max_members - Team.current_members)).where(
-                        Team.pool_type == "welfare",
-                        Team.status == "active",
-                        Team.current_members < Team.max_members
-                    )
-                    capacity_result = await db_session.execute(capacity_stmt)
-                    usable_capacity = int(capacity_result.scalar() or 0)
-
-                    # 兼容历史错误配置：向下收敛到当前真实可用车位
-                    effective_limit = min(limit_count, usable_capacity) if limit_count > 0 else usable_capacity
+                    welfare_usage = await self.get_virtual_welfare_code_usage(db_session, welfare_code=welfare_code)
+                    used_count = int(welfare_usage["used_count"] or 0)
+                    effective_limit = int(welfare_usage["usable_capacity"] or 0)
 
                     if effective_limit <= 0 or used_count >= effective_limit:
                         return {
@@ -473,14 +485,14 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"验证兑换码失败: {e}")
+        except Exception:
+            logger.exception("验证兑换码失败")
             return {
                 "success": False,
                 "valid": False,
                 "reason": None,
                 "redemption_code": None,
-                "error": f"验证兑换码失败: {str(e)}"
+                "error": "验证兑换码失败，请稍后重试"
             }
 
     async def use_code(
@@ -551,13 +563,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"使用兑换码失败: {e}")
+            logger.exception("使用兑换码失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"使用兑换码失败: {str(e)}"
+                "error": "使用兑换码失败，请稍后重试"
             }
 
     async def get_all_codes(
@@ -653,13 +665,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取所有兑换码失败: {e}")
+        except Exception:
+            logger.exception("获取所有兑换码失败")
             return {
                 "success": False,
                 "codes": [],
                 "total": 0,
-                "error": f"获取所有兑换码失败: {str(e)}"
+                "error": "获取所有兑换码失败，请稍后重试"
             }
 
     async def get_unused_count(
@@ -721,12 +733,12 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"查询兑换码失败: {e}")
+        except Exception:
+            logger.exception("查询兑换码失败")
             return {
                 "success": False,
                 "code_info": None,
-                "error": f"查询兑换码失败: {str(e)}"
+                "error": "查询兑换码失败，请稍后重试"
             }
 
     async def get_unused_codes(
@@ -768,13 +780,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取未使用兑换码失败: {e}")
+        except Exception:
+            logger.exception("获取未使用兑换码失败")
             return {
                 "success": False,
                 "codes": [],
                 "total": 0,
-                "error": f"获取未使用兑换码失败: {str(e)}"
+                "error": "获取未使用兑换码失败，请稍后重试"
             }
 
     async def get_all_records(
@@ -837,13 +849,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取所有兑换记录失败: {e}")
+        except Exception:
+            logger.exception("获取所有兑换记录失败")
             return {
                 "success": False,
                 "records": [],
                 "total": 0,
-                "error": f"获取所有兑换记录失败: {str(e)}"
+                "error": "获取所有兑换记录失败，请稍后重试"
             }
 
     async def delete_code(
@@ -886,13 +898,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"删除兑换码失败: {e}")
+            logger.exception("删除兑换码失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"删除兑换码失败: {str(e)}"
+                "error": "删除兑换码失败，请稍后重试"
             }
 
     async def update_code(
@@ -975,12 +987,10 @@ class RedemptionService:
                 "message": message
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"撤回记录失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return {"success": False, "error": f"撤回失败: {str(e)}"}
+            logger.exception("撤回记录失败")
+            return {"success": False, "error": "撤回失败，请稍后重试"}
 
     async def bulk_update_codes(
         self,
@@ -1027,13 +1037,13 @@ class RedemptionService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"批量更新兑换码失败: {e}")
+            logger.exception("批量更新兑换码失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"批量更新失败: {str(e)}"
+                "error": "批量更新失败，请稍后重试"
             }
 
     async def get_stats(

@@ -29,7 +29,7 @@ function showToast(message, type = 'info') {
     if (type === 'success') icon = 'check-circle';
     if (type === 'error') icon = 'alert-circle';
 
-    toast.innerHTML = `<i data-lucide="${icon}"></i><span>${message}</span>`;
+    toast.innerHTML = `<i data-lucide="${icon}"></i><span>${escapeHtml(message)}</span>`;
     toast.className = `toast ${type} show`;
 
     if (window.lucide) {
@@ -232,7 +232,7 @@ function renderTeamsList() {
     availableTeams.forEach(team => {
         const teamCard = document.createElement('div');
         teamCard.className = 'team-card';
-        teamCard.onclick = () => selectTeam(team.id);
+        teamCard.onclick = () => selectTeam(team.id, teamCard);
 
         const planBadge = team.subscription_plan === 'Plus' ? 'badge-plus' : 'badge-pro';
 
@@ -261,14 +261,16 @@ function renderTeamsList() {
 }
 
 // 选择Team
-function selectTeam(teamId) {
+function selectTeam(teamId, teamCard) {
     selectedTeamId = teamId;
 
     // 更新UI
     document.querySelectorAll('.team-card').forEach(card => {
         card.classList.remove('selected');
     });
-    event.currentTarget.classList.add('selected');
+    if (teamCard) {
+        teamCard.classList.add('selected');
+    }
 
     // 立即确认兑换
     confirmRedeem(teamId);
@@ -520,7 +522,7 @@ function showWarrantyResult(data) {
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <input type="text" value="${escapeHtml(data.original_code)}" readonly 
                             style="flex: 1; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-base); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 1.1rem;">
-                        <button onclick="copyWarrantyCode('${escapeHtml(data.original_code)}')" class="btn btn-secondary" style="white-space: nowrap;">
+                        <button onclick='copyWarrantyCode(${JSON.stringify(String(data.original_code || ''))})' class="btn btn-secondary" style="white-space: nowrap;">
                             <i data-lucide="copy"></i> 复制
                         </button>
                     </div>
@@ -602,7 +604,7 @@ function showWarrantyResult(data) {
                                              <span>${escapeHtml(record.team_name || '未知 Team')}</span>
                                              <span>${teamStatusBadge}</span>
                                              ${(record.has_warranty && record.warranty_valid && record.team_status === 'banned') ? `
-                                             <button onclick="oneClickReplace('${escapeHtml(record.code)}', '${escapeHtml(record.email || currentEmail)}')" class="btn btn-xs btn-primary" style="padding: 2px 8px; font-size: 0.75rem; height: auto; min-height: 0;">
+                                             <button onclick='oneClickReplace(${JSON.stringify(String(record.code || ''))}, ${JSON.stringify(String(record.email || currentEmail || ''))}, this)' class="btn btn-xs btn-primary" style="padding: 2px 8px; font-size: 0.75rem; height: auto; min-height: 0;">
                                                  一键换车
                                              </button>
                                              ` : ''}
@@ -632,7 +634,7 @@ function showWarrantyResult(data) {
                                              </div>
                                          </div>
                                          ${(!record.device_code_auth_enabled && record.team_status !== 'banned' && record.team_status !== 'expired') ? `
-                                         <button onclick="enableUserDeviceAuth(${record.team_id}, '${escapeHtml(record.code)}', '${escapeHtml(record.email)}')" class="btn btn-xs btn-primary" style="padding: 4px 10px; font-size: 0.75rem; height: auto;">
+                                         <button onclick='enableUserDeviceAuth(${Number(record.team_id)}, ${JSON.stringify(String(record.code || ''))}, ${JSON.stringify(String(record.email || ''))}, this)' class="btn btn-xs btn-primary" style="padding: 4px 10px; font-size: 0.75rem; height: auto;">
                                              一键开启
                                          </button>
                                          ` : ''}
@@ -658,7 +660,7 @@ function showWarrantyResult(data) {
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <input type="text" value="${escapeHtml(data.original_code)}" readonly 
                         style="flex: 1; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-base); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 1.1rem;">
-                    <button onclick="copyWarrantyCode('${escapeHtml(data.original_code)}')" class="btn btn-secondary" style="white-space: nowrap;">
+                    <button onclick='copyWarrantyCode(${JSON.stringify(String(data.original_code || ''))})' class="btn btn-secondary" style="white-space: nowrap;">
                         <i data-lucide="copy"></i> 复制
                     </button>
                 </div>
@@ -691,16 +693,30 @@ function showWarrantyResult(data) {
 }
 
 // 复制质保兑换码
-function copyWarrantyCode(code) {
-    navigator.clipboard.writeText(code).then(() => {
+async function copyWarrantyCode(code) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(code);
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = code;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const copied = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (!copied) throw new Error('copy failed');
+        }
         showToast('兑换码已复制到剪贴板', 'success');
-    }).catch(() => {
+    } catch (_) {
         showToast('复制失败，请手动复制', 'error');
-    });
+    }
 }
 
 // 一键换车
-async function oneClickReplace(code, email) {
+async function oneClickReplace(code, email, btn) {
     if (!code || !email) {
         showToast('无法获取完整信息，请手动重试', 'error');
         return;
@@ -716,12 +732,13 @@ async function oneClickReplace(code, email) {
     if (emailInput) emailInput.value = email;
     if (codeInput) codeInput.value = code;
 
-    const btn = event.currentTarget;
-    const originalContent = btn.innerHTML;
+    const originalContent = btn ? btn.innerHTML : "";
 
     // 禁用所有按钮防止重复提交
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 处理中...';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 处理中...';
+    }
     if (window.lucide) lucide.createIcons();
 
     showToast('正在为您尝试自动兑换...', 'info');
@@ -743,15 +760,16 @@ async function oneClickReplace(code, email) {
 }
 
 // 用户一键开启设备身份验证
-async function enableUserDeviceAuth(teamId, code, email) {
+async function enableUserDeviceAuth(teamId, code, email, btn) {
     if (!confirm('确定要在该 Team 中开启设备代码身份验证吗？')) {
         return;
     }
 
-    const btn = event.currentTarget;
-    const originalContent = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 开启中...';
+    const originalContent = btn ? btn.innerHTML : "";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 开启中...';
+    }
     if (window.lucide) lucide.createIcons();
 
     try {

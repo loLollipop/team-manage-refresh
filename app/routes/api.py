@@ -55,12 +55,13 @@ async def refresh_team(
 
         return JSONResponse(content=result)
 
-    except Exception as e:
-        logger.error(f"刷新 Team 失败: {e}")
+    except Exception:
+        logger.exception("刷新 Team 失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"刷新 Team 失败: {str(e)}"
+                "error_code": "unknown_error",
+                "error": "刷新 Team 信息时发生异常，请稍后重试"
             }
         )

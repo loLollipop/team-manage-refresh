@@ -7,6 +7,16 @@ function getCurrentPoolType() {
  * GPT Team 管理系统 - 通用 JavaScript
  */
 
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function cleanupLegacyThemeSettingsSection() {
     const legacyLinks = document.querySelectorAll('[data-target="settings-ui-theme"], a[href="#settings-ui-theme"]');
     legacyLinks.forEach((node) => node.remove());
@@ -119,7 +129,7 @@ function showToast(message, type = 'info') {
     if (type === 'success') icon = 'check-circle';
     if (type === 'error') icon = 'alert-circle';
 
-    toast.innerHTML = `<i data-lucide="${icon}"></i><span>${message}</span>`;
+    toast.innerHTML = `<i data-lucide="${icon}"></i><span>${escapeHtml(message)}</span>`;
     toast.className = `toast ${type} show`;
 
     if (window.lucide) {
@@ -767,9 +777,9 @@ async function handleBatchImport(event) {
                         const statusText = res.success ? '成功' : '失败';
                         const row = document.createElement('tr');
                         row.innerHTML = `
-                            <td>${res.email}</td>
-                            <td class="${statusClass}">${statusText}</td>
-                            <td>${res.success ? (res.message || '导入成功') : res.error}</td>
+                            <td>${escapeHtml(res.email)}</td>
+                            <td class="${statusClass}">${escapeHtml(statusText)}</td>
+                            <td>${escapeHtml(res.success ? (res.message || '导入成功') : res.error)}</td>
                         `;
                         resultsBody.insertBefore(row, resultsBody.firstChild);
                     }
@@ -929,9 +939,9 @@ async function handleJsonFileImport() {
                         const statusText = res.success ? '成功' : '失败';
                         const row = document.createElement('tr');
                         row.innerHTML = `
-                            <td>${res.email}</td>
-                            <td class="${statusClass}">${statusText}</td>
-                            <td>${res.success ? (res.message || '导入成功') : res.error}</td>
+                            <td>${escapeHtml(res.email)}</td>
+                            <td class="${statusClass}">${escapeHtml(statusText)}</td>
+                            <td>${escapeHtml(res.success ? (res.message || '导入成功') : res.error)}</td>
                         `;
                         resultsBody.insertBefore(row, resultsBody.firstChild);
                     }
@@ -1189,16 +1199,16 @@ async function loadModalMemberList(teamId) {
                 } else {
                     joinedTableBody.innerHTML = joinedMembers.map(m => `
                         <tr>
-                            <td>${m.email}</td>
+                            <td>${escapeHtml(m.email)}</td>
                             <td>
-                                <span class="role-badge role-${m.role}">
+                                <span class="role-badge role-${m.role === 'account-owner' ? 'account-owner' : 'member'}">
                                     ${m.role === 'account-owner' ? '所有者' : '成员'}
                                 </span>
                             </td>
                             <td>${formatDateTime(m.added_at)}</td>
                             <td style="text-align: right;">
                                 ${m.role !== 'account-owner' ? `
-                                    <button onclick="deleteMember('${teamId}', '${m.user_id}', '${m.email}', true)" class="btn btn-sm btn-danger">
+                                    <button onclick='deleteMember(${JSON.stringify(teamId)}, ${JSON.stringify(m.user_id)}, ${JSON.stringify(m.email)}, true)' class="btn btn-sm btn-danger">
                                         <i data-lucide="trash-2"></i> 删除
                                     </button>
                                 ` : '<span class="text-muted">不可删除</span>'}
@@ -1215,13 +1225,13 @@ async function loadModalMemberList(teamId) {
                 } else {
                     invitedTableBody.innerHTML = invitedMembers.map(m => `
                         <tr>
-                            <td>${m.email}</td>
+                            <td>${escapeHtml(m.email)}</td>
                             <td>
-                                <span class="role-badge role-${m.role}">成员</span>
+                                <span class="role-badge role-member">成员</span>
                             </td>
                             <td>${formatDateTime(m.added_at)}</td>
                             <td style="text-align: right;">
-                                <button onclick="revokeInvite('${teamId}', '${m.email}', true)" class="btn btn-sm btn-warning">
+                                <button onclick='revokeInvite(${JSON.stringify(teamId)}, ${JSON.stringify(m.email)}, true)' class="btn btn-sm btn-warning">
                                     <i data-lucide="undo"></i> 撤回
                                 </button>
                             </td>
@@ -1232,7 +1242,7 @@ async function loadModalMemberList(teamId) {
 
             if (window.lucide) lucide.createIcons();
         } else {
-            const errorMsg = `<tr><td colspan="4" style="text-align: center; color: var(--danger);">${result.error}</td></tr>`;
+            const errorMsg = `<tr><td colspan="4" style="text-align: center; color: var(--danger);">${escapeHtml(result.error)}</td></tr>`;
             if (joinedTableBody) joinedTableBody.innerHTML = errorMsg;
             if (invitedTableBody) invitedTableBody.innerHTML = errorMsg;
         }

@@ -103,11 +103,11 @@ async def login(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"登录失败: {e}")
+    except Exception:
+        logger.exception("登录失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"登录失败: {str(e)}"
+            detail="登录失败，请稍后重试"
         )
 
 
@@ -133,11 +133,11 @@ async def logout(request: Request):
             message="登出成功"
         )
 
-    except Exception as e:
-        logger.error(f"登出失败: {e}")
+    except Exception:
+        logger.exception("登出失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"登出失败: {str(e)}"
+            detail="登出失败，请稍后重试"
         )
 
 
@@ -189,11 +189,11 @@ async def change_password(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"修改密码失败: {e}")
+    except Exception:
+        logger.exception("修改密码失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"修改密码失败: {str(e)}"
+            detail="修改密码失败，请稍后重试"
         )
 
 

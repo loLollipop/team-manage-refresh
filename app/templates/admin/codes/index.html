@@ -155,17 +155,17 @@
                     </td>
                     <td style="text-align: right;">
                         <div class="action-buttons" style="justify-content: flex-end;">
-                            <button onclick="copyCode('{{ code.code }}')"
+                            <button onclick='copyCode({{ code.code|tojson }})'
                                 class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
                                 <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
                             </button>
                             <button
-                                onclick="editCode('{{ code.code }}', {{ 'true' if code.has_warranty else 'false' }}, {{ code.warranty_days or 30 }})"
+                                onclick='editCode({{ code.code|tojson }}, {{ 'true' if code.has_warranty else 'false' }}, {{ code.warranty_days or 30 }})'
                                 class="btn btn-sm btn-icon btn-minimal btn-info" title="编辑">
                                 <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
                             </button>
                             {% if code.status == 'unused' %}
-                            <button onclick="deleteCode('{{ code.code }}')"
+                            <button onclick='deleteCode({{ code.code|tojson }})'
                                 class="btn btn-sm btn-icon btn-minimal btn-danger" title="删除">
                                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
                             </button>

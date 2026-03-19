@@ -185,7 +185,7 @@ python init_db.py
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
 
 # 或者直接运行
-python app/main.py
+python -m app.main
 ```
 
 ### 7. 访问应用

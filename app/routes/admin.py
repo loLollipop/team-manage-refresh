@@ -22,7 +22,7 @@ from app.services.settings import (
     DEFAULT_WARRANTY_EXPIRATION_MODE,
     DEFAULT_UI_THEME,
 )
-from app.models import RedemptionCode, Team
+from app.models import RedemptionCode, RedemptionRecord, Team
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -186,12 +186,12 @@ async def admin_dashboard(
             }
         )
     except Exception as e:
-        logger.error(f"加载管理员面板失败: {e}")
+        logger.exception("加载管理员面板失败")
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"加载管理员面板失败: {str(e)}"
+            detail="加载管理员面板失败，请稍后重试"
         )
 
 
@@ -218,30 +218,10 @@ async def welfare_dashboard(
         teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search, status=status_filter, pool_type="welfare")
         team_stats = await team_service.get_stats(db, pool_type="welfare")
         remaining_spots = await team_service.get_total_available_seats(db, pool_type="welfare")
-        welfare_code = await settings_service.get_setting(db, "welfare_common_code", "")
-        welfare_limit_raw = await settings_service.get_setting(db, "welfare_common_code_limit", "0")
-        welfare_used_raw = await settings_service.get_setting(db, "welfare_common_code_used_count", "0")
-
-        # 福利通用码可用次数应与当前可用车位一致：sum(max_members - current_members)
-        usable_capacity_stmt = select(func.sum(Team.max_members - Team.current_members)).where(
-            Team.pool_type == "welfare",
-            Team.status == "active",
-            Team.current_members < Team.max_members
-        )
-        usable_capacity_result = await db.execute(usable_capacity_stmt)
-        usable_capacity = int(usable_capacity_result.scalar() or 0)
-
-        try:
-            welfare_limit = int(str(welfare_limit_raw or "0").strip() or 0)
-        except Exception:
-            welfare_limit = 0
-        try:
-            welfare_used = int(str(welfare_used_raw or "0").strip() or 0)
-        except Exception:
-            welfare_used = 0
-
-        # 兼容历史错误值：展示时按当前真实可用车位收敛
-        effective_limit = usable_capacity if usable_capacity >= 0 else 0
+        welfare_usage = await redemption_service.get_virtual_welfare_code_usage(db)
+        welfare_code = str(welfare_usage.get("welfare_code") or "")
+        welfare_used = int(welfare_usage.get("used_count") or 0)
+        effective_limit = max(int(welfare_usage.get("usable_capacity") or 0), 0)
 
         stats = {
             "total_teams": team_stats["total"],
@@ -273,8 +253,8 @@ async def welfare_dashboard(
             }
         )
     except Exception as e:
-        logger.error(f"加载福利车位页面失败: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"加载福利车位页面失败: {str(e)}")
+        logger.exception("加载福利车位页面失败")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="加载福利车位页面失败，请稍后重试")
 
 
 @router.post("/welfare/code/generate")
@@ -298,7 +278,31 @@ async def generate_welfare_common_code(
                 content={"success": False, "error": "当前没有可用的福利车位，无法生成通用兑换码"}
             )
 
-        code = redemption_service._generate_random_code()
+        current_welfare_code = (await settings_service.get_setting(db, "welfare_common_code", "") or "").strip()
+        max_attempts = 10
+        code = None
+        for _ in range(max_attempts):
+            candidate = redemption_service._generate_random_code()
+            existing_result = await db.execute(
+                select(RedemptionCode).where(RedemptionCode.code == candidate)
+            )
+            if existing_result.scalar_one_or_none():
+                continue
+            existing_record_result = await db.execute(
+                select(RedemptionRecord).where(RedemptionRecord.code == candidate)
+            )
+            if existing_record_result.scalar_one_or_none():
+                continue
+            if current_welfare_code and candidate == current_welfare_code:
+                continue
+            code = candidate
+            break
+
+        if not code:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "生成福利通用兑换码失败，请重试"}
+            )
 
         # 兼容清理：历史版本可能把福利通用码写入 redemption_codes，这里统一失效处理
         await db.execute(
@@ -318,8 +322,8 @@ async def generate_welfare_common_code(
 
         return JSONResponse(content={"success": True, "code": code, "limit": total_seats, "used": 0, "remaining": total_seats})
     except Exception as e:
-        logger.error(f"生成福利通用兑换码失败: {e}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
+        logger.exception("生成福利通用兑换码失败")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": "操作失败，请稍后重试"})
 
 @router.post("/teams/{team_id}/delete")
 async def delete_team(
@@ -352,12 +356,12 @@ async def delete_team(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"删除 Team 失败: {e}")
+        logger.exception("删除 Team 失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"删除 Team 失败: {str(e)}"
+                "error": "删除 Team 失败，请稍后重试"
             }
         )
 
@@ -380,7 +384,7 @@ async def get_team_info(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -415,7 +419,7 @@ async def update_team(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -511,12 +515,12 @@ async def team_import(
             )
 
     except Exception as e:
-        logger.error(f"导入 Team 失败: {e}")
+        logger.exception("导入 Team 失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"导入失败: {str(e)}"
+                "error": "导入失败，请稍后重试"
             }
         )
 
@@ -549,8 +553,8 @@ async def create_openai_oauth_authorize_url(
             "client_id": client_id
         }})
     except Exception as e:
-        logger.error(f"生成 OAuth 授权链接失败: {e}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
+        logger.exception("生成 OAuth 授权链接失败")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": "操作失败，请稍后重试"})
 
 
 @router.post("/oauth/openai/parse-callback")
@@ -670,8 +674,8 @@ async def parse_openai_oauth_callback(
             }
         })
     except Exception as e:
-        logger.error(f"解析 OAuth 回调失败: {e}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": str(e)})
+        logger.exception("解析 OAuth 回调失败")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": "操作失败，请稍后重试"})
 
 
 @router.get("/teams/{team_id}/members/list")
@@ -696,12 +700,12 @@ async def team_members_list(
         result = await team_service.get_team_members(team_id, db)
         return JSONResponse(content=result)
     except Exception as e:
-        logger.error(f"获取成员列表失败: {e}")
+        logger.exception("获取成员列表失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"获取成员列表失败: {str(e)}"
+                "error": "获取成员列表失败，请稍后重试"
             }
         )
 
@@ -743,12 +747,12 @@ async def add_team_member(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"添加成员失败: {e}")
+        logger.exception("添加成员失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"添加成员失败: {str(e)}"
+                "error": "添加成员失败，请稍后重试"
             }
         )
 
@@ -790,12 +794,12 @@ async def delete_team_member(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"删除成员失败: {e}")
+        logger.exception("删除成员失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"删除成员失败: {str(e)}"
+                "error": "删除成员失败，请稍后重试"
             }
         )
 
@@ -837,12 +841,12 @@ async def revoke_team_invite(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"撤回邀请失败: {e}")
+        logger.exception("撤回邀请失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"撤回邀请失败: {str(e)}"
+                "error": "撤回邀请失败，请稍后重试"
             }
         )
 
@@ -881,12 +885,12 @@ async def enable_team_device_auth(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"开启设备身份验证失败: {e}")
+        logger.exception("开启设备身份验证失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"操作失败: {str(e)}"
+                "error": "操作失败，请稍后重试"
             }
         )
 
@@ -928,10 +932,10 @@ async def batch_refresh_teams(
             "failed_count": failed_count
         })
     except Exception as e:
-        logger.error(f"批量刷新 Team 失败: {e}")
+        logger.exception("批量刷新 Team 失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -968,10 +972,10 @@ async def batch_delete_teams(
             "failed_count": failed_count
         })
     except Exception as e:
-        logger.error(f"批量删除 Team 失败: {e}")
+        logger.exception("批量删除 Team 失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -1008,10 +1012,10 @@ async def batch_enable_device_auth(
             "failed_count": failed_count
         })
     except Exception as e:
-        logger.error(f"批量处理失败: {e}")
+        logger.exception("批量处理失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -1096,10 +1100,10 @@ async def codes_list_page(
         )
 
     except Exception as e:
-        logger.error(f"加载兑换码列表页面失败: {e}")
+        logger.exception("加载兑换码列表页面失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"加载页面失败: {str(e)}"
+            detail="加载页面失败，请稍后重试"
         )
 
 
@@ -1182,12 +1186,12 @@ async def generate_codes(
             )
 
     except Exception as e:
-        logger.error(f"生成兑换码失败: {e}")
+        logger.exception("生成兑换码失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"生成失败: {str(e)}"
+                "error": "生成失败，请稍后重试"
             }
         )
 
@@ -1223,12 +1227,12 @@ async def delete_code(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"删除兑换码失败: {e}")
+        logger.exception("删除兑换码失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"删除失败: {str(e)}"
+                "error": "删除失败，请稍后重试"
             }
         )
 
@@ -1336,10 +1340,10 @@ async def export_codes(
         )
 
     except Exception as e:
-        logger.error(f"导出兑换码失败: {e}")
+        logger.exception("导出兑换码失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"导出失败: {str(e)}"
+            detail="导出失败，请稍后重试"
         )
 
 
@@ -1367,7 +1371,7 @@ async def update_code(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 @router.post("/codes/bulk-update")
@@ -1393,7 +1397,7 @@ async def bulk_update_codes(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
 
@@ -1561,10 +1565,10 @@ async def records_page(
         )
 
     except Exception as e:
-        logger.error(f"获取使用记录失败: {e}")
+        logger.exception("获取使用记录失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取使用记录失败: {str(e)}"
+            detail="获取使用记录失败，请稍后重试"
         )
 
 
@@ -1598,12 +1602,12 @@ async def withdraw_record(
         return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"撤回记录失败: {e}")
+        logger.exception("撤回记录失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error": f"撤回失败: {str(e)}"
+                "error": "撤回失败，请稍后重试"
             }
         )
 
@@ -1661,10 +1665,10 @@ async def settings_page(
         )
 
     except Exception as e:
-        logger.error(f"获取系统设置失败: {e}")
+        logger.exception("获取系统设置失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取系统设置失败: {str(e)}"
+            detail="获取系统设置失败，请稍后重试"
         )
 
 
@@ -1758,10 +1762,10 @@ async def update_ui_theme_settings(
             content={"success": False, "error": "保存失败"}
         )
     except Exception as e:
-        logger.error(f"更新系统配色失败: {e}")
+        logger.exception("更新系统配色失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 @router.get("/announcement", response_class=HTMLResponse)
@@ -1793,10 +1797,10 @@ async def announcement_page(
             }
         )
     except Exception as e:
-        logger.error(f"获取公告设置失败: {e}")
+        logger.exception("获取公告设置失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取公告设置失败: {str(e)}"
+            detail="获取公告设置失败，请稍后重试"
         )
 
 
@@ -1824,10 +1828,10 @@ async def update_announcement(
             content={"success": False, "error": "保存失败"}
         )
     except Exception as e:
-        logger.error(f"保存公告设置失败: {e}")
+        logger.exception("保存公告设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"保存失败: {str(e)}"}
+            content={"success": False, "error": "保存失败，请稍后重试"}
         )
 
 
@@ -1885,10 +1889,10 @@ async def update_proxy_config(
             )
 
     except Exception as e:
-        logger.error(f"更新代理配置失败: {e}")
+        logger.exception("更新代理配置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -1926,10 +1930,10 @@ async def update_log_level(
             )
 
     except Exception as e:
-        logger.error(f"更新日志级别失败: {e}")
+        logger.exception("更新日志级别失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -1964,10 +1968,10 @@ async def update_webhook_settings(
             )
 
     except Exception as e:
-        logger.error(f"更新配置失败: {e}")
+        logger.exception("更新配置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -2011,10 +2015,10 @@ async def update_token_refresh_settings(
         )
 
     except Exception as e:
-        logger.error(f"更新 Token 自动刷新设置失败: {e}")
+        logger.exception("更新 Token 自动刷新设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -2072,10 +2076,10 @@ async def update_team_auto_refresh_settings(
             }
         )
     except Exception as e:
-        logger.error(f"更新 Team 自动刷新设置失败: {e}")
+        logger.exception("更新 Team 自动刷新设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -2116,10 +2120,10 @@ async def update_warranty_settings(
             }
         )
     except Exception as e:
-        logger.error(f"更新质保设置失败: {e}")
+        logger.exception("更新质保设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )
 
 
@@ -2151,8 +2155,8 @@ async def update_team_import_settings(
         )
 
     except Exception as e:
-        logger.error(f"更新 Team 导入设置失败: {e}")
+        logger.exception("更新 Team 导入设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
+            content={"success": False, "error": "更新失败，请稍后重试"}
         )

@@ -168,6 +168,18 @@ class TeamService:
         await db_session.commit()
         return True
         
+    @staticmethod
+    def _admin_error(error_code: str, error: str, message: Optional[str] = None, **extra: Any) -> Dict[str, Any]:
+        """为管理员页面构造结构化错误响应。"""
+        payload: Dict[str, Any] = {
+            "success": False,
+            "message": message,
+            "error_code": error_code,
+            "error": error,
+        }
+        payload.update(extra)
+        return payload
+
     async def _reset_error_status(self, team: Team, db_session: AsyncSession) -> None:
         """
         成功执行请求后重置错误计数并尝试从 error 状态恢复
@@ -781,10 +793,10 @@ class TeamService:
             logger.info(f"Team {team_id} 信息更新成功")
             return {"success": True, "message": "Team 信息更新成功"}
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"更新 Team 失败: {e}")
-            return {"success": False, "error": f"更新失败: {str(e)}"}
+            logger.exception("更新 Team 失败")
+            return {"success": False, "error": "更新失败，请稍后重试"}
 
     async def get_team_info(self, team_id: int, db_session: AsyncSession) -> Dict[str, Any]:
         """获取 Team 详细信息 (含解密 Token)"""
@@ -820,9 +832,9 @@ class TeamService:
                     "device_code_auth_enabled": team.device_code_auth_enabled
                 }
             }
-        except Exception as e:
-            logger.error(f"获取 Team 信息失败: {e}")
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("获取 Team 信息失败")
+            return {"success": False, "error": "获取 Team 信息失败，请稍后重试"}
 
     async def import_team_batch(
         self,
@@ -1062,41 +1074,37 @@ class TeamService:
             team = result.scalar_one_or_none()
 
             if not team:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"Team ID {team_id} 不存在"
-                }
+                return self._admin_error(
+                    "team_not_found",
+                    f"未找到 ID 为 {team_id} 的 Team",
+                )
 
             # 2. 确保 AT Token 有效
             access_token = await self.ensure_access_token(team, db_session, force_refresh=force_refresh)
             if not access_token:
                 if team.status == "banned":
-                    return {
-                        "success": False,
-                        "message": None,
-                        "error": "Team 账号已封禁/失效 (token_invalidated)"
-                    }
+                    return self._admin_error(
+                        "team_banned",
+                        "该 Team 账号已被封禁或凭证已失效，请重新导入可用账号",
+                    )
 
                 if team.status != "expired":
                     team.status = "expired"
                     await db_session.commit()
 
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
+                return self._admin_error(
+                    "token_refresh_failed",
+                    "该 Team 的登录凭证已过期，且自动刷新失败，请重新登录或重新导入",
+                )
 
             # 2.5 校验 Token 所属用户是否正确 (安全兜底)
             token_email = self.jwt_parser.extract_email(access_token)
             if token_email and team.email and token_email.lower() != team.email.lower():
                 logger.error(f"Team {team_id} Token 邮箱不匹配: 预期 {team.email}, 实际 {token_email}")
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"刷新出的账号身份 ({token_email}) 与原账号 ({team.email}) 不符，刷新已中止以防止数据污染。这可能是由于浏览器 Session 污染导致，建议清理 ST 后重新导入。"
-                }
+                return self._admin_error(
+                    "token_identity_mismatch",
+                    "刷新出的账号身份与当前 Team 绑定账号不一致，已停止同步以避免串号，请清理旧 Session 后重新导入",
+                )
 
             # 3. 获取账户信息
             account_result = await self.chatgpt_service.get_account_info(
@@ -1121,11 +1129,10 @@ class TeamService:
                         new_token_email = self.jwt_parser.extract_email(new_token)
                         if new_token_email and team.email and new_token_email.lower() != team.email.lower():
                             logger.error(f"Team {team_id} 重试刷新 Token 邮箱不匹配: 预期 {team.email}, 实际 {new_token_email}")
-                            return {
-                                "success": False,
-                                "message": None,
-                                "error": f"刷新出的账号身份 ({new_token_email}) 与原账号 ({team.email}) 不符。同步已中止。"
-                            }
+                            return self._admin_error(
+                                "token_identity_mismatch",
+                                "刷新后的账号身份与当前 Team 绑定账号不一致，已停止同步以避免串号，请重新导入该账号",
+                            )
 
                         # 使用新 Token 再次尝试
                         account_result = await self.chatgpt_service.get_account_info(new_token, db_session, identifier=team.email)
@@ -1137,37 +1144,38 @@ class TeamService:
                             team.status = "expired"
                             if not db_session.in_transaction():
                                 await db_session.commit()
-                            return {
-                                "success": False,
-                                "message": None,
-                                "error": f"Token 刷新成功但获取账户信息仍失败 (status 401)"
-                            }
+                            return self._admin_error(
+                                "account_info_unavailable_after_refresh",
+                                "凭证刷新成功，但仍无法拉取 Team 信息，请稍后重试；若持续失败，建议重新导入该账号",
+                            )
                     else:
                         # 刷新失败，标记为过期
                         logger.error(f"Team {team.id} Token 刷新失败，标记为 expired")
                         team.status = "expired"
                         if not db_session.in_transaction():
                             await db_session.commit()
-                        return {
-                            "success": False,
-                            "message": None,
-                            "error": "Token 已过期且无法刷新"
-                        }
+                        return self._admin_error(
+                            "token_refresh_failed",
+                            "该 Team 的登录凭证已过期，且自动刷新失败，请重新登录或重新导入",
+                        )
                 else:
                     # 其他非 Token 过期导致的错误
-                    error_msg = account_result.get("error", "未知错误")
+                    admin_error_code = "team_sync_failed"
+                    error_msg = "同步 Team 信息失败，请稍后重试"
                     if account_result.get("error_code") == "account_deactivated":
-                        error_msg = "账号已封禁 (account_deactivated)"
+                        admin_error_code = "team_banned"
+                        error_msg = "该 Team 账号已被封禁，请更换账号或重新导入"
                     elif account_result.get("error_code") == "token_invalidated":
-                        error_msg = "账号已封禁/失效 (token_invalidated)"
+                        admin_error_code = "team_banned"
+                        error_msg = "该 Team 凭证已失效，账号当前不可用，请重新导入"
                     elif team.status == "error":
-                        error_msg = "账号连续多次同步失败，已标记异常"
-                        
-                    return {
-                        "success": False,
-                        "message": None,
-                        "error": error_msg
-                    }
+                        admin_error_code = "team_marked_error"
+                        error_msg = "该 Team 连续多次同步失败，已被标记为异常，请检查账号状态或代理配置"
+                    elif team.status == "full":
+                        admin_error_code = "team_full"
+                        error_msg = "该 Team 当前席位已满，无法继续邀请新成员"
+
+                    return self._admin_error(admin_error_code, error_msg)
 
             # 4. 查找当前使用的 account
             team_accounts = account_result["accounts"]
@@ -1601,13 +1609,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取成员列表失败: {e}")
+        except Exception:
+            logger.exception("获取成员列表失败")
             return {
                 "success": False,
                 "members": [],
                 "total": 0,
-                "error": f"获取成员列表失败: {str(e)}"
+                "error": "获取成员列表失败，请稍后重试"
             }
 
     async def revoke_team_invite(
@@ -1634,20 +1642,18 @@ class TeamService:
             team = result.scalar_one_or_none()
 
             if not team:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"Team ID {team_id} 不存在"
-                }
+                return self._admin_error(
+                    "team_not_found",
+                    f"未找到 ID 为 {team_id} 的 Team",
+                )
 
             # 2. 确保 AT Token 有效
             access_token = await self.ensure_access_token(team, db_session)
             if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
+                return self._admin_error(
+                    "token_refresh_failed",
+                    "该 Team 的登录凭证已过期，且自动刷新失败，请重新登录或重新导入",
+                )
 
             # 3. 调用 ChatGPT API 撤回邀请
             revoke_result = await self.chatgpt_service.delete_invite(
@@ -1695,13 +1701,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"撤回邀请失败: {e}")
+            logger.exception("撤回邀请失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"撤回邀请失败: {str(e)}"
+                "error": "撤回邀请失败，请稍后重试"
             }
 
     async def add_team_member(
@@ -1728,11 +1734,10 @@ class TeamService:
             team = result.scalar_one_or_none()
 
             if not team:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"Team ID {team_id} 不存在"
-                }
+                return self._admin_error(
+                    "team_not_found",
+                    f"未找到 ID 为 {team_id} 的 Team",
+                )
 
             # 2. 检查 Team 状态
             if team.status == "full":
@@ -1752,11 +1757,10 @@ class TeamService:
             # 3. 确保 AT Token 有效
             access_token = await self.ensure_access_token(team, db_session)
             if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
+                return self._admin_error(
+                    "token_refresh_failed",
+                    "该 Team 的登录凭证已过期，且自动刷新失败，请重新登录或重新导入",
+                )
 
             # 4. 调用 ChatGPT API 发送邀请
             invite_result = await self.chatgpt_service.send_invite(
@@ -1837,13 +1841,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"添加成员失败: {e}")
+            logger.exception("添加成员失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"添加成员失败: {str(e)}"
+                "error": "添加成员失败，请稍后重试"
             }
 
     async def delete_team_member(
@@ -1870,20 +1874,18 @@ class TeamService:
             team = result.scalar_one_or_none()
 
             if not team:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"Team ID {team_id} 不存在"
-                }
+                return self._admin_error(
+                    "team_not_found",
+                    f"未找到 ID 为 {team_id} 的 Team",
+                )
 
             # 2. 确保 AT Token 有效
             access_token = await self.ensure_access_token(team, db_session)
             if not access_token:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": "Token 已过期且无法刷新"
-                }
+                return self._admin_error(
+                    "token_refresh_failed",
+                    "该 Team 的登录凭证已过期，且自动刷新失败，请重新登录或重新导入",
+                )
 
             # 3. 调用 ChatGPT API 删除成员
             delete_result = await self.chatgpt_service.delete_member(
@@ -1931,13 +1933,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"删除成员失败: {e}")
+            logger.exception("删除成员失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"删除成员失败: {str(e)}"
+                "error": "删除成员失败，请稍后重试"
             }
 
     async def enable_device_code_auth(
@@ -1982,9 +1984,9 @@ class TeamService:
             logger.info(f"Team {team_id} ({team.email}) 开启设备身份验证成功")
             return {"success": True, "message": "设备代码身份验证开启成功"}
 
-        except Exception as e:
-            logger.error(f"开启设备身份验证失败: {e}")
-            return {"success": False, "error": f"异常: {str(e)}"}
+        except Exception:
+            logger.exception("开启设备身份验证失败")
+            return {"success": False, "error": "开启设备身份验证失败，请稍后重试"}
 
     async def get_available_teams(
         self,
@@ -2030,12 +2032,12 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取可用 Team 列表失败: {e}")
+        except Exception:
+            logger.exception("获取可用 Team 列表失败")
             return {
                 "success": False,
                 "teams": [],
-                "error": f"获取列表失败: {str(e)}"
+                "error": "获取列表失败，请稍后重试"
             }
 
 
@@ -2125,13 +2127,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
-            logger.error(f"获取 Team 详情失败: {e}")
+        except Exception:
+            logger.exception("获取 Team 详情失败")
             return {
                 "success": False,
                 "team": None,
                 "team_accounts": [],
-                "error": f"获取 Team 详情失败: {str(e)}"
+                "error": "获取 Team 详情失败，请稍后重试"
             }
 
     async def get_all_teams(
@@ -2280,9 +2282,9 @@ class TeamService:
                 # 待加入，调用撤回邀请
                 return await self.revoke_team_invite(team_id, email, db_session)
 
-        except Exception as e:
-            logger.error(f"撤回邀请或删除成员时发生异常: {e}")
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("撤回邀请或删除成员时发生异常")
+            return {"success": False, "error": "撤回或删除成员失败，请稍后重试"}
 
     async def delete_team(
         self,
@@ -2306,11 +2308,10 @@ class TeamService:
             team = result.scalar_one_or_none()
 
             if not team:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"Team ID {team_id} 不存在"
-                }
+                return self._admin_error(
+                    "team_not_found",
+                    f"未找到 ID 为 {team_id} 的 Team",
+                )
 
             # 1.5 处理 RedemptionCode 关联 (置空)
             update_stmt = update(RedemptionCode).where(RedemptionCode.used_team_id == team_id).values(used_team_id=None)
@@ -2328,13 +2329,13 @@ class TeamService:
                 "error": None
             }
 
-        except Exception as e:
+        except Exception:
             await db_session.rollback()
-            logger.error(f"删除 Team 失败: {e}")
+            logger.exception("删除 Team 失败")
             return {
                 "success": False,
                 "message": None,
-                "error": f"删除 Team 失败: {str(e)}"
+                "error": "删除 Team 失败，请稍后重试"
             }
 
     async def get_total_available_seats(

@@ -59,8 +59,8 @@ async def redeem_page(
         )
 
     except Exception as e:
-        logger.error(f"渲染兑换页面失败: {e}")
+        logger.exception("渲染兑换页面失败")
         return HTMLResponse(
-            content=f"<h1>页面加载失败</h1><p>{str(e)}</p>",
+            content="<h1>页面加载失败</h1><p>系统暂时不可用，请稍后重试。</p>",
             status_code=500
         )
