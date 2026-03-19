@@ -164,6 +164,7 @@ body.admin-theme .footer {
     backdrop-filter: blur(14px);
 }
 
+body.admin-theme .app-layout,
 body.admin-theme .main-container,
 body.admin-theme .main-content,
 body.admin-theme .content-section,
@@ -264,11 +265,16 @@ body.admin-theme .toast {
     letter-spacing: -0.025em;
 }
 
-.main-container {
+.app-layout {
     display: flex;
     align-items: stretch;
     max-width: 1440px;
     margin: 0 auto;
+}
+
+.main-container {
+    flex: 1;
+    min-width: 0;
 }
 
 .sidebar {
