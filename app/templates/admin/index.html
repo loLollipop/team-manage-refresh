@@ -454,6 +454,11 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', () => {
+        const editTeamModal = document.getElementById('editTeamModal');
+        if (editTeamModal && editTeamModal.parentElement !== document.body) {
+            document.body.appendChild(editTeamModal);
+        }
+
         // Init Column Toggler
         initColumnToggler('.data-table', 'team_list_columns');
 
