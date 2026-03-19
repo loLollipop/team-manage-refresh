@@ -265,17 +265,12 @@ body.admin-theme .toast {
     letter-spacing: -0.025em;
 }
 
-.app-layout {
+.main-container {
     display: flex;
     align-items: flex-start;
     flex-wrap: nowrap;
     max-width: 1440px;
     margin: 0 auto;
-}
-
-.main-container {
-    flex: 1;
-    min-width: 0;
 }
 
 .sidebar {
@@ -328,7 +323,6 @@ body.admin-theme .toast {
 
 .main-content {
     flex: 1 1 auto;
-    width: calc(100% - 260px);
     min-width: 0;
     /* Allow content to shrink and trigger scrolling */
     padding: 2rem 3rem;

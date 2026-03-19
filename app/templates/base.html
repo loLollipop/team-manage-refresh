@@ -54,7 +54,7 @@
     <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <!-- 主容器 -->
-    <div class="app-layout">
+    <div class="main-container">
         <!-- 侧边栏 -->
         <aside class="sidebar" id="adminSidebar">
             <ul class="sidebar-menu">
@@ -97,12 +97,10 @@
             </ul>
         </aside>
 
-        <div class="main-container">
-            <!-- 主内容区 -->
-            <main class="main-content">
-                {% block content %}{% endblock %}
-            </main>
-        </div>
+        <!-- 主内容区 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
     </div>
     {% else %}
     <!-- 未登录时的内容 -->
