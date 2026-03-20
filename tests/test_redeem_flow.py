@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.database import Base
 from app.models import RedemptionCode, RedemptionRecord, Team, TeamEmailMapping
 from app.services.redeem_flow import RedeemFlowService
+from app.services.redemption import RedemptionService
 from app.services.team import TeamService
 
 
@@ -273,6 +274,56 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
 
             stored_record = (await session.execute(select(RedemptionRecord).where(RedemptionRecord.code == "WELF-TEST-CODE"))).scalar_one()
             self.assertEqual(stored_record.team_id, 10)
+
+
+    async def test_delete_used_normal_code_with_history_is_blocked(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=20,
+                email="normal-owner@example.com",
+                access_token_encrypted="token-20",
+                account_id="acct-normal",
+                team_name="Normal Team",
+                current_members=2,
+                max_members=6,
+                status="active",
+                pool_type="normal",
+            )
+            code = RedemptionCode(
+                code="NORMAL-CODE-DELETE",
+                status="used",
+                used_by_email="user@example.com",
+                used_team_id=20,
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            session.add(code)
+            await session.commit()
+
+            session.add(
+                RedemptionRecord(
+                    email="user@example.com",
+                    code="NORMAL-CODE-DELETE",
+                    team_id=20,
+                    account_id="acct-normal",
+                )
+            )
+            await session.commit()
+
+            service = RedemptionService()
+            result = await service.delete_code("NORMAL-CODE-DELETE", session)
+
+            self.assertFalse(result["success"])
+            self.assertIn("无法直接删除", result["error"])
+
+            remaining_code = (
+                await session.execute(
+                    select(RedemptionCode).where(RedemptionCode.code == "NORMAL-CODE-DELETE")
+                )
+            ).scalar_one_or_none()
+            self.assertIsNotNone(remaining_code)
 
     async def test_locked_team_returns_conflict_without_consuming_code(self):
         await self._seed_basic_data()

@@ -960,6 +960,18 @@ class RedemptionService:
                     "error": f"兑换码 {code} 不存在"
                 }
 
+            # 已产生历史记录的兑换码不能直接删除，否则会破坏使用记录完整性。
+            record_count_result = await db_session.execute(
+                select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code == code)
+            )
+            record_count = int(record_count_result.scalar() or 0)
+            if record_count > 0:
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": f"兑换码 {code} 已有 {record_count} 条使用记录，无法直接删除；请先撤回相关记录"
+                }
+
             # 删除兑换码
             await db_session.delete(redemption_code)
             await db_session.commit()
