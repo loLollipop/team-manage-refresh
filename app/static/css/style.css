@@ -1297,12 +1297,18 @@ body.admin-theme .toast {
 
 .toast.in-modal {
     position: absolute;
-    top: 5rem;
-    right: 1rem;
-    bottom: auto;
+    top: auto;
+    right: max(1rem, env(safe-area-inset-right, 0px));
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     width: min(360px, calc(100% - 2rem));
-    --toast-offset: calc(-100% - 16px);
-    z-index: 30;
+    background: color-mix(in srgb, var(--toast-bg) 96%, var(--bg-surface) 4%);
+    color: var(--text-main);
+    border-color: color-mix(in srgb, var(--toast-border) 85%, var(--border-base) 15%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+    --toast-offset: calc(100% + 16px);
+    z-index: 2100;
 }
 
 body.modal-open .toast {

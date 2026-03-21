@@ -124,8 +124,8 @@ async function initThemeSwitcher() {
 let toastTimer = null;
 
 function getToastMountTarget() {
-    const openModal = document.querySelector('.modal-overlay.show .modal');
-    return openModal || document.body;
+    const openModalOverlay = document.querySelector('.modal-overlay.show');
+    return openModalOverlay || document.body;
 }
 
 function syncToastMountTarget() {
