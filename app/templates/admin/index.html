@@ -303,14 +303,16 @@
             </form>
 
             <!-- 列设置 -->
-            <div class="dropdown-wrapper">
-                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
-                    <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
-                </button>
-                <div id="columnToggleDropdown" class="dropdown-menu">
-                    <!-- Column checkboxes will be generated here -->
-                </div>
-            </div>
+            <!-- 列设置 -->
+<div class="dropdown-wrapper">
+    <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
+        <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
+    </button>
+    <!-- 加上 dropdown-menu-floating -->
+    <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
+        <!-- Column checkboxes will be generated here -->
+    </div>
+</div>
 
             {% if active_page == "welfare" %}
             <button onclick="generateWelfareCode()" class="btn btn-secondary" id="generateWelfareCodeBtn">
@@ -1078,18 +1080,21 @@
     }
 
     function toggleDropdown(id) {
-        const el = document.getElementById(id);
-        if (!el) return;
+    const el = document.getElementById(id);
+    if (!el) return;
 
-        const shouldShow = !el.classList.contains('show');
-        closeAllDropdowns();
+    const shouldShow = !el.classList.contains('show');
+    closeAllDropdowns();
 
-        if (shouldShow) {
-            positionFloatingDropdown(el);
-            el.classList.add('show');
+    if (shouldShow) {
+        positionFloatingDropdown(el);
+        el.classList.add('show');
+        // 加上 typeof 判断，防止 setDropdownSectionState 不存在时报错
+        if (typeof setDropdownSectionState === 'function') {
             setDropdownSectionState(el, true);
         }
     }
+}
 
     window.addEventListener('resize', () => {
         document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach(positionFloatingDropdown);
