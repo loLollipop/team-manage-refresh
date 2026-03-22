@@ -170,7 +170,6 @@ body.admin-theme .main-content,
 body.admin-theme .content-section,
 body.admin-theme .table-container,
 body.admin-theme .modal,
-body.admin-theme .dropdown-menu,
 body.admin-theme .footer,
 body.admin-theme .page-header {
     position: relative;
@@ -198,6 +197,11 @@ body.modal-open .sidebar-overlay {
 
 body.modal-open .modal-overlay.show {
     z-index: 2000;
+}
+
+body.admin-theme .dropdown-menu {
+    position: absolute;
+    z-index: 100;
 }
 
 body.admin-theme .menu-item a:hover,
@@ -651,15 +655,6 @@ body.admin-theme .toast {
     display: block;
 }
 
-.dropdown-menu-floating {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: auto;
-    width: 260px;
-    max-width: calc(100vw - 2rem);
-    z-index: 1200;
-}
 
 .dropdown-header {
     padding: 0.5rem 0.75rem;
