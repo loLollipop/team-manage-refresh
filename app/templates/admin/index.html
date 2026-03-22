@@ -121,24 +121,18 @@
     }
 
     .team-list-toolbar-section {
-        z-index: 40;
         overflow: visible;
     }
 
-    .team-list-table-container {
-        position: relative;
-        z-index: 1;
-    }
-
     .team-toolbar .dropdown-menu-floating {
-        position: absolute;
-        top: calc(100% + 8px);
+        position: fixed;
+        top: 0;
         left: 0;
         right: auto;
         width: 260px;
-        max-width: min(260px, calc(100vw - 2rem));
+        max-width: calc(100vw - 2rem);
         margin-top: 0;
-        z-index: 1300;
+        z-index: 9999;
     }
 
     @media (max-width: 1240px) {
@@ -1061,15 +1055,19 @@
         const wrapperRect = wrapper.getBoundingClientRect();
         const viewportPadding = 16;
         const menuWidth = Math.min(260, window.innerWidth - viewportPadding * 2);
-        const overflowRight = wrapperRect.left + menuWidth + viewportPadding - window.innerWidth;
-        const leftOffset = overflowRight > 0 ? Math.max(0, -overflowRight) : 0;
 
-        menu.style.position = 'absolute';
-        menu.style.top = 'calc(100% + 8px)';
-        menu.style.left = `${leftOffset}px`;
+        let left = wrapperRect.left;
+        if (left + menuWidth + viewportPadding > window.innerWidth) {
+            left = window.innerWidth - menuWidth - viewportPadding;
+        }
+
+        menu.style.position = 'fixed';
+        menu.style.top = `${wrapperRect.bottom + 8}px`;
+        menu.style.left = `${Math.max(viewportPadding, left)}px`;
         menu.style.right = 'auto';
         menu.style.width = `${menuWidth}px`;
-        menu.style.maxWidth = `min(${menuWidth}px, calc(100vw - 2rem))`;
+        menu.style.maxWidth = `${menuWidth}px`;
+        menu.style.zIndex = '9999';
     }
 
     function closeAllDropdowns() {
