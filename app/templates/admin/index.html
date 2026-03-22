@@ -116,6 +116,25 @@
         white-space: nowrap;
     }
 
+    .team-toolbar .dropdown-wrapper {
+        position: relative;
+    }
+
+    .team-toolbar .dropdown-menu-floating {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: auto;
+        width: 260px;
+        max-width: min(260px, calc(100vw - 2rem));
+        z-index: 1200;
+    }
+
+    .content-section.dropdown-open {
+        z-index: 80;
+        padding-bottom: calc(1.5rem + var(--dropdown-space, 0px));
+    }
+
     @media (max-width: 1240px) {
         .team-toolbar {
             flex-wrap: wrap;
@@ -1031,24 +1050,41 @@
         if (!menu || !menu.classList.contains('dropdown-menu-floating')) return;
 
         const wrapper = menu.closest('.dropdown-wrapper');
-        const toggleButton = wrapper ? wrapper.querySelector('.dropdown-toggle') : null;
-        if (!toggleButton) return;
+        if (!wrapper) return;
 
-        const buttonRect = toggleButton.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
         const viewportPadding = 16;
         const menuWidth = Math.min(260, window.innerWidth - viewportPadding * 2);
-        const availableRight = window.innerWidth - viewportPadding;
-        const left = Math.min(
-            Math.max(buttonRect.left, viewportPadding),
-            availableRight - menuWidth
-        );
+        const overflowRight = wrapperRect.left + menuWidth + viewportPadding - window.innerWidth;
+        const leftOffset = overflowRight > 0 ? Math.max(0, -overflowRight) : 0;
 
-        menu.style.position = 'fixed';
-        menu.style.top = `${buttonRect.bottom + 8}px`;
-        menu.style.left = `${left}px`;
+        menu.style.position = 'absolute';
+        menu.style.top = 'calc(100% + 8px)';
+        menu.style.left = `${leftOffset}px`;
         menu.style.right = 'auto';
         menu.style.width = `${menuWidth}px`;
-        menu.style.maxWidth = `${window.innerWidth - viewportPadding * 2}px`;
+        menu.style.maxWidth = `min(${menuWidth}px, calc(100vw - 2rem))`;
+    }
+
+    function setDropdownSectionState(menu, isOpen) {
+        const section = menu ? menu.closest('.content-section') : null;
+        if (!section) return;
+
+        if (isOpen) {
+            const dropdownSpace = menu.offsetHeight + 16;
+            section.style.setProperty('--dropdown-space', `${dropdownSpace}px`);
+        } else {
+            section.style.removeProperty('--dropdown-space');
+        }
+
+        section.classList.toggle('dropdown-open', isOpen);
+    }
+
+    function closeAllDropdowns() {
+        document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+            menu.classList.remove('show');
+            setDropdownSectionState(menu, false);
+        });
     }
 
     function toggleDropdown(id) {
@@ -1056,11 +1092,12 @@
         if (!el) return;
 
         const shouldShow = !el.classList.contains('show');
-        document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+        closeAllDropdowns();
 
         if (shouldShow) {
             positionFloatingDropdown(el);
             el.classList.add('show');
+            setDropdownSectionState(el, true);
         }
     }
 
@@ -1075,7 +1112,7 @@
     // Close dropdowns
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle')) {
-            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+            closeAllDropdowns();
         }
     });
 
