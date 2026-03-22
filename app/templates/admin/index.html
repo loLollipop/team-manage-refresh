@@ -250,7 +250,7 @@
 
             <!-- 状态筛选 -->
             <div class="dropdown-wrapper">
-                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('statusFilterDropdown')">
+                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('statusFilterDropdown', this)">
                     <i data-lucide="filter" style="width: 16px; height: 16px;"></i>
                     <span>
                         {% if status_filter == 'active' %}可用
@@ -305,7 +305,7 @@
             <!-- 列设置 -->
             <!-- 列设置 -->
 <div class="dropdown-wrapper">
-    <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
+    <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
         <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
     </button>
     <!-- 加上 dropdown-menu-floating -->
@@ -1048,47 +1048,17 @@
         });
     }
 
-    function positionFloatingDropdown(menu) {
-        if (!menu || !menu.classList.contains('dropdown-menu-floating')) return;
-
-        const wrapper = menu.closest('.dropdown-wrapper');
-        if (!wrapper) return;
-
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const viewportPadding = 16;
-        const menuWidth = Math.min(260, window.innerWidth - viewportPadding * 2);
-
-        let left = wrapperRect.left;
-        if (left + menuWidth + viewportPadding > window.innerWidth) {
-            left = window.innerWidth - menuWidth - viewportPadding;
-        }
-        left = Math.max(viewportPadding, left);
-
-        menu.style.position = 'fixed';
-        menu.style.top = `${wrapperRect.bottom + 8}px`;
-        menu.style.left = `${left}px`;
-        menu.style.right = 'auto';
-        menu.style.width = `${menuWidth}px`;
-        menu.style.maxWidth = 'calc(100vw - 2rem)';
-        menu.style.zIndex = '9999';
-    }
-
-    function closeAllDropdowns() {
-        document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
-            menu.classList.remove('show');
-        });
-    }
-
-    function toggleDropdown(id) {
+    function toggleDropdown(id, triggerEl = null) {
     const el = document.getElementById(id);
     if (!el) return;
 
     const shouldShow = !el.classList.contains('show');
-    closeAllDropdowns();
+    closeFloatingDropdowns();
 
     if (shouldShow) {
-        positionFloatingDropdown(el);
         el.classList.add('show');
+        positionFloatingDropdown(el, triggerEl);
+        requestAnimationFrame(() => positionFloatingDropdown(el));
         // 加上 typeof 判断，防止 setDropdownSectionState 不存在时报错
         if (typeof setDropdownSectionState === 'function') {
             setDropdownSectionState(el, true);
@@ -1097,17 +1067,17 @@
 }
 
     window.addEventListener('resize', () => {
-        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach(positionFloatingDropdown);
+        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach((menu) => positionFloatingDropdown(menu));
     });
 
     window.addEventListener('scroll', () => {
-        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach(positionFloatingDropdown);
+        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach((menu) => positionFloatingDropdown(menu));
     }, true);
 
     // Close dropdowns
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle')) {
-            closeAllDropdowns();
+        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle') && !e.target.closest('.dropdown-menu')) {
+            closeFloatingDropdowns();
         }
     });
 

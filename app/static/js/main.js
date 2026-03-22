@@ -278,8 +278,68 @@ function syncResponsiveSidebarMount() {
     }
 }
 
+function prepareFloatingDropdown(menu) {
+    if (!menu || !menu.classList.contains('dropdown-menu-floating')) return;
+
+    const wrapper = menu._dropdownWrapper || menu.closest('.dropdown-wrapper');
+    if (!wrapper) return;
+
+    menu._dropdownWrapper = wrapper;
+    if (menu.parentElement !== document.body) {
+        document.body.appendChild(menu);
+    }
+}
+
+function mountFloatingDropdownsToBody() {
+    document.querySelectorAll('.dropdown-menu-floating').forEach((menu) => {
+        prepareFloatingDropdown(menu);
+    });
+}
+
+function positionFloatingDropdown(menu, triggerEl = null) {
+    if (!menu || !menu.classList.contains('dropdown-menu-floating')) return;
+
+    prepareFloatingDropdown(menu);
+
+    if (triggerEl) {
+        menu._dropdownTrigger = triggerEl;
+    }
+
+    const anchor = triggerEl
+        || menu._dropdownTrigger
+        || menu._dropdownWrapper?.querySelector('.dropdown-toggle')
+        || menu._dropdownWrapper;
+    if (!anchor) return;
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportPadding = 16;
+    const menuWidth = Math.min(260, window.innerWidth - viewportPadding * 2);
+
+    let left = anchorRect.left;
+    if (left + menuWidth + viewportPadding > window.innerWidth) {
+        left = Math.max(viewportPadding, anchorRect.right - menuWidth);
+    }
+    left = Math.max(viewportPadding, left);
+
+    menu.style.position = 'fixed';
+    menu.style.top = `${anchorRect.bottom + 8}px`;
+    menu.style.left = `${left}px`;
+    menu.style.right = 'auto';
+    menu.style.width = `${menuWidth}px`;
+    menu.style.maxWidth = 'calc(100vw - 2rem)';
+    menu.style.zIndex = '9999';
+}
+
+function closeFloatingDropdowns() {
+    document.querySelectorAll('.dropdown-menu.show').forEach((menu) => {
+        menu.classList.remove('show');
+    });
+}
+
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function () {
+    mountFloatingDropdownsToBody();
+
     // 检查认证状态
     checkAuthStatus();
 

@@ -90,10 +90,10 @@
         </div>
         <div class="header-group">
             <div class="dropdown-wrapper">
-                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
+                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
                     <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
                 </button>
-                <div id="columnToggleDropdown" class="dropdown-menu">
+                <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
                     <!-- Column checkboxes will be generated here -->
                 </div>
             </div>
@@ -369,20 +369,32 @@
         });
     }
 
-    function toggleDropdown(id) {
+    function toggleDropdown(id, triggerEl = null) {
         const el = document.getElementById(id);
-        if (el) {
-            el.classList.toggle('show');
-            document.querySelectorAll('.dropdown-menu').forEach(d => {
-                if (d.id !== id) d.classList.remove('show');
-            });
+        if (!el) return;
+
+        const shouldShow = !el.classList.contains('show');
+        closeFloatingDropdowns();
+
+        if (shouldShow) {
+            el.classList.add('show');
+            positionFloatingDropdown(el, triggerEl);
+            requestAnimationFrame(() => positionFloatingDropdown(el));
         }
     }
 
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach((menu) => positionFloatingDropdown(menu));
+    });
+
+    window.addEventListener('scroll', () => {
+        document.querySelectorAll('.dropdown-menu.show.dropdown-menu-floating').forEach((menu) => positionFloatingDropdown(menu));
+    }, true);
+
     // Close dropdowns
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle')) {
-            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle') && !e.target.closest('.dropdown-menu')) {
+            closeFloatingDropdowns();
         }
     });
 
