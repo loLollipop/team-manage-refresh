@@ -219,7 +219,7 @@ async def welfare_dashboard(
         welfare_usage = await redemption_service.get_virtual_welfare_code_usage(db)
         welfare_code = str(welfare_usage.get("welfare_code") or "")
         welfare_used = int(welfare_usage.get("used_count") or 0)
-        effective_limit = max(int(welfare_usage.get("usable_capacity") or 0), 0)
+        effective_limit = max(int(welfare_usage.get("remaining_count") or 0), 0)
 
         stats = {
             "total_teams": team_stats["total"],
@@ -228,7 +228,7 @@ async def welfare_dashboard(
             "welfare_code": welfare_code,
             "welfare_code_limit": effective_limit,
             "welfare_code_used": welfare_used,
-            "welfare_code_remaining": max(effective_limit - welfare_used, 0),
+            "welfare_code_remaining": effective_limit,
         }
 
         return templates.TemplateResponse(

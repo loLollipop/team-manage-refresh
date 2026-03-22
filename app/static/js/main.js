@@ -1039,6 +1039,85 @@ async function handleJsonFileImport() {
 
 // === 兑换码生成逻辑 ===
 
+function ensureGenerateCodeResultNodes() {
+    const singleGenerateEl = document.getElementById('singleGenerate');
+    let singleResultEl = document.getElementById('singleResult');
+    let generatedCodeEl = document.getElementById('generatedCode');
+
+    if (singleGenerateEl && !singleResultEl) {
+        singleResultEl = document.createElement('div');
+        singleResultEl.id = 'singleResult';
+        singleResultEl.className = 'result-box';
+        singleResultEl.style.display = 'none';
+        singleResultEl.innerHTML = `
+            <h4>生成成功</h4>
+            <div class="code-display">
+                <code id="generatedCode"></code>
+                <button onclick="copyCode()" class="btn btn-sm btn-secondary">复制</button>
+            </div>
+        `;
+        singleGenerateEl.appendChild(singleResultEl);
+        generatedCodeEl = singleResultEl.querySelector('#generatedCode');
+    } else if (singleResultEl && !generatedCodeEl) {
+        generatedCodeEl = document.createElement('code');
+        generatedCodeEl.id = 'generatedCode';
+
+        let codeDisplayEl = singleResultEl.querySelector('.code-display');
+        if (!codeDisplayEl) {
+            codeDisplayEl = document.createElement('div');
+            codeDisplayEl.className = 'code-display';
+            singleResultEl.appendChild(codeDisplayEl);
+        }
+        codeDisplayEl.prepend(generatedCodeEl);
+    }
+
+    const batchGenerateEl = document.getElementById('batchGenerate');
+    let batchResultEl = document.getElementById('batchResult');
+    let batchTotalEl = document.getElementById('batchTotal');
+    let batchCodesEl = document.getElementById('batchCodes');
+
+    if (batchGenerateEl && !batchResultEl) {
+        batchResultEl = document.createElement('div');
+        batchResultEl.id = 'batchResult';
+        batchResultEl.className = 'result-box';
+        batchResultEl.style.display = 'none';
+        batchResultEl.innerHTML = `
+            <h4>批量生成成功</h4>
+            <p>成功生成 <strong id="batchTotal">0</strong> 个兑换码</p>
+            <textarea id="batchCodes" readonly rows="5" class="form-control" style="margin: 10px 0;"></textarea>
+            <button onclick="copyBatchCodes()" class="btn btn-sm btn-secondary">复制全部</button>
+            <button onclick="downloadCodes()" class="btn btn-sm btn-secondary">下载</button>
+        `;
+        batchGenerateEl.appendChild(batchResultEl);
+        batchTotalEl = batchResultEl.querySelector('#batchTotal');
+        batchCodesEl = batchResultEl.querySelector('#batchCodes');
+    } else if (batchResultEl) {
+        if (!batchTotalEl) {
+            batchTotalEl = document.createElement('strong');
+            batchTotalEl.id = 'batchTotal';
+            batchTotalEl.textContent = '0';
+            batchResultEl.prepend(batchTotalEl);
+        }
+        if (!batchCodesEl) {
+            batchCodesEl = document.createElement('textarea');
+            batchCodesEl.id = 'batchCodes';
+            batchCodesEl.readOnly = true;
+            batchCodesEl.rows = 5;
+            batchCodesEl.className = 'form-control';
+            batchCodesEl.style.margin = '10px 0';
+            batchResultEl.appendChild(batchCodesEl);
+        }
+    }
+
+    return {
+        generatedCodeEl,
+        singleResultEl,
+        batchTotalEl,
+        batchCodesEl,
+        batchResultEl,
+    };
+}
+
 async function generateSingle(event) {
     event.preventDefault();
     const form = event.target;
@@ -1061,10 +1140,22 @@ async function generateSingle(event) {
     });
 
     if (result.success) {
-        document.getElementById('generatedCode').textContent = result.data.code;
-        document.getElementById('singleResult').style.display = 'block';
+        const { generatedCodeEl, singleResultEl } = ensureGenerateCodeResultNodes();
+        if (generatedCodeEl && singleResultEl) {
+            generatedCodeEl.textContent = result.data.code;
+            singleResultEl.style.display = 'block';
+        } else {
+            console.warn('生成兑换码结果区域缺失，已回退为 toast 展示', {
+                hasGeneratedCode: !!generatedCodeEl,
+                hasSingleResult: !!singleResultEl,
+            });
+            hideModal('generateCodeModal');
+            showToast(`兑换码生成成功：${result.data.code}`, 'success');
+        }
         form.reset();
-        showToast('兑换码生成成功', 'success');
+        if (generatedCodeEl && singleResultEl) {
+            showToast('兑换码生成成功', 'success');
+        }
         // 如果在列表中，延迟刷新
         if (window.location.pathname === '/admin/codes') {
             setTimeout(() => location.reload(), 2000);
@@ -1101,11 +1192,24 @@ async function generateBatch(event) {
     });
 
     if (result.success) {
-        document.getElementById('batchTotal').textContent = result.data.total;
-        document.getElementById('batchCodes').value = result.data.codes.join('\n');
-        document.getElementById('batchResult').style.display = 'block';
+        const { batchTotalEl, batchCodesEl, batchResultEl } = ensureGenerateCodeResultNodes();
+        if (batchTotalEl && batchCodesEl && batchResultEl) {
+            batchTotalEl.textContent = result.data.total;
+            batchCodesEl.value = result.data.codes.join('\n');
+            batchResultEl.style.display = 'block';
+        } else {
+            console.warn('批量生成结果区域缺失，已回退为 toast 展示', {
+                hasBatchTotal: !!batchTotalEl,
+                hasBatchCodes: !!batchCodesEl,
+                hasBatchResult: !!batchResultEl,
+            });
+            hideModal('generateCodeModal');
+            showToast(`成功生成 ${result.data.total} 个兑换码`, 'success');
+        }
         form.reset();
-        showToast(`成功生成 ${result.data.total} 个兑换码`, 'success');
+        if (batchTotalEl && batchCodesEl && batchResultEl) {
+            showToast(`成功生成 ${result.data.total} 个兑换码`, 'success');
+        }
         if (window.location.pathname === '/admin/codes') {
             setTimeout(() => location.reload(), 3000);
         }

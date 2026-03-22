@@ -386,10 +386,15 @@ class RedeemFlowService:
                                         if seat_reserved:
                                             target_team.current_members = max(
                                                 target_team.current_members - 1,
-                                                target_team.max_members
+                                                0
                                             )
                                             seat_reserved = False
-                                        target_team.status = "full"
+                                        if target_team.current_members >= target_team.max_members:
+                                            target_team.status = "full"
+                                        elif target_team.expires_at and target_team.expires_at < get_now():
+                                            target_team.status = "expired"
+                                        else:
+                                            target_team.status = "active"
                                         await db_session.commit()
                                         raise Exception(f"该 Team 席位已满 (API Error: {err})")
 

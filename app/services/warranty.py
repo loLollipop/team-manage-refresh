@@ -238,6 +238,7 @@ class WarrantyService:
             primary_expiry = None
             primary_code = None
             can_reuse = False
+            suspected_inconsistent_count = 0
 
             for record, code_obj, team in records_data:
                 # 1.1 实时一致性校验 (自愈逻辑)
@@ -248,11 +249,39 @@ class WarrantyService:
                     member_emails = [m.lower() for m in sync_res.get("member_emails", [])]
                     
                     if record.email.lower() not in member_emails:
-                        logger.warning(f"自愈逻辑(查询触发): 发现孤儿记录 (Email: {record.email}, Team: {team.id}), API 查无此人。正在执行自动清理。")
-                        await db_session.delete(record)
-                        await db_session.commit()
-                        # 跳过这条无效记录，提示用户重新兑换
-                        continue 
+                        expiry_date = await self._resolve_warranty_expiry_date(
+                            db_session,
+                            code_obj,
+                            reference_record=record,
+                            expiration_mode=warranty_expiration_mode
+                        )
+                        is_valid = self._is_warranty_valid(code_obj, expiry_date)
+                        if code_obj.has_warranty:
+                            has_any_warranty = True
+                            if primary_code is None:
+                                primary_warranty_valid = is_valid
+                                primary_expiry = expiry_date
+                                primary_code = code_obj.code
+                        logger.warning(
+                            f"质保查询发现疑似孤儿记录 (Email: {record.email}, Team: {team.id})，"
+                            "为避免误删售后证据，本次仅标记异常，不执行自动清理。"
+                        )
+                        suspected_inconsistent_count += 1
+                        final_records.append({
+                            "code": code_obj.code,
+                            "has_warranty": code_obj.has_warranty,
+                            "warranty_valid": is_valid,
+                            "warranty_expires_at": expiry_date.isoformat() if expiry_date else None,
+                            "status": code_obj.status,
+                            "used_at": record.redeemed_at.isoformat() if record.redeemed_at else None,
+                            "team_id": team.id,
+                            "team_name": team.team_name,
+                            "team_status": "suspected_inconsistent",
+                            "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
+                            "email": record.email,
+                            "device_code_auth_enabled": team.device_code_auth_enabled
+                        })
+                        continue
 
                 # 动态计算/提取质保信息
                 expiry_date = await self._resolve_warranty_expiry_date(
@@ -307,6 +336,8 @@ class WarrantyService:
                 # 这种情况说明刚才所有记录都被自愈逻辑删除了（全是虚假成功）
                 message = "系统发现您的兑换记录存在同步异常，已为您自动修复！您的兑换码已恢复，请返回兑换页面重新提交一次即可。"
                 can_reuse = True
+            elif suspected_inconsistent_count > 0:
+                message = "检测到部分兑换记录与远端成员状态不一致；系统已保留原始记录，请联系管理员进一步核查。"
 
             return {
                 "success": True,
@@ -382,6 +413,8 @@ class WarrantyService:
             stmt = select(RedemptionRecord).where(RedemptionRecord.code == code)
             result = await db_session.execute(stmt)
             all_records_for_code = result.scalars().all()
+            had_matching_history = any(r.email == email for r in all_records_for_code)
+            cleaned_orphan_for_email = False
             
             for record in all_records_for_code:
                 stmt = select(Team).where(Team.id == record.team_id)
@@ -400,6 +433,8 @@ class WarrantyService:
                         if record.email.lower() not in member_emails:
                             logger.warning(f"自愈逻辑: 发现孤儿记录 (Email: {record.email}, Team: {team.id}), 但同步结果中不包含该成员。正在清理记录。")
                             # 删除该孤儿记录
+                            if record.email == email:
+                                cleaned_orphan_for_email = True
                             await db_session.delete(record)
                             if not db_session.in_transaction():
                                 await db_session.commit()
@@ -424,24 +459,30 @@ class WarrantyService:
                                 "error": None
                             }
 
-            # 刷新记录列表 (可能在上面自愈逻辑中删除了孤儿记录)
+            # 5. 刷新记录列表，避免继续使用已删除的孤儿记录快照
             stmt = select(RedemptionRecord).where(RedemptionRecord.code == code)
             result = await db_session.execute(stmt)
             all_records_for_code = result.scalars().all()
 
-            # 5. 查找当前用户使用该兑换码的记录 (用于后续逻辑判断)
+            # 6. 查找当前用户使用该兑换码的记录 (用于后续逻辑判断)
             records = [r for r in all_records_for_code if r.email == email]
             
             if not records:
-                # 之前没有该邮箱的记录，但上面已经检查过没有其他活跃 Team 了，所以允许“新开”或“接手”
+                if cleaned_orphan_for_email or had_matching_history:
+                    return {
+                        "success": True,
+                        "can_reuse": True,
+                        "reason": "检测到历史记录同步异常，已自动修复，可重新兑换",
+                        "error": None
+                    }
                 return {
                     "success": True,
-                    "can_reuse": True,
-                    "reason": "可更名使用 (或首次使用)",
+                    "can_reuse": False,
+                    "reason": "质保兑换码仅限原使用邮箱申请售后，不支持更名接手",
                     "error": None
                 }
 
-            # 5. 检查用户当前是否已在有效的 Team 中
+            # 7. 检查用户当前是否已在有效的 Team 中
             # 逻辑：如果最近一次加入的 Team 仍然有效（active/full 且未过期），则不允许重复使用
             for record in records:
                 stmt = select(Team).where(Team.id == record.team_id)
@@ -459,7 +500,7 @@ class WarrantyService:
                             "error": None
                         }
 
-            # 6. 检查是否有过被封的记录
+            # 8. 检查是否有过被封的记录
             has_banned_team = False
             for record in records:
                 stmt = select(Team).where(Team.id == record.team_id)

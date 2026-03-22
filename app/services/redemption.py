@@ -132,6 +132,7 @@ class RedemptionService:
             "welfare_code": welfare_code,
             "used_count": used_count,
             "usable_capacity": usable_capacity,
+            "remaining_count": usable_capacity,
         }
 
     async def _rebuild_code_usage_state(
@@ -389,9 +390,9 @@ class RedemptionService:
             if welfare_code and code == welfare_code:
                 welfare_usage = await self.get_virtual_welfare_code_usage(db_session, welfare_code=welfare_code)
                 used_count = int(welfare_usage["used_count"] or 0)
-                effective_limit = int(welfare_usage["usable_capacity"] or 0)
+                effective_limit = int(welfare_usage["remaining_count"] or 0)
 
-                if effective_limit <= 0 or used_count >= effective_limit:
+                if effective_limit <= 0:
                     return {
                         "success": True,
                         "valid": False,
@@ -431,9 +432,9 @@ class RedemptionService:
                 if welfare_code and code == welfare_code:
                     welfare_usage = await self.get_virtual_welfare_code_usage(db_session, welfare_code=welfare_code)
                     used_count = int(welfare_usage["used_count"] or 0)
-                    effective_limit = int(welfare_usage["usable_capacity"] or 0)
+                    effective_limit = int(welfare_usage["remaining_count"] or 0)
 
-                    if effective_limit <= 0 or used_count >= effective_limit:
+                    if effective_limit <= 0:
                         return {
                             "success": True,
                             "valid": False,
@@ -524,7 +525,23 @@ class RedemptionService:
                         "error": None
                     }
 
-            # 4. 检查是否过期 (仅针对未使用的兑换码执行首次激活截止时间检查)
+            # 4. 检查质保是否已过期（针对已使用的质保码）
+            if (
+                redemption_code.has_warranty
+                and redemption_code.status == "used"
+                and redemption_code.warranty_expires_at
+                and redemption_code.warranty_expires_at < get_now()
+            ):
+                redemption_code.status = "expired"
+                return {
+                    "success": True,
+                    "valid": False,
+                    "reason": "质保已过期",
+                    "redemption_code": None,
+                    "error": None
+                }
+
+            # 5. 检查是否过期 (仅针对未使用的兑换码执行首次激活截止时间检查)
             if redemption_code.status == "unused" and redemption_code.expires_at:
                 if redemption_code.expires_at < get_now():
                     # 更新状态为 expired
@@ -540,7 +557,7 @@ class RedemptionService:
                         "error": None
                     }
 
-            # 5. 验证通过
+            # 6. 验证通过
             return {
                 "success": True,
                 "valid": True,
