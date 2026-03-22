@@ -250,7 +250,7 @@
 
             <!-- 状态筛选 -->
             <div class="dropdown-wrapper">
-                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('statusFilterDropdown', this)">
+                <button id="statusFilterToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
                     <i data-lucide="filter" style="width: 16px; height: 16px;"></i>
                     <span>
                         {% if status_filter == 'active' %}可用
@@ -305,7 +305,7 @@
             <!-- 列设置 -->
             <!-- 列设置 -->
 <div class="dropdown-wrapper">
-    <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
+    <button id="columnToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
         <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
     </button>
     <!-- 加上 dropdown-menu-floating -->
@@ -624,8 +624,24 @@
             document.body.appendChild(editTeamModal);
         }
 
+        // Ensure floating dropdowns are mounted to body for fixed positioning
+        if (typeof mountFloatingDropdownsToBody === 'function') {
+            mountFloatingDropdownsToBody();
+        }
+
         // Init Column Toggler
         initColumnToggler('.data-table', 'team_list_columns');
+
+        // 绑定下拉按钮点击（避免仅依赖内联 onclick）
+        const statusFilterToggleBtn = document.getElementById('statusFilterToggleBtn');
+        if (statusFilterToggleBtn) {
+            statusFilterToggleBtn.addEventListener('click', () => toggleDropdown('statusFilterDropdown', statusFilterToggleBtn));
+        }
+
+        const columnToggleBtn = document.getElementById('columnToggleBtn');
+        if (columnToggleBtn) {
+            columnToggleBtn.addEventListener('click', () => toggleDropdown('columnToggleDropdown', columnToggleBtn));
+        }
 
         // 绑定查看成员按钮
         document.querySelectorAll('.btn-view-members').forEach(btn => {
