@@ -123,6 +123,11 @@ class BulkCodeUpdateRequest(BaseModel):
     warranty_days: Optional[int] = Field(None, description="质保天数")
 
 
+class BulkCodeDeleteRequest(BaseModel):
+    """批量兑换码删除请求"""
+    codes: List[str] = Field(..., description="待删除兑换码列表")
+
+
 class InvalidCodeCleanupRequest(BaseModel):
     """无效兑换码清理请求"""
     codes: List[str] = Field(..., description="待清理的无效兑换码列表")
@@ -1572,6 +1577,7 @@ async def update_code(
             content={"success": False, "error": "操作失败，请稍后重试"}
         )
 
+
 @router.post("/codes/bulk-update")
 async def bulk_update_codes(
     update_data: BulkCodeUpdateRequest,
@@ -1596,6 +1602,25 @@ async def bulk_update_codes(
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": "操作失败，请稍后重试"}
+        )
+
+
+@router.post("/codes/batch-delete")
+async def batch_delete_codes(
+    delete_data: BulkCodeDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量删除兑换码。"""
+    try:
+        result = await redemption_service.bulk_delete_codes(delete_data.codes, db)
+        status_code = status.HTTP_200_OK if result.get("success") else status.HTTP_400_BAD_REQUEST
+        return JSONResponse(status_code=status_code, content=result)
+    except Exception:
+        logger.exception("批量删除兑换码失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "批量删除失败，请稍后重试"}
         )
 
 

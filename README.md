@@ -31,7 +31,7 @@ docker compose down && docker compose up -d --build
 
 `TypeError: unhashable type: 'dict'`
 
-本项目已统一改为新版签名 `TemplateResponse(request, template_name, context)`，并补充了兼容性回归测试。
+本项目已统一改为新版签名 `TemplateResponse(request, template_name, context)`，并已完成兼容性修复。
 
 如果你之前拉取的是旧代码，请先更新到最新版本再部署：
 
@@ -39,7 +39,28 @@ docker compose down && docker compose up -d --build
 git pull
 ```
 
-## ✨ 功能特性
+
+## 🌟 二改亮点（相对原项目）
+
+这个仓库不是“原模板直接复刻”，而是围绕实际运营场景做了持续二改，重点在稳定性、批量效率、售后追溯与自动化联动：
+
+- **福利车位独立池 + 福利通用码机制**
+  - 福利 Team 与常规 Team 分池管理，兑换逻辑隔离；福利通用码由 settings 驱动，并有影子码机制用于历史记录兼容。
+- **兑换码批量管理能力完善**
+  - 支持批量生成、批量修改质保、批量删除（仅删除无关联记录，防止误删历史）。
+- **无效兑换码“先扫描后清理”**
+  - 通过无效码扫描与清理流程，处理历史脏数据时可控且可回溯，避免直接硬删。
+- **Token 生命周期自动化运维**
+  - 内置 Token 预刷新任务 + Team 周期状态同步任务，并支持在后台动态配置参数。
+- **库存预警与外部系统联动**
+  - 库存阈值触发 Webhook，支持第三方系统自动导入 Team，减少人工补货延迟。
+- **CliproxyAPI 推送对接**
+  - 支持单个/批量将 Team 凭据推送到 CliproxyAPI，便于统一代理层消费。
+- **售后/风控链路增强**
+  - 提供质保查询、Device Code Auth 开启、封禁关联追踪等能力，方便售后定位与风险处理。
+- **后台交互针对运营场景优化**
+  - 设置页分区导航、批量操作浮动条、公告 Markdown 弹窗等，减少高频操作路径的点击成本。
+
 
 ### 管理员功能
 - **Team 账号管理**

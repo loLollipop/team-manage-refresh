@@ -188,6 +188,9 @@
             <button onclick="showBulkEditModal()" class="btn btn-primary">
                 <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
             </button>
+            <button onclick="handleBulkDeleteCodes()" class="btn btn-danger">
+                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> 批量删除
+            </button>
             <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
         </div>
     </div>
@@ -824,8 +827,46 @@
         }
     }
 
-    // 当前筛选状态
-    let currentFilter = 'all';
+
+    async function handleBulkDeleteCodes() {
+        const selected = document.querySelectorAll('.code-checkbox:checked');
+        const codes = Array.from(selected).map(cb => cb.value);
+
+        if (!codes.length) {
+            showToast('请先选择要删除的兑换码', 'error');
+            return;
+        }
+
+        const confirmed = confirm(`确认批量删除已选 ${codes.length} 个兑换码吗？\n\n注意：系统仅会删除没有关联记录的兑换码，其余会自动跳过。`);
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/codes/batch-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ codes })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast(result.message || '批量删除完成', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+                return;
+            }
+
+            showToast(result.error || result.message || '批量删除失败', 'error');
+        } catch (error) {
+            console.error(error);
+            showToast('网络错误', 'error');
+        }
+    }
 
     // 按状态筛选 (服务器端筛选)
     function filterByStatus(status) {

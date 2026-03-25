@@ -1253,6 +1253,77 @@ class RedemptionService:
                 "error": "删除兑换码失败，请稍后重试"
             }
 
+    async def bulk_delete_codes(
+        self,
+        codes: List[str],
+        db_session: AsyncSession
+    ) -> Dict[str, Any]:
+        """批量删除兑换码（仅删除无关联记录的兑换码）。"""
+        try:
+            normalized_codes: List[str] = []
+            seen_codes: set[str] = set()
+            for raw_code in codes or []:
+                code_value = str(raw_code or "").strip()
+                if not code_value or code_value in seen_codes:
+                    continue
+                seen_codes.add(code_value)
+                normalized_codes.append(code_value)
+
+            if not normalized_codes:
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": "请选择需要删除的兑换码"
+                }
+
+            success_count = 0
+            failed_count = 0
+            deleted_codes: List[str] = []
+            failed_items: List[Dict[str, str]] = []
+
+            for code in normalized_codes:
+                result = await self.delete_code(code, db_session)
+                if result.get("success"):
+                    success_count += 1
+                    deleted_codes.append(code)
+                    continue
+
+                failed_count += 1
+                failed_items.append({
+                    "code": code,
+                    "error": result.get("error") or "删除失败"
+                })
+
+            summary = f"批量删除完成: 成功 {success_count}，失败 {failed_count}"
+            if success_count <= 0:
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": summary,
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "deleted_codes": deleted_codes,
+                    "failed_items": failed_items
+                }
+
+            return {
+                "success": True,
+                "message": summary,
+                "error": None,
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "deleted_codes": deleted_codes,
+                "failed_items": failed_items
+            }
+        except Exception:
+            await db_session.rollback()
+            logger.exception("批量删除兑换码失败")
+            return {
+                "success": False,
+                "message": None,
+                "error": "批量删除兑换码失败，请稍后重试"
+            }
+
     async def update_code(
         self,
         code: str,
