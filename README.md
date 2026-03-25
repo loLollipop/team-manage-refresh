@@ -25,6 +25,20 @@ git reset --hard origin/main
 docker compose down && docker compose up -d --build
 ```
 
+## ⚠️ FastAPI/Starlette 兼容性说明（重要）
+
+在新版 FastAPI/Starlette 环境中，若项目仍使用旧版 `templates.TemplateResponse` 调用方式，访问 `/login` 等页面可能报错：
+
+`TypeError: unhashable type: 'dict'`
+
+本项目已统一改为新版签名 `TemplateResponse(request, template_name, context)`，并补充了兼容性回归测试。
+
+如果你之前拉取的是旧代码，请先更新到最新版本再部署：
+
+```bash
+git pull
+```
+
 ## ✨ 功能特性
 
 ### 管理员功能
