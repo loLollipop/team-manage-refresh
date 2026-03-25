@@ -358,7 +358,10 @@
                     <i data-lucide="shield-check" style="width: 14px; height: 14px;"></i> 批量开启验证
                 </button>
                 <button type="button" id="btnBatchPushCliproxyapi" class="btn btn-primary btn-sm">
-                    <i data-lucide="send" style="width: 14px; height: 14px;"></i> 批量推送
+                    <i data-lucide="send" style="width: 14px; height: 14px;"></i> 推 Cliproxy
+                </button>
+                <button type="button" id="btnBatchPushSub2api" class="btn btn-secondary btn-sm">
+                    <i data-lucide="cloud-upload" style="width: 14px; height: 14px;"></i> 推 sub2api
                 </button>
                 <button type="button" id="btnBatchDelete" class="btn btn-danger btn-sm">
                     <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
@@ -540,6 +543,11 @@
                             data-id="{{ team.id }}" data-email="{{ team.email }}" title="推送到 CliproxyAPI" aria-label="推送到 CliproxyAPI">
                             <i data-lucide="send" style="width: 16px; height: 16px;"></i>
                             <span class="btn-icon-fallback" aria-hidden="true">推</span>
+                        </button>
+                        <button class="btn btn-sm btn-icon btn-minimal btn-secondary btn-push-sub2api"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="推送到 sub2api" aria-label="推送到 sub2api">
+                            <i data-lucide="cloud-upload" style="width: 16px; height: 16px;"></i>
+                            <span class="btn-icon-fallback" aria-hidden="true">S</span>
                         </button>
                         <button type="button" class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
                             data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除" aria-label="删除"
@@ -816,6 +824,14 @@
             });
         });
 
+        document.querySelectorAll('.btn-push-sub2api').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                const email = btn.getAttribute('data-email');
+                pushTeamToSub2api(id, email);
+            });
+        });
+
         // 绑定复选框事件（避免仅依赖内联 onchange）
         document.getElementById('selectAll')?.addEventListener('change', (e) => {
             toggleSelectAll(Boolean(e.target && e.target.checked));
@@ -828,6 +844,7 @@
         document.getElementById('btnBatchRefresh')?.addEventListener('click', handleBatchRefresh);
         document.getElementById('btnBatchEnableDeviceAuth')?.addEventListener('click', handleBatchEnableDeviceAuth);
         document.getElementById('btnBatchPushCliproxyapi')?.addEventListener('click', handleBatchPushCliproxyapi);
+        document.getElementById('btnBatchPushSub2api')?.addEventListener('click', handleBatchPushSub2api);
         document.getElementById('btnBatchDelete')?.addEventListener('click', handleBatchDelete);
     });
 
@@ -878,6 +895,45 @@
                     });
                 } else if (data.action === 'skipped') {
                     showToast(data.message || '远端认证文件已是最新', 'info', {
+                        title: '无需重复推送',
+                        duration: 5600
+                    });
+                } else {
+                    showToast(data.message || '推送成功', 'success', {
+                        title: data.action === 'updated' ? '推送已更新' : '推送成功',
+                        duration: 7200
+                    });
+                }
+            } else {
+                showToast(data.error || '推送失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function pushTeamToSub2api(teamId, email = '') {
+        const targetLabel = email ? `"${email}"` : `ID=${teamId}`;
+        if (!confirm(`确定要将 Team ${targetLabel} 推送到 sub2api 吗?`)) {
+            return;
+        }
+
+        try {
+            showToast('正在推送到 sub2api...', 'info');
+            const response = await fetch(`/admin/teams/${teamId}/push-sub2api`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                if (data.warning) {
+                    showToast(`${data.message || '推送成功'}；${data.warning}`, 'warning', {
+                        title: data.action === 'skipped' ? '账号仍存在风险字段缺失' : '已推送，但凭证不完整',
+                        duration: 8600
+                    });
+                } else if (data.action === 'skipped') {
+                    showToast(data.message || 'sub2api 账号已是最新', 'info', {
                         title: '无需重复推送',
                         duration: 5600
                     });
@@ -1345,7 +1401,7 @@
     }
 
     function setBatchActionButtonsDisabled(disabled) {
-        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchDelete'].forEach(id => {
+        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchPushSub2api', 'btnBatchDelete'].forEach(id => {
             const button = document.getElementById(id);
             if (button) button.disabled = disabled;
         });
@@ -1557,6 +1613,28 @@
                         message: result.message,
                         type: 'warning',
                         title: '批量推送已完成，但部分凭证不完整',
+                        duration: 8600
+                    };
+                }
+
+                return {
+                    message: result.message,
+                    type: 'success',
+                    title: '批量推送完成',
+                    duration: 7600
+                };
+            }
+        });
+    }
+
+    function handleBatchPushSub2api() {
+        handleBatchAction('/admin/teams/batch-push-sub2api', '批量推送到 sub2api', {
+            onSuccessToast(result) {
+                if (result.warning_count > 0) {
+                    return {
+                        message: result.message,
+                        type: 'warning',
+                        title: '批量推送已完成，但部分账号字段不完整',
                         duration: 8600
                     };
                 }

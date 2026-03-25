@@ -1392,6 +1392,63 @@ class TeamService:
                 "error": f"批量导入过程中发生异常: {str(e)}"
             }
 
+    @staticmethod
+    def _extract_team_json_items(payload: Any) -> List[Dict[str, Any]]:
+        """从不同 JSON 结构中提取候选账号项。"""
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+
+        if not isinstance(payload, dict):
+            return []
+
+        if isinstance(payload.get("accounts"), list):
+            return [item for item in payload.get("accounts", []) if isinstance(item, dict)]
+
+        if isinstance(payload.get("teams"), list):
+            return [item for item in payload.get("teams", []) if isinstance(item, dict)]
+
+        return [payload]
+
+    @staticmethod
+    def _normalize_team_json_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """将 CliproxyAPI / sub2api 的 JSON 项统一归一化为导入参数。"""
+        if not isinstance(item, dict):
+            return None
+
+        credentials = item.get("credentials") if isinstance(item.get("credentials"), dict) else item
+        extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+
+        access_token = credentials.get("access_token") or credentials.get("token")
+        refresh_token = credentials.get("refresh_token")
+        session_token = credentials.get("session_token")
+        id_token = credentials.get("id_token")
+        client_id = credentials.get("client_id")
+        account_id = (
+            credentials.get("account_id")
+            or credentials.get("chatgpt_account_id")
+            or item.get("account_id")
+        )
+
+        name = str(item.get("name") or "").strip()
+        email = (
+            credentials.get("email")
+            or extra.get("email")
+            or (name if "@" in name else None)
+        )
+
+        if not any([access_token, refresh_token, session_token]):
+            return None
+
+        return {
+            "access_token": access_token,
+            "id_token": id_token,
+            "refresh_token": refresh_token,
+            "session_token": session_token,
+            "client_id": client_id,
+            "email": email,
+            "account_id": account_id,
+        }
+
     async def import_team_json(
         self,
         json_text: Optional[str],
@@ -1410,42 +1467,22 @@ class TeamService:
                 yield {"type": "error", "error": f"JSON 解析失败: {e}"}
                 return
 
-            raw_items = []
-            if isinstance(payload, list):
-                raw_items = payload
-            elif isinstance(payload, dict):
-                if isinstance(payload.get("teams"), list):
-                    raw_items = payload.get("teams")
-                else:
-                    raw_items = [payload]
-            else:
+            raw_items = self._extract_team_json_items(payload)
+            if not raw_items:
                 yield {"type": "error", "error": "JSON 顶层必须是对象或数组"}
                 return
 
             normalized_items = []
             for item in raw_items:
-                if not isinstance(item, dict):
-                    continue
-
-                access_token = item.get("access_token") or item.get("token")
-                refresh_token = item.get("refresh_token")
-                session_token = item.get("session_token")
-
-                if not any([access_token, refresh_token, session_token]):
-                    continue
-
-                normalized_items.append({
-                    "access_token": access_token,
-                    "id_token": item.get("id_token"),
-                    "refresh_token": refresh_token,
-                    "session_token": session_token,
-                    "client_id": item.get("client_id"),
-                    "email": item.get("email"),
-                    "account_id": item.get("account_id")
-                })
+                normalized = self._normalize_team_json_item(item)
+                if normalized:
+                    normalized_items.append(normalized)
 
             if not normalized_items:
-                yield {"type": "error", "error": "JSON 中未找到可导入的 Team 项（需包含 AT/RT/ST）"}
+                yield {
+                    "type": "error",
+                    "error": "JSON 中未找到可导入的 Team 项（支持 CliproxyAPI 单文件和 sub2api accounts[] 格式，且需包含 AT/RT/ST）"
+                }
                 return
 
             total = len(normalized_items)

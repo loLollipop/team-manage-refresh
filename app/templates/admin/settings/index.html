@@ -15,6 +15,7 @@
     <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
     <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
     <a href="#settings-cliproxyapi" class="settings-nav-pill settings-nav-link" data-target="settings-cliproxyapi">CliproxyAPI 推送</a>
+    <a href="#settings-sub2api" class="settings-nav-pill settings-nav-link" data-target="settings-sub2api">sub2api 推送</a>
     <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
     <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
 </div>
@@ -232,6 +233,31 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 CliproxyAPI 配置</button>
+    </form>
+</div>
+
+<!-- sub2api 推送配置 -->
+<div class="content-section settings-panel" id="settings-sub2api">
+    <div class="section-header">
+        <h3>sub2api 推送</h3>
+    </div>
+
+    <form id="sub2apiForm" class="settings-form">
+        <div class="form-group">
+            <label for="sub2apiBaseUrl">站点地址</label>
+            <input type="text" id="sub2apiBaseUrl" name="base_url" value="{{ sub2api_base_url or '' }}"
+                placeholder="https://sub2api.example.com" class="form-control">
+            <p class="form-help">填写 sub2api 站点根地址，保存时会自动去掉末尾斜杠和 `/api/v1` 后缀。</p>
+        </div>
+
+        <div class="form-group">
+            <label for="sub2apiAccessToken">管理员 API Key</label>
+            <input type="password" id="sub2apiAccessToken" name="access_token" value="{{ sub2api_access_token or '' }}"
+                placeholder="admin-xxxxxxxxxxxxxxxx" class="form-control">
+            <p class="form-help">用于调用 sub2api 的 `/api/v1/admin/accounts` 接口，请填写管理员 API Key。</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存 sub2api 配置</button>
     </form>
 </div>
 
@@ -636,6 +662,50 @@
             showToast('网络错误', 'error');
         }
     });
+
+        // sub2api 推送配置表单
+        document.getElementById('sub2apiForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const base_url = document.getElementById('sub2apiBaseUrl').value.trim();
+            const access_token = document.getElementById('sub2apiAccessToken').value.trim();
+
+            if (!base_url) {
+                showToast('请输入 sub2api 站点地址', 'error');
+                return;
+            }
+
+            if (!/^https?:\/\//i.test(base_url)) {
+                showToast('sub2api 地址必须以 http:// 或 https:// 开头', 'error');
+                return;
+            }
+
+            if (!access_token) {
+                showToast('请输入 sub2api 管理员 API Key', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/admin/settings/sub2api', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ base_url, access_token })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    document.getElementById('sub2apiBaseUrl').value = data.base_url || base_url.replace(/\/+$/, '').replace(/\/api\/v1$/i, '');
+                    showToast(data.message || 'sub2api 配置已保存', 'success');
+                } else {
+                    showToast(data.error || '保存失败', 'error');
+                }
+            } catch (error) {
+                showToast('网络错误', 'error');
+            }
+        });
 
     // 系统配色表单
     document.getElementById('uiThemeForm').addEventListener('submit', async (e) => {

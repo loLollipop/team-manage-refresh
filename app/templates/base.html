@@ -157,14 +157,23 @@
                                 <textarea id="oauthCallbackInput" class="form-control" rows="3" placeholder="登录后粘贴完整回调 URL"></textarea>
                             </div>
 
-                            <div class="oauth-quick-btn-row">
+                            <div class="oauth-quick-btn-row oauth-quick-btn-row-compact">
                                 <button type="button" id="btnParseOAuthCallback" class="btn btn-primary">解析并自动填充</button>
                                 <button type="button" id="btnExportOAuthJson" class="btn btn-primary">导出 JSON</button>
                                 <button type="submit" id="btnQuickImportTeam" class="btn btn-primary">导入 Team</button>
                             </div>
 
-                            <div class="import-mode-toggle-wrap">
-                                <button type="button" id="switchToManualFill" class="import-mode-toggle-btn">已有 Token？直接填写</button>
+                            <div class="oauth-quick-actions-footer">
+                                <div class="oauth-quick-export-row">
+                                    <select id="oauthExportFormat" class="form-control oauth-export-select">
+                                        <option value="cliproxyapi">导出为 CliproxyAPI</option>
+                                        <option value="sub2api">导出为 sub2api</option>
+                                    </select>
+                                </div>
+
+                                <div class="import-mode-toggle-wrap import-mode-toggle-wrap-inline">
+                                    <button type="button" id="switchToManualFill" class="import-mode-toggle-btn">已有 Token？直接填写</button>
+                                </div>
                             </div>
                         </div>
 
@@ -181,7 +190,7 @@
                             <div class="form-group">
                                 <label>ID Token</label>
                                 <input type="text" name="idToken" class="form-control" placeholder="eyJhbGciOiJSUzI1Ni...">
-                                <small class="form-text">建议填写，一键获取 Token 时会自动带上，用于推送到 CliproxyAPI</small>
+                                <small class="form-text">建议填写，一键获取 Token 时会自动带上，便于后续导出或推送到第三方平台</small>
                             </div>
                             <div class="form-group">
                                 <label>Refresh Token (RT)</label>
@@ -221,9 +230,9 @@
                         <input type="hidden" name="poolType" value="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}">
                         <div class="json-import-box" id="jsonImportBox">
                             <input type="file" id="jsonImportFile" accept=".json,application/json" style="display: none;">
-                            <div class="json-import-box-title">JSON 文件导入</div>
+                            <div class="json-import-box-title">JSON 文件导入（支持 CliproxyAPI / sub2api）</div>
                             <button type="button" id="chooseJsonFileBtn" class="btn btn-primary">选择 JSON 文件</button>
-                            <div class="json-import-file-hint" id="jsonImportFileName">支持单对象、对象数组，或 {"teams": [...]} 格式</div>
+                            <div class="json-import-file-hint" id="jsonImportFileName">支持 CliproxyAPI 单文件、对象数组、{"teams": [...]}，以及 sub2api 的 {"accounts": [...]} 格式</div>
                         </div>
                         <div class="batch-token-input-box">
                             <label for="batchAccessTokens" class="batch-token-input-title">或直接粘贴 Access Token</label>

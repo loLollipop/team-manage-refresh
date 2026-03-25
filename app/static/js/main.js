@@ -475,6 +475,10 @@ function setSingleImportMode(mode = 'quick') {
     manualSection.style.display = isManual ? 'block' : 'none';
 }
 
+function getSupportedJsonImportHint() {
+    return '支持 CliproxyAPI 单文件、对象数组、{"teams": [...]}，以及 sub2api 的 {"accounts": [...]} 格式';
+}
+
 function syncResponsiveSidebarMount() {
     const sidebar = document.getElementById('adminSidebar');
     const overlay = document.getElementById('sidebarOverlay');
@@ -608,7 +612,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (fileNameNode) {
                 fileNameNode.textContent = jsonImportFile.files && jsonImportFile.files[0]
                     ? `已选择：${jsonImportFile.files[0].name}`
-                    : '支持单对象、对象数组，或 {"teams": [...]} 格式';
+                    : getSupportedJsonImportHint();
             }
             if (jsonImportFile.files && jsonImportFile.files.length > 0) {
                 await handleJsonFileImport();
@@ -674,7 +678,7 @@ function resetBatchImportForm() {
 
     const fileNameNode = document.getElementById('jsonImportFileName');
     if (fileNameNode) {
-        fileNameNode.textContent = '支持单对象、对象数组，或 {"teams": [...]} 格式';
+        fileNameNode.textContent = getSupportedJsonImportHint();
     }
 }
 
@@ -935,6 +939,60 @@ function buildOAuthJsonTemplate(parsedData) {
     };
 }
 
+function getOAuthExportFormat() {
+    const select = document.getElementById('oauthExportFormat');
+    return select && select.value === 'sub2api' ? 'sub2api' : 'cliproxyapi';
+}
+
+function buildSub2apiOAuthJsonTemplate(parsedData) {
+    const normalized = buildOAuthJsonTemplate(parsedData);
+    const accessToken = normalized.access_token || '';
+    const accessPayload = decodeJwtPayload(accessToken) || {};
+    const accessAuth = accessPayload['https://api.openai.com/auth'] || {};
+    const expiresAt = typeof accessPayload.exp === 'number' ? accessPayload.exp : null;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const expiresIn = typeof expiresAt === 'number' ? Math.max(expiresAt - nowSeconds, 0) : null;
+
+    const credentials = {
+        access_token: accessToken,
+        chatgpt_account_id: normalized.account_id || accessAuth.chatgpt_account_id || undefined,
+        chatgpt_user_id: accessAuth.chatgpt_user_id || accessAuth.user_id || undefined,
+        client_id: normalized.client_id || undefined,
+        expires_at: expiresAt || undefined,
+        expires_in: expiresIn,
+        refresh_token: normalized.refresh_token || undefined
+    };
+
+    const extra = {
+        email: normalized.email || undefined,
+        openai_passthrough: true
+    };
+
+    return {
+        type: 'sub2api-data',
+        version: 1,
+        exported_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        proxies: [],
+        accounts: [
+            {
+                name: normalized.email || normalized.account_id || `team-${Date.now()}`,
+                platform: 'openai',
+                type: 'oauth',
+                credentials: Object.fromEntries(
+                    Object.entries(credentials).filter(([, value]) => value !== undefined && value !== null && value !== '')
+                ),
+                extra: Object.fromEntries(
+                    Object.entries(extra).filter(([, value]) => value !== undefined && value !== null && value !== '')
+                ),
+                concurrency: 10,
+                priority: 1,
+                rate_multiplier: 1,
+                auto_pause_on_expired: true
+            }
+        ]
+    };
+}
+
 function downloadJsonFile(payload, filename) {
     const text = JSON.stringify(payload, null, 2);
     const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -951,8 +1009,13 @@ function downloadJsonFile(payload, filename) {
 async function exportOAuthJsonTemplateFile() {
     try {
         const data = oauthParsedCache || await parseOAuthCallbackData();
-        const payload = buildOAuthJsonTemplate(data);
-        const filename = `team-oauth-${Date.now()}.json`;
+        const format = getOAuthExportFormat();
+        const payload = format === 'sub2api'
+            ? buildSub2apiOAuthJsonTemplate(data)
+            : buildOAuthJsonTemplate(data);
+        const filename = format === 'sub2api'
+            ? `sub2api-account-${Date.now()}.json`
+            : `team-oauth-${Date.now()}.json`;
         downloadJsonFile(payload, filename);
         showToast('JSON 文件已导出', 'success');
     } catch (error) {

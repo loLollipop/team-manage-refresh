@@ -23,6 +23,7 @@ from app.services.settings import (
     DEFAULT_UI_THEME,
 )
 from app.services.cliproxyapi import cliproxyapi_service
+from app.services.sub2api import sub2api_service
 from app.models import RedemptionCode, RedemptionRecord, Team
 from app.utils.time_utils import get_now
 
@@ -1021,6 +1022,115 @@ async def batch_push_teams_to_cliproxyapi(
         )
 
 
+@router.post("/teams/{team_id}/push-sub2api")
+async def push_team_to_sub2api(
+    team_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """将单个 Team 推送到 sub2api。"""
+    try:
+        logger.info("管理员推送 Team %s 到 sub2api", team_id)
+        result = await sub2api_service.push_team_account(team_id, db)
+        if not result.get("success"):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result
+            )
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error("推送 Team %s 到 sub2api 失败: %s", team_id, e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/teams/batch-push-sub2api")
+async def batch_push_teams_to_sub2api(
+    action_data: BulkActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量推送 Team 到 sub2api。"""
+    try:
+        logger.info("管理员批量推送 %s 个 Team 到 sub2api", len(action_data.ids))
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        warning_count = 0
+        failed_count = 0
+        results = []
+
+        for team_id in action_data.ids:
+            result = await sub2api_service.push_team_account(team_id, db)
+            action = result.get("action")
+            warning = result.get("warning")
+
+            if result.get("success"):
+                if action == "created":
+                    created_count += 1
+                elif action == "updated":
+                    updated_count += 1
+                elif action == "skipped":
+                    skipped_count += 1
+                if warning:
+                    warning_count += 1
+
+                results.append(
+                    {
+                        "team_id": team_id,
+                        "email": result.get("email"),
+                        "account_name": result.get("account_name"),
+                        "remote_id": result.get("remote_id"),
+                        "action": action,
+                        "warning": warning,
+                        "warnings": result.get("warnings") or [],
+                        "error": None,
+                    }
+                )
+                continue
+
+            failed_count += 1
+            results.append(
+                {
+                    "team_id": team_id,
+                    "email": result.get("email"),
+                    "account_name": result.get("account_name"),
+                    "remote_id": result.get("remote_id"),
+                    "action": None,
+                    "warning": None,
+                    "warnings": [],
+                    "error": result.get("error"),
+                }
+            )
+
+        message = (
+            "批量推送完成: "
+            f"新建 {created_count}, 更新 {updated_count}, 跳过 {skipped_count}, 失败 {failed_count}"
+        )
+        if warning_count:
+            message += f"，其中 {warning_count} 个 Team 缺少 refresh_token、client_id 或 account_id"
+
+        return JSONResponse(content={
+            "success": True,
+            "message": message,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "skipped_count": skipped_count,
+            "warning_count": warning_count,
+            "failed_count": failed_count,
+            "results": results,
+        })
+    except Exception as e:
+        logger.error("批量推送 Team 到 sub2api 失败: %s", e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
 @router.post("/teams/batch-refresh")
 async def batch_refresh_teams(
     action_data: BulkActionRequest,
@@ -1886,6 +1996,8 @@ async def settings_page(
                 "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
                 "cliproxyapi_base_url": await settings_service.get_setting(db, "cliproxyapi_base_url", ""),
                 "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
+                "sub2api_base_url": await settings_service.get_setting(db, "sub2api_base_url", ""),
+                "sub2api_access_token": await settings_service.get_setting(db, "sub2api_access_token", ""),
                 "warranty_expiration_mode": await settings_service.get_warranty_expiration_mode(db),
                 "ui_theme": settings_service.normalize_ui_theme(await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)),
             }
@@ -1933,6 +2045,12 @@ class CliproxyapiSettingsRequest(BaseModel):
     """CliproxyAPI 推送配置请求"""
     base_url: str = Field("", description="CliproxyAPI 站点地址")
     api_key: str = Field("", description="CliproxyAPI 管理密钥")
+
+
+class Sub2apiSettingsRequest(BaseModel):
+    """sub2api 推送配置请求"""
+    base_url: str = Field("", description="sub2api 站点地址")
+    access_token: str = Field("", description="sub2api 管理员 API Key")
 
 
 class TeamAutoRefreshSettingsRequest(BaseModel):
@@ -2449,6 +2567,65 @@ async def update_cliproxyapi_settings(
 
     except Exception as e:
         logger.error("更新 CliproxyAPI 配置失败: %s", e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )
+
+
+@router.post("/settings/sub2api")
+async def update_sub2api_settings(
+    sub2api_data: Sub2apiSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新 sub2api 推送配置。"""
+    try:
+        base_url = sub2api_service.normalize_base_url(sub2api_data.base_url)
+        access_token = sub2api_service.normalize_admin_api_key(sub2api_data.access_token)
+
+        if not base_url:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "sub2api 地址不能为空"}
+            )
+
+        if not access_token:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "sub2api 管理员 API Key 不能为空"}
+            )
+
+        if not sub2api_service.is_valid_base_url(base_url):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "sub2api 地址格式错误，仅支持 http/https"}
+            )
+
+        success = await settings_service.update_settings(
+            db,
+            {
+                "sub2api_base_url": base_url,
+                "sub2api_access_token": access_token,
+            }
+        )
+
+        if success:
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": "sub2api 配置已保存",
+                    "base_url": base_url,
+                }
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
+
+    except Exception as e:
+        logger.error("更新 sub2api 配置失败: %s", e)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": f"更新失败: {str(e)}"}
