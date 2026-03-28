@@ -1968,7 +1968,7 @@ body {
     padding: 0.7rem;
     border: 1px solid var(--border-main);
     border-radius: var(--radius-lg);
-    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+    background: color-mix(in srgb, var(--surface-elev-1) 92%, transparent);
     backdrop-filter: blur(6px);
 }
 
@@ -1983,12 +1983,50 @@ body {
     text-decoration: none;
     font-size: 0.85rem;
     transition: var(--transition-base);
+    background: color-mix(in srgb, var(--bg-main) 28%, transparent);
 }
 
 .settings-nav-pill:hover {
     color: var(--text-main);
     border-color: var(--primary);
     background: var(--primary-soft);
+}
+
+body.admin-theme .settings-top-nav {
+    background: color-mix(in srgb, var(--surface-elev-1) 96%, #1b2f5d 4%);
+    border-color: color-mix(in srgb, var(--border-main) 88%, var(--primary) 12%);
+    box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.08);
+}
+
+body.admin-theme .settings-nav-pill {
+    color: color-mix(in srgb, var(--text-main) 82%, var(--text-muted) 18%);
+    border-color: color-mix(in srgb, var(--border-main) 86%, var(--primary) 14%);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+body.admin-theme .settings-nav-pill:hover {
+    color: var(--text-main);
+    border-color: color-mix(in srgb, var(--primary) 64%, var(--border-main) 36%);
+    background: color-mix(in srgb, var(--primary-soft) 76%, transparent);
+}
+
+body.admin-theme .settings-nav-pill.active {
+    color: var(--text-main);
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary-soft) 88%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+body.admin-theme.theme-warm .settings-top-nav,
+html.theme-warm body.admin-theme .settings-top-nav {
+    background: color-mix(in srgb, var(--surface-elev-1) 94%, #fff3e5 6%);
+    border-color: color-mix(in srgb, var(--border-main) 86%, var(--primary) 14%);
+    box-shadow: inset 0 0 0 1px rgba(212, 105, 42, 0.08);
+}
+
+body.admin-theme.theme-warm .settings-nav-pill,
+html.theme-warm body.admin-theme .settings-nav-pill {
+    background: #fffaf5;
 }
 
 .welfare-code-value {
