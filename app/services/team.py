@@ -1223,6 +1223,67 @@ class TeamService:
             logger.exception("更新 Team 失败")
             return {"success": False, "error": "更新失败，请稍后重试"}
 
+    async def batch_transfer_pool(
+        self,
+        ids: List[int],
+        target_pool_type: str,
+        db_session: AsyncSession,
+    ) -> Dict[str, Any]:
+        """批量转移 Team 的池类型。"""
+        try:
+            normalized_ids: List[int] = []
+            seen_ids = set()
+            for team_id in ids:
+                if not isinstance(team_id, int):
+                    continue
+                if team_id in seen_ids:
+                    continue
+                seen_ids.add(team_id)
+                normalized_ids.append(team_id)
+
+            if not normalized_ids:
+                return {"success": False, "error": "请选择要转移的 Team"}
+
+            normalized_target = "welfare" if target_pool_type == "welfare" else "normal"
+
+            query_stmt = select(Team).where(Team.id.in_(normalized_ids))
+            query_result = await db_session.execute(query_stmt)
+            teams = {team.id: team for team in query_result.scalars().all()}
+
+            success_count = 0
+            skipped_count = 0
+            failed_count = 0
+
+            for team_id in normalized_ids:
+                team = teams.get(team_id)
+                if not team:
+                    failed_count += 1
+                    continue
+
+                current_pool_type = (team.pool_type or "normal").strip().lower()
+                if current_pool_type == normalized_target:
+                    skipped_count += 1
+                    continue
+
+                team.pool_type = normalized_target
+                success_count += 1
+
+            await db_session.commit()
+
+            return {
+                "success": True,
+                "message": f"批量转移完成: 成功 {success_count}, 跳过 {skipped_count}, 失败 {failed_count}",
+                "success_count": success_count,
+                "skipped_count": skipped_count,
+                "failed_count": failed_count,
+                "target_pool_type": normalized_target,
+                "error": None,
+            }
+        except Exception:
+            await db_session.rollback()
+            logger.exception("批量转移 Team 池类型失败")
+            return {"success": False, "error": "批量转移失败，请稍后重试"}
+
     async def get_team_info(self, team_id: int, db_session: AsyncSession) -> Dict[str, Any]:
         """获取 Team 详细信息 (含解密 Token)"""
         try:

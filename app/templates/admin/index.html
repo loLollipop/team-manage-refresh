@@ -363,6 +363,15 @@
                 <button type="button" id="btnBatchDelete" class="btn btn-danger btn-sm">
                     <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
                 </button>
+                {% if active_page == "welfare" %}
+                <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
+                    <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入常规席位
+                </button>
+                {% else %}
+                <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
+                    <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入福利车位
+                </button>
+                {% endif %}
                 <span class="selected-count text-muted small" style="margin-left: 8px;">已选 0 项</span>
             </div>
 
@@ -829,6 +838,7 @@
         document.getElementById('btnBatchEnableDeviceAuth')?.addEventListener('click', handleBatchEnableDeviceAuth);
         document.getElementById('btnBatchPushCliproxyapi')?.addEventListener('click', handleBatchPushCliproxyapi);
         document.getElementById('btnBatchDelete')?.addEventListener('click', handleBatchDelete);
+        document.getElementById('btnBatchTransferPool')?.addEventListener('click', handleBatchTransferPool);
     });
 
     async function enableDeviceAuth(teamId) {
@@ -1345,7 +1355,7 @@
     }
 
     function setBatchActionButtonsDisabled(disabled) {
-        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchDelete'].forEach(id => {
+        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchDelete', 'btnBatchTransferPool'].forEach(id => {
             const button = document.getElementById(id);
             if (button) button.disabled = disabled;
         });
@@ -1391,12 +1401,16 @@
             showToast(`正在${actionName}...`, 'info');
             setBatchActionButtonsDisabled(true);
 
+            const requestBody = typeof options.buildBody === 'function'
+                ? options.buildBody(selectedIds)
+                : { ids: selectedIds };
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ ids: selectedIds })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
@@ -1566,6 +1580,21 @@
                     type: 'success',
                     title: '批量推送完成',
                     duration: 7600
+                };
+            }
+        });
+    }
+
+    function handleBatchTransferPool() {
+        const isWelfarePage = '{{ active_page }}' === 'welfare';
+        const targetPoolType = isWelfarePage ? 'normal' : 'welfare';
+        const actionName = isWelfarePage ? '批量转入常规席位' : '批量转入福利车位';
+
+        handleBatchAction('/admin/teams/batch-transfer-pool', actionName, {
+            buildBody(selectedIds) {
+                return {
+                    ids: selectedIds,
+                    target_pool_type: targetPoolType,
                 };
             }
         });

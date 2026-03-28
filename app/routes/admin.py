@@ -138,6 +138,12 @@ class BulkActionRequest(BaseModel):
     ids: List[int] = Field(..., description="Team ID 列表")
 
 
+class BulkTransferPoolRequest(BaseModel):
+    """批量转池请求"""
+    ids: List[int] = Field(..., description="Team ID 列表")
+    target_pool_type: Literal["normal", "welfare"] = Field(..., description="目标池类型")
+
+
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
@@ -1151,10 +1157,10 @@ async def batch_enable_device_auth(
     """
     try:
         logger.info(f"管理员批量开启 {len(action_data.ids)} 个 Team 的设备验证")
-        
+
         success_count = 0
         failed_count = 0
-        
+
         for team_id in action_data.ids:
             try:
                 result = await team_service.enable_device_code_auth(team_id, db)
@@ -1165,7 +1171,7 @@ async def batch_enable_device_auth(
             except Exception as ex:
                 logger.error(f"批量开启 Team {team_id} 设备验证时出错: {ex}")
                 failed_count += 1
-        
+
         return JSONResponse(content={
             "success": True,
             "message": f"批量处理完成: 成功 {success_count}, 失败 {failed_count}",
@@ -1174,6 +1180,49 @@ async def batch_enable_device_auth(
         })
     except Exception as e:
         logger.exception("批量处理失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "操作失败，请稍后重试"}
+        )
+
+
+@router.post("/teams/batch-transfer-pool")
+async def batch_transfer_team_pool(
+    action_data: BulkTransferPoolRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量转移 Team 池类型。"""
+    try:
+        team_ids = [team_id for team_id in action_data.ids if isinstance(team_id, int)]
+        if not team_ids:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "请选择要转移的 Team"}
+            )
+
+        target_pool_type = "welfare" if action_data.target_pool_type == "welfare" else "normal"
+        logger.info(
+            "管理员批量转移 Team 池类型: count=%s, target=%s",
+            len(team_ids),
+            target_pool_type,
+        )
+
+        result = await team_service.batch_transfer_pool(
+            ids=team_ids,
+            target_pool_type=target_pool_type,
+            db_session=db,
+        )
+
+        if not result.get("success"):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result,
+            )
+
+        return JSONResponse(content=result)
+    except Exception:
+        logger.exception("批量转移 Team 池类型失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": "操作失败，请稍后重试"}
