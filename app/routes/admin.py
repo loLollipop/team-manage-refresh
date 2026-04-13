@@ -2,12 +2,14 @@
 管理员路由
 处理管理员面板的所有页面和操作
 """
+import json
 import logging
 import re
+import zipfile
+from io import BytesIO
 from typing import Optional, List, Dict, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-import json
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -173,14 +175,13 @@ async def admin_dashboard(
         
         # 获取统计信息 (使用专用统计方法优化)
         team_stats = await team_service.get_stats(db, pool_type="normal")
-        code_stats = await redemption_service.get_stats(db, pool_type="normal")
 
         # 计算统计数据
         stats = {
             "total_teams": team_stats["total"],
             "available_teams": team_stats["available"],
-            "total_codes": code_stats["total"],
-            "used_codes": code_stats["used"]
+            "banned_teams": team_stats["banned"],
+            "expired_teams": team_stats["expired"],
         }
 
         return templates.TemplateResponse(
@@ -915,6 +916,135 @@ async def enable_team_device_auth(
                 "success": False,
                 "error": "操作失败，请稍后重试"
             }
+        )
+
+
+@router.get("/teams/{team_id}/export-json")
+async def export_team_json(
+    team_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """导出单个 Team 的 JSON 认证文件。"""
+    try:
+        logger.info("管理员导出 Team %s 的 JSON 认证文件", team_id)
+        result = await cliproxyapi_service.get_team_auth_file_data(team_id, db)
+        if not result.get("success"):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result
+            )
+
+        payload_bytes = json.dumps(
+            result.get("payload") or {},
+            ensure_ascii=False,
+            indent=2,
+        ).encode("utf-8")
+        filename = str(result.get("filename") or f"team-{team_id}.json")
+        quoted_filename = json.dumps(filename, ensure_ascii=False)
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}; filename={quoted_filename}"
+        }
+        return Response(content=payload_bytes, media_type="application/json; charset=utf-8", headers=headers)
+    except Exception as e:
+        logger.error("导出 Team %s 的 JSON 认证文件失败: %s", team_id, e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/teams/batch-export-json")
+async def batch_export_team_json(
+    action_data: BulkActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量导出 Team 的 JSON 认证文件并打包为 zip。"""
+    try:
+        team_ids = [team_id for team_id in action_data.ids if isinstance(team_id, int)]
+        if not team_ids:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "请选择要导出的 Team"}
+            )
+
+        logger.info("管理员批量导出 %s 个 Team 的 JSON 认证文件", len(team_ids))
+
+        zip_buffer = BytesIO()
+        exported_count = 0
+        failed_count = 0
+        warning_count = 0
+        results = []
+
+        with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            for team_id in team_ids:
+                result = await cliproxyapi_service.get_team_auth_file_data(team_id, db)
+                if not result.get("success"):
+                    failed_count += 1
+                    results.append({
+                        "team_id": team_id,
+                        "email": result.get("email"),
+                        "filename": None,
+                        "warning": None,
+                        "warnings": [],
+                        "error": result.get("error"),
+                    })
+                    continue
+
+                filename = str(result.get("filename") or f"team-{team_id}.json")
+                payload_text = json.dumps(result.get("payload") or {}, ensure_ascii=False, indent=2)
+                zip_file.writestr(filename, payload_text)
+
+                exported_count += 1
+                if result.get("warning"):
+                    warning_count += 1
+                results.append({
+                    "team_id": team_id,
+                    "email": result.get("email"),
+                    "filename": filename,
+                    "warning": result.get("warning"),
+                    "warnings": result.get("warnings") or [],
+                    "error": None,
+                })
+
+            if failed_count > 0:
+                summary_payload = {
+                    "success": failed_count == 0,
+                    "message": f"批量导出完成：成功 {exported_count}，失败 {failed_count}",
+                    "exported_count": exported_count,
+                    "failed_count": failed_count,
+                    "warning_count": warning_count,
+                    "results": results,
+                }
+                zip_file.writestr("export-summary.json", json.dumps(summary_payload, ensure_ascii=False, indent=2))
+
+        if exported_count == 0:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "success": False,
+                    "error": "选中的 Team 都无法导出 JSON",
+                    "failed_count": failed_count,
+                    "results": results,
+                }
+            )
+
+        zip_buffer.seek(0)
+        archive_name = f"teams-json-export-{get_now().strftime('%Y%m%d%H%M%S')}.zip"
+        quoted_archive_name = json.dumps(archive_name, ensure_ascii=False)
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{archive_name}; filename={quoted_archive_name}",
+            "X-Exported-Count": str(exported_count),
+            "X-Failed-Count": str(failed_count),
+            "X-Warning-Count": str(warning_count),
+        }
+        return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)
+    except Exception as e:
+        logger.error("批量导出 Team JSON 失败: %s", e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
         )
 
 

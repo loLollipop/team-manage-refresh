@@ -319,17 +319,17 @@
     </div>
     {% else %}
     <div class="stat-card stat-info">
-        <div class="stat-icon"><i data-lucide="ticket"></i></div>
+        <div class="stat-icon"><i data-lucide="alert-triangle"></i></div>
         <div class="stat-info-group">
-            <div class="stat-value">{{ stats.total_codes }}</div>
-            <div class="stat-label">兑换码总数</div>
+            <div class="stat-value">{{ stats.banned_teams }}</div>
+            <div class="stat-label">已封禁 Team</div>
         </div>
     </div>
     <div class="stat-card stat-warning">
-        <div class="stat-icon"><i data-lucide="clipboard-list"></i></div>
+        <div class="stat-icon"><i data-lucide="clock-3"></i></div>
         <div class="stat-info-group">
-            <div class="stat-value">{{ stats.used_codes }}</div>
-            <div class="stat-label">已使用兑换码</div>
+            <div class="stat-value">{{ stats.expired_teams }}</div>
+            <div class="stat-label">已过期 Team</div>
         </div>
     </div>
     {% endif %}
@@ -359,6 +359,9 @@
                 </button>
                 <button type="button" id="btnBatchPushCliproxyapi" class="btn btn-primary btn-sm">
                     <i data-lucide="send" style="width: 14px; height: 14px;"></i> 批量推送
+                </button>
+                <button type="button" id="btnBatchExportJson" class="btn btn-secondary btn-sm">
+                    <i data-lucide="download" style="width: 14px; height: 14px;"></i> 批量导出 JSON
                 </button>
                 <button type="button" id="btnBatchDelete" class="btn btn-danger btn-sm">
                     <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
@@ -549,6 +552,11 @@
                             data-id="{{ team.id }}" data-email="{{ team.email }}" title="推送到 CliproxyAPI" aria-label="推送到 CliproxyAPI">
                             <i data-lucide="send" style="width: 16px; height: 16px;"></i>
                             <span class="btn-icon-fallback" aria-hidden="true">推</span>
+                        </button>
+                        <button class="btn btn-sm btn-icon btn-minimal btn-secondary btn-export-team-json"
+                            data-id="{{ team.id }}" data-email="{{ team.email }}" title="导出 JSON" aria-label="导出 JSON">
+                            <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                            <span class="btn-icon-fallback" aria-hidden="true">导</span>
                         </button>
                         <button type="button" class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
                             data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除" aria-label="删除"
@@ -825,6 +833,14 @@
             });
         });
 
+        document.querySelectorAll('.btn-export-team-json').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                const email = btn.getAttribute('data-email');
+                exportTeamJson(id, email);
+            });
+        });
+
         // 绑定复选框事件（避免仅依赖内联 onchange）
         document.getElementById('selectAll')?.addEventListener('change', (e) => {
             toggleSelectAll(Boolean(e.target && e.target.checked));
@@ -837,6 +853,7 @@
         document.getElementById('btnBatchRefresh')?.addEventListener('click', handleBatchRefresh);
         document.getElementById('btnBatchEnableDeviceAuth')?.addEventListener('click', handleBatchEnableDeviceAuth);
         document.getElementById('btnBatchPushCliproxyapi')?.addEventListener('click', handleBatchPushCliproxyapi);
+        document.getElementById('btnBatchExportJson')?.addEventListener('click', handleBatchExportJson);
         document.getElementById('btnBatchDelete')?.addEventListener('click', handleBatchDelete);
         document.getElementById('btnBatchTransferPool')?.addEventListener('click', handleBatchTransferPool);
     });
@@ -902,6 +919,66 @@
             }
         } catch (error) {
             showToast('网络错误', 'error');
+        }
+    }
+
+    function triggerDownloadFromBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    function parseDownloadFilename(contentDisposition, fallbackName) {
+        if (!contentDisposition) {
+            return fallbackName;
+        }
+
+        const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match && utf8Match[1]) {
+            try {
+                return decodeURIComponent(utf8Match[1]);
+            } catch (_) {
+                return utf8Match[1];
+            }
+        }
+
+        const plainMatch = contentDisposition.match(/filename=(?:"([^"]+)"|([^;]+))/i);
+        if (plainMatch) {
+            return (plainMatch[1] || plainMatch[2] || fallbackName).trim();
+        }
+
+        return fallbackName;
+    }
+
+    async function exportTeamJson(teamId, email = '') {
+        const targetLabel = email ? `"${email}"` : `ID=${teamId}`;
+        if (!confirm(`确定要导出 Team ${targetLabel} 的 JSON 吗？`)) {
+            return;
+        }
+
+        try {
+            showToast('正在导出 JSON...', 'info');
+            const response = await fetch(`/admin/teams/${teamId}/export-json`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || '导出 JSON 失败');
+            }
+
+            const blob = await response.blob();
+            const filename = parseDownloadFilename(
+                response.headers.get('Content-Disposition'),
+                `team-${teamId}.json`
+            );
+            triggerDownloadFromBlob(blob, filename);
+            showToast('JSON 文件已导出', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || '导出 JSON 失败', 'error');
         }
     }
 
@@ -1355,7 +1432,7 @@
     }
 
     function setBatchActionButtonsDisabled(disabled) {
-        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchDelete', 'btnBatchTransferPool'].forEach(id => {
+        ['btnBatchRefresh', 'btnBatchEnableDeviceAuth', 'btnBatchPushCliproxyapi', 'btnBatchExportJson', 'btnBatchDelete', 'btnBatchTransferPool'].forEach(id => {
             const button = document.getElementById(id);
             if (button) button.disabled = disabled;
         });
@@ -1583,6 +1660,63 @@
                 };
             }
         });
+    }
+
+    async function handleBatchExportJson() {
+        const selectedIds = getSelectedTeamIds();
+
+        if (selectedIds.length === 0) {
+            showToast('请选择要导出的 Team', 'warning');
+            return;
+        }
+
+        if (!confirm(`确定要批量导出选中的 ${selectedIds.length} 个 Team JSON 吗？`)) {
+            return;
+        }
+
+        try {
+            showToast(`正在批量导出 ${selectedIds.length} 个 Team 的 JSON...`, 'info');
+            setBatchActionButtonsDisabled(true);
+
+            const response = await fetch('/admin/teams/batch-export-json', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || '批量导出 JSON 失败');
+            }
+
+            const blob = await response.blob();
+            const filename = parseDownloadFilename(
+                response.headers.get('Content-Disposition'),
+                `teams-json-export-${Date.now()}.zip`
+            );
+            const exportedCount = parseInt(response.headers.get('X-Exported-Count') || `${selectedIds.length}`, 10) || selectedIds.length;
+            const failedCount = parseInt(response.headers.get('X-Failed-Count') || '0', 10) || 0;
+            const warningCount = parseInt(response.headers.get('X-Warning-Count') || '0', 10) || 0;
+
+            triggerDownloadFromBlob(blob, filename);
+
+            let message = `批量导出完成：成功 ${exportedCount}`;
+            if (failedCount > 0) {
+                message += `，失败 ${failedCount}`;
+            }
+            if (warningCount > 0) {
+                message += `，其中 ${warningCount} 个 Team 缺少部分凭证字段`;
+            }
+
+            showToast(message, failedCount > 0 || warningCount > 0 ? 'warning' : 'success');
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || '批量导出 JSON 失败', 'error');
+        } finally {
+            setBatchActionButtonsDisabled(false);
+        }
     }
 
     function handleBatchTransferPool() {

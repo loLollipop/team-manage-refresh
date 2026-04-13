@@ -582,13 +582,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    const btnExportOAuthJson = document.getElementById('btnExportOAuthJson');
-    if (btnExportOAuthJson) {
-        btnExportOAuthJson.addEventListener('click', () => {
-            exportOAuthJsonTemplateFile();
-        });
-    }
-
     const switchToManualFill = document.getElementById('switchToManualFill');
     if (switchToManualFill) {
         switchToManualFill.addEventListener('click', () => setSingleImportMode('manual'));
@@ -933,31 +926,6 @@ function buildOAuthJsonTemplate(parsedData) {
         refresh_token: refreshToken,
         type: raw.type || parsedData.type || 'codex'
     };
-}
-
-function downloadJsonFile(payload, filename) {
-    const text = JSON.stringify(payload, null, 2);
-    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-async function exportOAuthJsonTemplateFile() {
-    try {
-        const data = oauthParsedCache || await parseOAuthCallbackData();
-        const payload = buildOAuthJsonTemplate(data);
-        const filename = `team-oauth-${Date.now()}.json`;
-        downloadJsonFile(payload, filename);
-        showToast('JSON 文件已导出', 'success');
-    } catch (error) {
-        showToast(getFriendlyAdminErrorMessage(error.message || '导出 JSON 失败', 0, 'oauth'), 'error');
-    }
 }
 
 async function parseOAuthCallbackAndFill() {
