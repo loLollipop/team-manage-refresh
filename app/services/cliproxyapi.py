@@ -14,6 +14,7 @@ from app.config import settings
 from app.models import Team
 from app.services.encryption import encryption_service
 from app.services.settings import settings_service
+from app.utils.jwt_parser import JWTParser
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,10 @@ class CliproxyapiConfig:
 class CliproxyapiService:
     MANAGEMENT_PREFIX = "/v0/management"
     DEFAULT_TIMEOUT = 20.0
+    PLACEHOLDER_ACCOUNT_IDS = {"default", "personal", "none", "null", "me", "self"}
+
+    def __init__(self):
+        self.jwt_parser = JWTParser()
 
     @staticmethod
     def normalize_base_url(base_url: Optional[str]) -> str:
@@ -94,6 +99,23 @@ class CliproxyapiService:
         )
 
     @staticmethod
+    def _normalize_account_id(value: Optional[str]) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return ""
+        if normalized.lower() in CliproxyapiService.PLACEHOLDER_ACCOUNT_IDS:
+            return ""
+        return normalized
+
+    def _resolve_client_id(self, team: Team, access_token: str) -> str:
+        client_id = str(team.client_id or "").strip()
+        if client_id:
+            return client_id
+
+        extracted_client_id = self.jwt_parser.extract_client_id(access_token)
+        return str(extracted_client_id or "").strip()
+
+    @staticmethod
     def _build_warning_message(missing_fields: list[str]) -> str:
         if not missing_fields:
             return ""
@@ -101,6 +123,7 @@ class CliproxyapiService:
         field_labels = {
             "id_token": "id_token",
             "refresh_token": "refresh_token",
+            "client_id": "client_id",
         }
         labels = [field_labels.get(field, field) for field in missing_fields]
         joined = "、".join(labels)
@@ -112,12 +135,14 @@ class CliproxyapiService:
         access_token: str,
         id_token: str,
         refresh_token: str,
+        client_id: str,
     ) -> Dict[str, Any]:
         # last_refresh 取同步时间而不是推送时间，避免重复推送因时间戳变化而失去幂等。
         last_refresh_time = team.last_sync or team.created_at or get_now()
         return {
             "access_token": access_token,
-            "account_id": team.account_id or "",
+            "account_id": self._normalize_account_id(team.account_id),
+            "client_id": client_id,
             "email": team.email or "",
             "expired": self._to_local_iso(team.expires_at),
             "id_token": id_token,
@@ -131,6 +156,59 @@ class CliproxyapiService:
         if team.expires_at:
             return f"{safe_email}__exp-{team.expires_at.strftime('%Y%m%d%H%M%S')}.json"
         return f"{safe_email}__team-{team.id}.json"
+
+    async def get_team_auth_file_data(self, team_id: int, db_session: AsyncSession) -> Dict[str, Any]:
+        result = await db_session.execute(select(Team).where(Team.id == team_id))
+        team = result.scalar_one_or_none()
+        if not team:
+            return {"success": False, "error": "Team 不存在"}
+
+        email = str(team.email or "").strip()
+        if not email:
+            return {"success": False, "error": "Team 缺少邮箱，无法生成认证文件", "email": ""}
+
+        try:
+            access_token = encryption_service.decrypt_token(team.access_token_encrypted)
+        except Exception as exc:
+            logger.error("解密 Team %s access_token 失败: %s", team_id, exc)
+            access_token = ""
+
+        if not access_token:
+            return {"success": False, "error": "Team 缺少 Access Token，无法导出认证文件", "email": email}
+
+        refresh_token = ""
+        try:
+            if team.refresh_token_encrypted:
+                refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
+        except Exception as exc:
+            logger.warning("解密 Team %s refresh_token 失败，将按空值导出: %s", team_id, exc)
+
+        id_token = ""
+        try:
+            if team.id_token_encrypted:
+                id_token = encryption_service.decrypt_token(team.id_token_encrypted)
+        except Exception as exc:
+            logger.warning("解密 Team %s id_token 失败，将按空值导出: %s", team_id, exc)
+
+        client_id = self._resolve_client_id(team, access_token)
+
+        missing_fields = []
+        if not id_token:
+            missing_fields.append("id_token")
+        if not refresh_token:
+            missing_fields.append("refresh_token")
+        if not client_id:
+            missing_fields.append("client_id")
+
+        return {
+            "success": True,
+            "team_id": team_id,
+            "email": email,
+            "filename": self._build_filename(team),
+            "payload": self._build_payload(team, access_token, id_token, refresh_token, client_id),
+            "warning": self._build_warning_message(missing_fields) or None,
+            "warnings": missing_fields,
+        }
 
     def _normalize_downloaded_payload(self, content: str) -> Optional[Dict[str, Any]]:
         try:
@@ -206,47 +284,15 @@ class CliproxyapiService:
         if not self.is_valid_base_url(config.base_url):
             return {"success": False, "error": "CliproxyAPI 地址格式错误，仅支持 http/https"}
 
-        result = await db_session.execute(select(Team).where(Team.id == team_id))
-        team = result.scalar_one_or_none()
-        if not team:
-            return {"success": False, "error": "Team 不存在"}
+        team_auth_data = await self.get_team_auth_file_data(team_id, db_session)
+        if not team_auth_data.get("success"):
+            return team_auth_data
 
-        email = str(team.email or "").strip()
-        if not email:
-            return {"success": False, "error": "Team 缺少邮箱，无法生成认证文件", "email": ""}
-
-        try:
-            access_token = encryption_service.decrypt_token(team.access_token_encrypted)
-        except Exception as exc:
-            logger.error("解密 Team %s access_token 失败: %s", team_id, exc)
-            access_token = ""
-
-        if not access_token:
-            return {"success": False, "error": "Team 缺少 Access Token，无法推送", "email": email}
-
-        refresh_token = ""
-        try:
-            if team.refresh_token_encrypted:
-                refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
-        except Exception as exc:
-            logger.warning("解密 Team %s refresh_token 失败，将按空值推送: %s", team_id, exc)
-
-        id_token = ""
-        try:
-            if team.id_token_encrypted:
-                id_token = encryption_service.decrypt_token(team.id_token_encrypted)
-        except Exception as exc:
-            logger.warning("解密 Team %s id_token 失败，将按空值推送: %s", team_id, exc)
-
-        missing_fields = []
-        if not id_token:
-            missing_fields.append("id_token")
-        if not refresh_token:
-            missing_fields.append("refresh_token")
-        warning_message = self._build_warning_message(missing_fields)
-
-        filename = self._build_filename(team)
-        payload = self._build_payload(team, access_token, id_token, refresh_token)
+        email = team_auth_data.get("email") or ""
+        filename = team_auth_data.get("filename") or ""
+        payload = team_auth_data.get("payload") or {}
+        missing_fields = team_auth_data.get("warnings") or []
+        warning_message = team_auth_data.get("warning") or ""
         canonical_payload = self._canonical_json(payload)
         management_base_url = f"{config.base_url}{self.MANAGEMENT_PREFIX}"
 
