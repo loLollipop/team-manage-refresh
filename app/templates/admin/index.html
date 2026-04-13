@@ -271,193 +271,457 @@
             margin-left: 0 !important;
         }
     }
+
+    .team-dashboard-page {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .team-dashboard-page .page-header,
+    .team-dashboard-page .stats-container {
+        margin-bottom: 0;
+    }
+
+    .team-dashboard-page .page-header-actions {
+        justify-content: flex-end;
+    }
+
+    .page-header-kicker i {
+        width: 14px;
+        height: 14px;
+    }
+
+    .team-toolbar {
+        align-items: stretch;
+        gap: 0.85rem;
+    }
+
+    .team-toolbar .header-group {
+        flex: 1 1 auto;
+        min-width: 0;
+        justify-content: flex-start;
+        gap: 0.75rem;
+    }
+
+    .team-toolbar .search-form {
+        margin: 0;
+        flex: 1 1 300px;
+        min-width: 220px;
+    }
+
+    .team-toolbar .search-form .input-group-clean {
+        width: min(360px, 100%);
+        min-width: 0;
+    }
+
+    .team-toolbar .dropdown-wrapper,
+    .team-toolbar .btn {
+        flex: 0 0 auto;
+    }
+
+    .team-toolbar .batch-actions-group {
+        display: none;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        width: 100%;
+        max-width: 100%;
+        padding: 0.75rem;
+    }
+
+    .team-toolbar #batchActions.batch-actions-group.viewport-floating {
+        position: static;
+        inset: auto;
+        transform: none;
+        width: 100%;
+        max-width: 100%;
+        padding: 0.75rem;
+        border-radius: 16px;
+        border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border-base) 82%);
+        background: color-mix(in srgb, var(--bg-surface) 88%, var(--primary-soft) 12%);
+        box-shadow: none;
+        backdrop-filter: none;
+        z-index: auto;
+        overflow: hidden;
+        animation: none;
+    }
+
+    .team-toolbar #batchActions.batch-actions-group .btn {
+        flex: 0 0 auto;
+    }
+
+    .team-toolbar .batch-actions-group .selected-count {
+        white-space: nowrap;
+        margin-left: auto;
+    }
+
+    .table-section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .table-section-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+
+    .table-section-copy h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--text-main);
+    }
+
+    .table-section-copy p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        line-height: 1.65;
+    }
+
+    .table-section-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }
+
+    .table-meta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.52rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-base);
+        background: color-mix(in srgb, var(--bg-surface) 76%, var(--bg-main) 24%);
+        color: var(--text-muted);
+        font-size: 0.79rem;
+        font-weight: 700;
+    }
+
+    .table-meta-pill i {
+        width: 14px;
+        height: 14px;
+    }
+
+    .team-list-table-container {
+        margin-top: 0;
+    }
+
+    .pagination-summary {
+        margin-left: 1rem;
+        color: var(--text-muted);
+        font-size: 0.84rem;
+        font-weight: 600;
+    }
+
+    .team-empty-state .empty-state {
+        margin-bottom: 0;
+    }
+
+    @media (min-width: 1025px) {
+        .team-toolbar .header-group {
+            justify-content: flex-end;
+        }
+    }
+
+    @media (max-width: 1240px) {
+        .team-dashboard-page .page-header-actions,
+        .team-toolbar .header-group {
+            width: 100%;
+            justify-content: flex-start;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .table-section-head {
+            flex-direction: column;
+        }
+
+        .team-toolbar .search-form {
+            flex: 1 1 100%;
+            width: 100%;
+        }
+
+        .team-toolbar .search-form .input-group-clean,
+        .team-toolbar #batchActions.batch-actions-group.viewport-floating {
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .team-toolbar #batchActions.batch-actions-group.viewport-floating {
+            padding: 0.75rem;
+            gap: 0.5rem;
+        }
+
+        .team-toolbar #batchActions.batch-actions-group.viewport-floating .btn {
+            flex: 1 1 calc(50% - 0.5rem);
+            min-width: 140px;
+        }
+
+        .team-toolbar .batch-actions-group .selected-count,
+        .pagination-summary {
+            width: 100%;
+            margin-left: 0;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h2>{% if active_page == "welfare" %}福利车位{% else %}控制台{% endif %}</h2>
-</div>
-
-<!-- 统计卡片 -->
-<div class="stats-container">
-    <div class="stat-card">
-        <div class="stat-icon"><i data-lucide="users"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-value">{{ stats.total_teams }}</div>
-            <div class="stat-label">Team 总数</div>
-        </div>
-    </div>
-    <div class="stat-card stat-success">
-        <div class="stat-icon"><i data-lucide="check-circle"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-value">{{ stats.available_teams }}</div>
-            <div class="stat-label">可用 Team</div>
-        </div>
-    </div>
-    {% if active_page == "welfare" %}
-    <div class="stat-card stat-info">
-        <div class="stat-icon"><i data-lucide="car-front"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-value">{{ stats.remaining_spots }}</div>
-            <div class="stat-label">福利剩余车位</div>
-        </div>
-    </div>
-    <div class="stat-card stat-warning welfare-code-card">
-        <div class="stat-icon"><i data-lucide="ticket"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-label">通用兑换码</div>
-            <div class="welfare-code-value" id="welfareCommonCodeText" title="{{ stats.welfare_code or '' }}">{{ stats.welfare_code or '-' }}</div>
-            <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
-            <div class="welfare-code-row">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
-                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
-                </button>
+<div class="team-dashboard-page">
+    <div class="page-header">
+        <div class="page-header-copy">
+            <div class="page-header-kicker">
+                <i data-lucide="{% if active_page == 'welfare' %}heart-handshake{% else %}layout-dashboard{% endif %}"></i>
+                <span>{% if active_page == "welfare" %}Welfare Workspace{% else %}Operations Workspace{% endif %}</span>
             </div>
-            <input type="hidden" id="welfareCommonCodeValue" value="{{ stats.welfare_code or '' }}">
-        </div>
-    </div>
-    {% else %}
-    <div class="stat-card stat-info">
-        <div class="stat-icon"><i data-lucide="alert-triangle"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-value">{{ stats.banned_teams }}</div>
-            <div class="stat-label">已封禁 Team</div>
-        </div>
-    </div>
-    <div class="stat-card stat-warning">
-        <div class="stat-icon"><i data-lucide="clock-3"></i></div>
-        <div class="stat-info-group">
-            <div class="stat-value">{{ stats.expired_teams }}</div>
-            <div class="stat-label">已过期 Team</div>
-        </div>
-    </div>
-    {% endif %}
-</div>
-
-<div id="batchRefreshProgress" class="batch-progress-panel" aria-live="polite" aria-atomic="true">
-    <div class="batch-progress-title">正在刷新中</div>
-    <div id="batchRefreshProgressPercent" class="batch-progress-percent">0%</div>
-    <div class="batch-progress-bar">
-        <div id="batchRefreshProgressBar" class="batch-progress-bar-inner"></div>
-    </div>
-    <div id="batchRefreshProgressText" class="batch-progress-text">正在刷新中，请稍候…</div>
-</div>
-
-<!-- Team 列表 -->
-<div class="content-section team-list-toolbar-section">
-    <div class="section-header team-toolbar">
-        <h3>{% if active_page == "welfare" %}福利 Team 列表{% else %}Team 列表{% endif %}</h3>
-        <div class="header-group">
-            <!-- 批量操作 -->
-            <div id="batchActions" class="batch-actions-group" style="display: none;">
-                <button type="button" id="btnBatchRefresh" class="btn btn-secondary btn-sm">
-                    <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> 批量刷新
-                </button>
-                <button type="button" id="btnBatchEnableDeviceAuth" class="btn btn-success btn-sm">
-                    <i data-lucide="shield-check" style="width: 14px; height: 14px;"></i> 批量开启验证
-                </button>
-                <button type="button" id="btnBatchPushCliproxyapi" class="btn btn-primary btn-sm">
-                    <i data-lucide="send" style="width: 14px; height: 14px;"></i> 批量推送
-                </button>
-                <button type="button" id="btnBatchExportJson" class="btn btn-secondary btn-sm">
-                    <i data-lucide="download" style="width: 14px; height: 14px;"></i> 批量导出 JSON
-                </button>
-                <button type="button" id="btnBatchDelete" class="btn btn-danger btn-sm">
-                    <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
-                </button>
+            <h2>{% if active_page == "welfare" %}福利车位工作台{% else %}Team 工作台{% endif %}</h2>
+            <p>
                 {% if active_page == "welfare" %}
-                <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
-                    <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入常规席位
-                </button>
+                统一管理福利席位库存、通用兑换码与 Team 状态，适合快速筛选可发放席位并执行转池操作。
                 {% else %}
-                <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
-                    <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入福利车位
-                </button>
+                在一个工作区里完成 Team 搜索、状态筛选、批量刷新、推送、导出与成员维护，减少在列表和弹窗之间反复切换。
                 {% endif %}
-                <span class="selected-count text-muted small" style="margin-left: 8px;">已选 0 项</span>
+            </p>
+            <div class="page-header-meta">
+                <span class="page-meta-pill">
+                    <i data-lucide="database"></i>
+                    <span>{% if active_page == "welfare" %}福利池{% else %}常规池{% endif %}</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="users-round"></i>
+                    <span>{{ stats.total_teams }} 个 Team</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="shield-check"></i>
+                    <span>{{ stats.available_teams }} 个可用</span>
+                </span>
             </div>
-
-            <!-- 状态筛选 -->
-            <div class="dropdown-wrapper">
-                <button id="statusFilterToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
-                    <i data-lucide="filter" style="width: 16px; height: 16px;"></i>
-                    <span>
-                        {% if status_filter == 'active' %}可用
-                        {% elif status_filter == 'full' %}已满
-                        {% elif status_filter == 'expired' %}已过期
-                        {% elif status_filter == 'error' %}异常
-                        {% elif status_filter == 'banned' %}已封禁
-                        {% else %}状态筛选
-                        {% endif %}
-                    </span>
-                </button>
-                <div id="statusFilterDropdown" class="dropdown-menu dropdown-menu-floating">
-                    <div class="dropdown-header">选择状态</div>
-                    <div class="dropdown-item" onclick="filterByStatus('')">
-                        <span class="text-muted">所有状态</span>
-                    </div>
-                    <div class="dropdown-item" onclick="filterByStatus('active')">
-                        <span class="status-badge status-active">可用 (Active)</span>
-                    </div>
-                    <div class="dropdown-item" onclick="filterByStatus('full')">
-                        <span class="status-badge status-full">已满 (Full)</span>
-                    </div>
-                    <div class="dropdown-item" onclick="filterByStatus('expired')">
-                        <span class="status-badge status-expired">已过期 (Expired)</span>
-                    </div>
-                    <div class="dropdown-item" onclick="filterByStatus('error')">
-                        <span class="status-badge status-error">异常 (Error)</span>
-                    </div>
-                    <div class="dropdown-item" onclick="filterByStatus('banned')">
-                        <span class="status-badge status-banned">已封禁 (Banned)</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 搜索框 -->
-            <form action="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" method="get" class="search-form">
-                <div class="input-group-clean">
-                    <i data-lucide="search" style="width: 14px; height: 14px;"></i>
-                    <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索邮箱/Account ID..."
-                        style="width: 200px;">
-                    {% if search %}
-                    <a href="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" title="清除搜索">
-                        <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
-                    </a>
-                    {% endif %}
-                    {% if status_filter %}
-                    <input type="hidden" name="status_filter" value="{{ status_filter }}">
-                    {% endif %}
-                </div>
-            </form>
-
-            <!-- 列设置 -->
-            <!-- 列设置 -->
-<div class="dropdown-wrapper">
-    <button id="columnToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
-        <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
-    </button>
-    <!-- 加上 dropdown-menu-floating -->
-    <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
-        <!-- Column checkboxes will be generated here -->
-    </div>
-</div>
-
+        </div>
+        <div class="page-header-actions">
             {% if active_page == "welfare" %}
-            <button onclick="generateWelfareCode()" class="btn btn-secondary" id="generateWelfareCodeBtn">
+            <button type="button" class="btn btn-secondary" onclick="generateWelfareCode()" id="generateWelfareCodeBtn">
                 <i data-lucide="ticket-plus" style="width: 16px; height: 16px;"></i> 生成通用兑换码
             </button>
             {% endif %}
-            <button onclick="showModal('importTeamModal')" class="btn btn-primary">
+            <button type="button" onclick="showModal('importTeamModal')" class="btn btn-primary">
                 <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> 导入 Team
             </button>
         </div>
     </div>
-</div>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-icon"><i data-lucide="users"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-value">{{ stats.total_teams }}</div>
+                <div class="stat-label">Team 总数</div>
+            </div>
+        </div>
+        <div class="stat-card stat-success">
+            <div class="stat-icon"><i data-lucide="check-circle"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-value">{{ stats.available_teams }}</div>
+                <div class="stat-label">可用 Team</div>
+            </div>
+        </div>
+        {% if active_page == "welfare" %}
+        <div class="stat-card stat-info">
+            <div class="stat-icon"><i data-lucide="car-front"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-value">{{ stats.remaining_spots }}</div>
+                <div class="stat-label">福利剩余车位</div>
+            </div>
+        </div>
+        <div class="stat-card stat-warning welfare-code-card">
+            <div class="stat-icon"><i data-lucide="ticket"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-label">通用兑换码</div>
+                <div class="welfare-code-value" id="welfareCommonCodeText" title="{{ stats.welfare_code or '' }}">{{ stats.welfare_code or '-' }}</div>
+                <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
+                <div class="welfare-code-row">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
+                        <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
+                    </button>
+                </div>
+                <input type="hidden" id="welfareCommonCodeValue" value="{{ stats.welfare_code or '' }}">
+            </div>
+        </div>
+        {% else %}
+        <div class="stat-card stat-info">
+            <div class="stat-icon"><i data-lucide="alert-triangle"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-value">{{ stats.banned_teams }}</div>
+                <div class="stat-label">已封禁 Team</div>
+            </div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-icon"><i data-lucide="clock-3"></i></div>
+            <div class="stat-info-group">
+                <div class="stat-value">{{ stats.expired_teams }}</div>
+                <div class="stat-label">已过期 Team</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="batchRefreshProgress" class="batch-progress-panel" aria-live="polite" aria-atomic="true">
+        <div class="batch-progress-title">正在刷新中</div>
+        <div id="batchRefreshProgressPercent" class="batch-progress-percent">0%</div>
+        <div class="batch-progress-bar">
+            <div id="batchRefreshProgressBar" class="batch-progress-bar-inner"></div>
+        </div>
+        <div id="batchRefreshProgressText" class="batch-progress-text">正在刷新中，请稍候…</div>
+    </div>
+
+    <div class="workbench-panel">
+        <div class="content-section team-list-toolbar-section workbench-toolbar">
+            <div class="workbench-toolbar-row">
+                <div class="workbench-toolbar-copy">
+                    <h3>{% if active_page == "welfare" %}福利 Team 列表{% else %}Team 列表{% endif %}</h3>
+                    <p>
+                        {% if active_page == "welfare" %}
+                        在一个筛选工作区里快速查找剩余席位、转池候选和待处理账号。
+                        {% else %}
+                        先筛选，再批量处理，把高频操作集中在列表上方，减少逐行查找成本。
+                        {% endif %}
+                    </p>
+                </div>
+                <div id="batchActions" class="batch-actions-group" style="display: none;">
+                    <button type="button" id="btnBatchRefresh" class="btn btn-secondary btn-sm">
+                        <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> 批量刷新
+                    </button>
+                    <button type="button" id="btnBatchEnableDeviceAuth" class="btn btn-success btn-sm">
+                        <i data-lucide="shield-check" style="width: 14px; height: 14px;"></i> 批量开启验证
+                    </button>
+                    <button type="button" id="btnBatchPushCliproxyapi" class="btn btn-primary btn-sm">
+                        <i data-lucide="send" style="width: 14px; height: 14px;"></i> 批量推送
+                    </button>
+                    <button type="button" id="btnBatchExportJson" class="btn btn-secondary btn-sm">
+                        <i data-lucide="download" style="width: 14px; height: 14px;"></i> 批量导出 JSON
+                    </button>
+                    <button type="button" id="btnBatchDelete" class="btn btn-danger btn-sm">
+                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> 批量删除
+                    </button>
+                    {% if active_page == "welfare" %}
+                    <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
+                        <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入常规席位
+                    </button>
+                    {% else %}
+                    <button type="button" id="btnBatchTransferPool" class="btn btn-secondary btn-sm">
+                        <i data-lucide="arrow-left-right" style="width: 14px; height: 14px;"></i> 转入福利车位
+                    </button>
+                    {% endif %}
+                    <span class="selected-count text-muted small">已选 0 项</span>
+                </div>
+            </div>
+
+            <div class="workbench-toolbar-row team-toolbar">
+                <div class="header-group">
+                    <div class="dropdown-wrapper">
+                        <button id="statusFilterToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
+                            <i data-lucide="filter" style="width: 16px; height: 16px;"></i>
+                            <span>
+                                {% if status_filter == 'active' %}可用
+                                {% elif status_filter == 'full' %}已满
+                                {% elif status_filter == 'expired' %}已过期
+                                {% elif status_filter == 'error' %}异常
+                                {% elif status_filter == 'banned' %}已封禁
+                                {% else %}状态筛选
+                                {% endif %}
+                            </span>
+                        </button>
+                        <div id="statusFilterDropdown" class="dropdown-menu dropdown-menu-floating">
+                            <div class="dropdown-header">选择状态</div>
+                            <div class="dropdown-item" onclick="filterByStatus('')">
+                                <span class="text-muted">所有状态</span>
+                            </div>
+                            <div class="dropdown-item" onclick="filterByStatus('active')">
+                                <span class="status-badge status-active">可用 (Active)</span>
+                            </div>
+                            <div class="dropdown-item" onclick="filterByStatus('full')">
+                                <span class="status-badge status-full">已满 (Full)</span>
+                            </div>
+                            <div class="dropdown-item" onclick="filterByStatus('expired')">
+                                <span class="status-badge status-expired">已过期 (Expired)</span>
+                            </div>
+                            <div class="dropdown-item" onclick="filterByStatus('error')">
+                                <span class="status-badge status-error">异常 (Error)</span>
+                            </div>
+                            <div class="dropdown-item" onclick="filterByStatus('banned')">
+                                <span class="status-badge status-banned">已封禁 (Banned)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form action="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}" method="get" class="search-form">
+                        <div class="input-group-clean">
+                            <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+                            <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索邮箱 / Account ID / Team 名称...">
+                            {% if search %}
+                            <a href="{% if active_page == 'welfare' %}/admin/welfare{% else %}/admin{% endif %}{% if status_filter %}?status_filter={{ status_filter|urlencode }}{% endif %}" title="清除搜索">
+                                <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
+                            </a>
+                            {% endif %}
+                            {% if status_filter %}
+                            <input type="hidden" name="status_filter" value="{{ status_filter }}">
+                            {% endif %}
+                        </div>
+                    </form>
+
+                    <div class="dropdown-wrapper">
+                        <button id="columnToggleBtn" type="button" class="btn btn-secondary dropdown-toggle">
+                            <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
+                        </button>
+                        <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
+                            <!-- Column checkboxes will be generated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
 {% if teams %}
-<div class="table-container team-list-table-container">
+        <div class="content-section workbench-table-card team-table-card">
+            <div class="table-section-head">
+                <div class="table-section-copy">
+                    <h3>{% if active_page == "welfare" %}福利席位明细{% else %}Team 运行明细{% endif %}</h3>
+                    <p>
+                        {% if search or status_filter %}
+                        当前列表已应用筛选条件，请在确认结果后进行批量处理或单项维护。
+                        {% else %}
+                        这里集中展示 Team 状态、订阅、成员数与设备验证情况，适合做高频巡检和批量处理。
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="table-section-meta">
+                    {% if search %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="search"></i>
+                        <span>关键词：{{ search }}</span>
+                    </span>
+                    {% endif %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="rows-3"></i>
+                        <span>每页 {{ pagination.per_page if pagination else 20 }} 条</span>
+                    </span>
+                    {% if pagination %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="list-filter"></i>
+                        <span>共 {{ pagination.total }} 条</span>
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="table-container team-list-table-container">
     <table class="data-table">
         <thead>
             <tr>
@@ -572,8 +836,6 @@
     </table>
 </div>
 
-<!-- 分页 -->
-<!-- 分页 -->
 {% if pagination %}
 <div class="pagination">
     <div class="per-page-selector">
@@ -655,16 +917,21 @@
                 <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
             </a>
     </div>
-    <span class="pagination-info" style="margin-left: 1rem;">共 {{ pagination.total }} 条</span>
+    <span class="pagination-summary">共 {{ pagination.total }} 条记录</span>
     {% endif %}
 </div>
 {% endif %}
+        </div>
 {% else %}
-<div class="empty-state">
-    <p>暂无 Team 数据</p>
-    <button onclick="showModal('importTeamModal')" class="btn btn-primary">立即导入</button>
-</div>
+        <div class="content-section team-empty-state">
+            <div class="empty-state">
+                <p>当前还没有可展示的 Team 数据，先导入一批账号后再进行筛选和批量操作。</p>
+                <button onclick="showModal('importTeamModal')" class="btn btn-primary">立即导入</button>
+            </div>
+        </div>
 {% endif %}
+    </div>
+</div>
 
 <!-- 编辑 Team 模态框 -->
 <div id="editTeamModal" class="modal-overlay">

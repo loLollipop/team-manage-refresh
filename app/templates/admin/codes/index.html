@@ -3,296 +3,343 @@
 {% block title %}兑换码管理 - GPT Team 管理系统{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h2>兑换码管理</h2>
-</div>
-
-<!-- 统计卡片 -->
-<div class="stats-container">
-    <div class="stat-card">
-        <div class="stat-icon"><i data-lucide="ticket"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.total }}</div>
-            <div class="stat-label">兑换码总数</div>
+<div class="workspace-page codes-workspace-page">
+    <div class="page-header">
+        <div class="page-header-copy">
+            <div class="page-header-kicker">
+                <i data-lucide="ticket"></i>
+                <span>Code Workspace</span>
+            </div>
+            <h2>兑换码工作台</h2>
+            <p>统一管理兑换码生成、批量质保调整、导出与无效码清理，把筛选和维护操作集中在一个工作区完成。</p>
+            <div class="page-header-meta">
+                <span class="page-meta-pill">
+                    <i data-lucide="hash"></i>
+                    <span>{{ stats.total }} 个兑换码</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="check-circle"></i>
+                    <span>{{ stats.unused }} 个未使用</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="clock-3"></i>
+                    <span>{{ stats.expired }} 个已过期</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-header-actions">
+            <button onclick="scanInvalidCodes()" class="btn btn-secondary">
+                <i data-lucide="shield-alert" style="width: 16px; height: 16px;"></i> 扫描无效兑换码
+            </button>
+            <button onclick="showModal('generateCodeModal')" class="btn btn-primary">
+                <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> 生成兑换码
+            </button>
         </div>
     </div>
-    <div class="stat-card stat-success">
-        <div class="stat-icon"><i data-lucide="check-circle"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.unused }}</div>
-            <div class="stat-label">未使用</div>
-        </div>
-    </div>
-    <div class="stat-card stat-info">
-        <div class="stat-icon"><i data-lucide="clipboard-list"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.used }}</div>
-            <div class="stat-label">已使用</div>
-        </div>
-    </div>
-    <div class="stat-card stat-danger">
-        <div class="stat-icon"><i data-lucide="clock-3"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.expired }}</div>
-            <div class="stat-label">已过期</div>
-        </div>
-    </div>
-</div>
 
-<!-- 操作栏 -->
-<div class="content-section">
-    <div class="section-header codes-toolbar">
-        <div class="filter-tabs">
-            <button onclick="filterByStatus('')" class="filter-tab {% if not status_filter %}active{% endif %}"
-                id="filter-all">全部</button>
-            <button onclick="filterByStatus('unused')"
-                class="filter-tab {% if status_filter == 'unused' %}active{% endif %}"
-                id="filter-unused">未使用</button>
-            <button onclick="filterByStatus('used')"
-                class="filter-tab {% if status_filter == 'used' %}active{% endif %}" id="filter-used">已使用</button>
-            <button onclick="filterByStatus('expired')"
-                class="filter-tab {% if status_filter == 'expired' %}active{% endif %}"
-                id="filter-expired">已过期</button>
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-icon"><i data-lucide="ticket"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.total }}</div>
+                <div class="stat-label">兑换码总数</div>
+            </div>
         </div>
-
-        <div class="codes-toolbar-actions">
-            <form action="/admin/codes" method="get" class="search-form codes-search-form">
-                <div class="input-group-clean">
-                    <i data-lucide="search" style="width: 14px; height: 14px;"></i>
-                    <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索兑换码..."
-                        style="width: 180px;">
-                    {% if search %}
-                    <a href="/admin/codes" title="清除搜索">
-                        <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
-                    </a>
-                    {% endif %}
-                </div>
-            </form>
-
-            <div class="header-actions codes-header-actions">
-                <div class="dropdown-wrapper">
-                    <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
-                        <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
-                    </button>
-                    <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
-                        <!-- Column checkboxes will be generated here -->
-                    </div>
-                </div>
-                <button onclick="scanInvalidCodes()" class="btn btn-secondary btn-sm">
-                    <i data-lucide="shield-alert" style="width: 16px; height: 16px;"></i> 扫描无效兑换码
-                </button>
-                <button onclick="showModal('generateCodeModal')" class="btn btn-primary btn-sm">
-                    <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> 生成兑换码
-                </button>
-                <button onclick="exportCodes()" class="btn btn-secondary btn-sm">
-                    <i data-lucide="download" style="width: 16px; height: 16px;"></i> 导出
-                </button>
+        <div class="stat-card stat-success">
+            <div class="stat-icon"><i data-lucide="check-circle"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.unused }}</div>
+                <div class="stat-label">未使用</div>
+            </div>
+        </div>
+        <div class="stat-card stat-info">
+            <div class="stat-icon"><i data-lucide="clipboard-list"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.used }}</div>
+                <div class="stat-label">已使用</div>
+            </div>
+        </div>
+        <div class="stat-card stat-danger">
+            <div class="stat-icon"><i data-lucide="clock-3"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.expired }}</div>
+                <div class="stat-label">已过期</div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- 兑换码列表 -->
-<div class="content-section">
-    {% if codes %}
-    <div class="table-container">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th style="width: 40px;">
-                        <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"
-                            style="width: auto; margin: 0;">
-                    </th>
-                    <th>兑换码</th>
-                    <th>状态</th>
-                    <th>创建时间</th>
-                    <th>过期时间</th>
-                    <th>使用者邮箱</th>
-                    <th>使用时间</th>
-                    <th>质保</th>
-                    <th>质保时长</th>
-                    <th style="text-align: right;">操作</th>
-                </tr>
-            </thead>
-            <tbody id="codesTableBody">
-                {% for code in codes %}
-                <tr data-status="{{ code.status }}">
-                    <td>
-                        <input type="checkbox" class="code-checkbox" value="{{ code.code }}"
-                            onchange="updateSelectionCount()" style="width: auto; margin: 0;">
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <i data-lucide="ticket" style="width: 14px; height: 14px; color: var(--text-muted);"></i>
-                            <code>{{ code.code }}</code>
+    <div class="workbench-panel">
+        <div class="content-section workbench-toolbar">
+            <div class="workbench-toolbar-row">
+                <div class="workbench-toolbar-copy">
+                    <h3>兑换码筛选与操作</h3>
+                    <p>先按状态或关键词缩小范围，再处理导出、列设置和失效码扫描，避免在长表格中反复查找。</p>
+                </div>
+                <div class="workbench-toolbar-actions">
+                    <button onclick="exportCodes()" class="btn btn-secondary btn-sm">
+                        <i data-lucide="download" style="width: 16px; height: 16px;"></i> 导出结果
+                    </button>
+                </div>
+            </div>
+            <div class="workbench-toolbar-row codes-toolbar">
+                <div class="filter-tabs">
+                    <button onclick="filterByStatus('')" class="filter-tab {% if not status_filter %}active{% endif %}" id="filter-all">全部</button>
+                    <button onclick="filterByStatus('unused')" class="filter-tab {% if status_filter == 'unused' %}active{% endif %}" id="filter-unused">未使用</button>
+                    <button onclick="filterByStatus('used')" class="filter-tab {% if status_filter == 'used' %}active{% endif %}" id="filter-used">已使用</button>
+                    <button onclick="filterByStatus('expired')" class="filter-tab {% if status_filter == 'expired' %}active{% endif %}" id="filter-expired">已过期</button>
+                </div>
+
+                <div class="codes-toolbar-actions">
+                    <form action="/admin/codes" method="get" class="search-form codes-search-form">
+                        <div class="input-group-clean">
+                            <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+                            <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索兑换码 / 使用者邮箱...">
+                            {% if search %}
+                            <a href="/admin/codes{% if status_filter %}?status_filter={{ status_filter|urlencode }}{% endif %}" title="清除搜索">
+                                <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
+                            </a>
+                            {% endif %}
+                            {% if status_filter %}
+                            <input type="hidden" name="status_filter" value="{{ status_filter }}">
+                            {% endif %}
                         </div>
-                    </td>
-                    <td>
-                        {% if code.status == 'unused' %}
-                        <span class="status-badge status-active">未使用</span>
-                        {% elif code.status == 'used' %}
-                        <span class="status-badge status-full">已使用</span>
-                        {% elif code.status == 'warranty_active' %}
-                        <span class="status-badge status-info">质保中</span>
-                        {% elif code.status == 'expired' %}
-                        <span class="status-badge status-error">已过期</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ code.created_at }}</td>
-                    <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
-                    <td>{{ code.used_by_email if code.used_by_email else '-' }}</td>
-                    <td>{{ code.used_at if code.used_at else '-' }}</td>
-                    <td>
-                        {% if code.has_warranty %}
-                        <span class="status-badge status-info">是</span>
-                        {% else %}
-                        <span class="status-badge" style="background: #f3f4f6; color: #6b7280;">否</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if code.has_warranty %}
-                        <span style="font-size: 0.875rem;">{{ code.warranty_days }} 天</span>
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    <td style="text-align: right;">
-                        <div class="action-buttons" style="justify-content: flex-end;">
-                            <button onclick='copyCode({{ code.code|tojson }})'
-                                class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
-                                <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
+                    </form>
+
+                    <div class="header-actions codes-header-actions">
+                        <div class="dropdown-wrapper">
+                            <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
+                                <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
                             </button>
-                            <button
-                                onclick='editCode({{ code.code|tojson }}, {{ 'true' if code.has_warranty else 'false' }}, {{ code.warranty_days or 30 }})'
-                                class="btn btn-sm btn-icon btn-minimal btn-info" title="编辑">
-                                <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
-                            </button>
-                            <button onclick='deleteCode({{ code.code|tojson }})'
-                                class="btn btn-sm btn-icon btn-minimal btn-danger" title="删除">
-                                <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
-                            </button>
+                            <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
+                                <!-- Column checkboxes will be generated here -->
+                            </div>
                         </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- 批量操作栏 -->
-    <div id="bulkActionBar" class="bulk-action-bar" style="display: none;">
-        <div class="bulk-info">
-            已选择 <span id="selectedCount">0</span> 个兑换码
-        </div>
-        <div class="bulk-actions">
-            <button onclick="showBulkEditModal()" class="btn btn-primary">
-                <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
-            </button>
-            <button onclick="handleBulkDeleteCodes()" class="btn btn-danger">
-                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> 批量删除
-            </button>
-            <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
-        </div>
-    </div>
-
-    <!-- 分页 -->
-    <!-- 分页 -->
-    {% if pagination %}
-    <div class="pagination">
-        <div class="per-page-selector">
-            每页
-            <select class="per-page-select" onchange="changePerPage(this.value)">
-                <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
-                <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
-                <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
-            </select>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        {% if pagination.total_pages > 1 %}
-        {% set search_param = '&search=' + search|urlencode if search else '' %}
-        {% set status_param = '&status_filter=' + status_filter|urlencode if status_filter else '' %}
-        {% set per_page_param = '&per_page=' + pagination.per_page|string if pagination.per_page != 50 else '' %}
-        {% set base_query = search_param + status_param + per_page_param %}
+        <div class="content-section workbench-table-card">
+            <div class="table-section-head">
+                <div class="table-section-copy">
+                    <h3>兑换码明细</h3>
+                    <p>{% if search or status_filter %}当前结果已按筛选条件收窄，可继续做批量质保或删除操作。{% else %}集中查看兑换码生命周期、使用情况与质保状态，适合做高频巡检和批量维护。{% endif %}</p>
+                </div>
+                <div class="table-section-meta">
+                    {% if search %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="search"></i>
+                        <span>关键词：{{ search }}</span>
+                    </span>
+                    {% endif %}
+                    {% if status_filter %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="list-filter"></i>
+                        <span>
+                            {% if status_filter == 'unused' %}未使用
+                            {% elif status_filter == 'used' %}已使用
+                            {% elif status_filter == 'expired' %}已过期
+                            {% else %}全部状态{% endif %}
+                        </span>
+                    </span>
+                    {% endif %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="rows-3"></i>
+                        <span>每页 {{ pagination.per_page if pagination else 20 }} 条</span>
+                    </span>
+                    {% if pagination %}
+                    <span class="table-meta-pill">
+                        <i data-lucide="database"></i>
+                        <span>共 {{ pagination.total }} 条</span>
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
 
-        <div class="pagination-controls">
-            <!-- 首页 -->
-            <a href="?page=1{{ base_query }}"
-                class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
-                <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
-            </a>
+            {% if codes %}
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" style="width: auto; margin: 0;">
+                            </th>
+                            <th>兑换码</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>过期时间</th>
+                            <th>使用者邮箱</th>
+                            <th>使用时间</th>
+                            <th>质保</th>
+                            <th>质保时长</th>
+                            <th style="text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="codesTableBody">
+                        {% for code in codes %}
+                        <tr data-status="{{ code.status }}">
+                            <td>
+                                <input type="checkbox" class="code-checkbox" value="{{ code.code }}" onchange="updateSelectionCount()" style="width: auto; margin: 0;">
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <i data-lucide="ticket" style="width: 14px; height: 14px; color: var(--text-muted);"></i>
+                                    <code>{{ code.code }}</code>
+                                </div>
+                            </td>
+                            <td>
+                                {% if code.status == 'unused' %}
+                                <span class="status-badge status-active">未使用</span>
+                                {% elif code.status == 'used' %}
+                                <span class="status-badge status-full">已使用</span>
+                                {% elif code.status == 'warranty_active' %}
+                                <span class="status-badge status-info">质保中</span>
+                                {% elif code.status == 'expired' %}
+                                <span class="status-badge status-error">已过期</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ code.created_at }}</td>
+                            <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
+                            <td>{{ code.used_by_email if code.used_by_email else '-' }}</td>
+                            <td>{{ code.used_at if code.used_at else '-' }}</td>
+                            <td>
+                                {% if code.has_warranty %}
+                                <span class="status-badge status-info">是</span>
+                                {% else %}
+                                <span class="status-badge" style="background: #f3f4f6; color: #6b7280;">否</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if code.has_warranty %}
+                                <span style="font-size: 0.875rem;">{{ code.warranty_days }} 天</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right;">
+                                <div class="action-buttons" style="justify-content: flex-end;">
+                                    <button onclick='copyCode({{ code.code|tojson }})' class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
+                                        <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
+                                    </button>
+                                    <button onclick='editCode({{ code.code|tojson }}, {{ 'true' if code.has_warranty else 'false' }}, {{ code.warranty_days or 30 }})' class="btn btn-sm btn-icon btn-minimal btn-info" title="编辑">
+                                        <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
+                                    </button>
+                                    <button onclick='deleteCode({{ code.code|tojson }})' class="btn btn-sm btn-icon btn-minimal btn-danger" title="删除">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
 
-            <!-- 上一页 -->
-            {% if pagination.current_page > 1 %}
-            <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
-                title="上一页">
-                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
-            </a>
-            {% else %}
-            <button class="btn btn-sm btn-secondary" disabled>
-                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
-            </button>
-            {% endif %}
+            <div id="bulkActionBar" class="bulk-action-bar" style="display: none;">
+                <div class="bulk-info">
+                    已选择 <span id="selectedCount">0</span> 个兑换码
+                </div>
+                <div class="bulk-actions">
+                    <button onclick="showBulkEditModal()" class="btn btn-primary">
+                        <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
+                    </button>
+                    <button onclick="handleBulkDeleteCodes()" class="btn btn-danger">
+                        <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> 批量删除
+                    </button>
+                    <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
+                </div>
+            </div>
 
-            <!-- 页码 -->
-            <div class="pagination-numbers">
-                {% set start_page = pagination.current_page - 2 %}
-                {% set end_page = pagination.current_page + 2 %}
+            {% if pagination %}
+            <div class="pagination">
+                <div class="per-page-selector">
+                    每页
+                    <select class="per-page-select" onchange="changePerPage(this.value)">
+                        <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
+                        <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
+                    </select>
+                </div>
 
-                {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif
-                    %} {% if end_page> pagination.total_pages %}
-                    {% set start_page = start_page - (end_page - pagination.total_pages) %}
-                    {% set end_page = pagination.total_pages %}
-                    {% if start_page < 1 %} {% set start_page=1 %} {% endif %} {% endif %} {% if start_page> 1 %}
-                        <a href="?page=1{{ base_query }}" class="page-number">1</a>
-                        {% if start_page > 2 %}
-                        <span class="page-dots">...</span>
+                {% if pagination.total_pages > 1 %}
+                {% set search_param = '&search=' + search|urlencode if search else '' %}
+                {% set status_param = '&status_filter=' + status_filter|urlencode if status_filter else '' %}
+                {% set per_page_param = '&per_page=' + pagination.per_page|string if pagination.per_page != 50 else '' %}
+                {% set base_query = search_param + status_param + per_page_param %}
+
+                <div class="pagination-controls">
+                    <a href="?page=1{{ base_query }}" class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
+                        <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
+                    </a>
+
+                    {% if pagination.current_page > 1 %}
+                    <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="上一页">
+                        <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm btn-secondary" disabled>
+                        <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    {% endif %}
+
+                    <div class="pagination-numbers">
+                        {% set start_page = pagination.current_page - 2 %}
+                        {% set end_page = pagination.current_page + 2 %}
+
+                        {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif %}
+                        {% if end_page > pagination.total_pages %}
+                            {% set start_page = start_page - (end_page - pagination.total_pages) %}
+                            {% set end_page = pagination.total_pages %}
+                            {% if start_page < 1 %}{% set start_page=1 %}{% endif %}
                         {% endif %}
+                        {% if start_page > 1 %}
+                            <a href="?page=1{{ base_query }}" class="page-number">1</a>
+                            {% if start_page > 2 %}
+                            <span class="page-dots">...</span>
+                            {% endif %}
                         {% endif %}
 
                         {% for p in range(start_page, end_page + 1) %}
-                        <a href="?page={{ p }}{{ base_query }}"
-                            class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
+                        <a href="?page={{ p }}{{ base_query }}" class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
                         {% endfor %}
 
-                        {% if end_page < pagination.total_pages %} {% if end_page < pagination.total_pages - 1 %} <span
-                            class="page-dots">...</span>
+                        {% if end_page < pagination.total_pages %}
+                            {% if end_page < pagination.total_pages - 1 %}
+                            <span class="page-dots">...</span>
                             {% endif %}
-                            <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{
-                                pagination.total_pages }}</a>
-                            {% endif %}
-            </div>
+                            <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{ pagination.total_pages }}</a>
+                        {% endif %}
+                    </div>
 
-            <!-- 下一页 -->
-            {% if pagination.current_page < pagination.total_pages %} <a
-                href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
-                title="下一页">
-                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
-                </a>
-                {% else %}
-                <button class="btn btn-sm btn-secondary" disabled>
-                    <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
-                </button>
+                    {% if pagination.current_page < pagination.total_pages %}
+                    <a href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="下一页">
+                        <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm btn-secondary" disabled>
+                        <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    {% endif %}
+
+                    <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}" title="末页">
+                        <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
+                    </a>
+                </div>
+                <span class="pagination-summary">共 {{ pagination.total }} 条记录</span>
                 {% endif %}
-
-                <!-- 末页 -->
-                <a href="?page={{ pagination.total_pages }}{{ base_query }}"
-                    class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}"
-                    title="末页">
-                    <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
-                </a>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="workbench-empty-state">
+                <div class="empty-state">
+                    <i data-lucide="package-open" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
+                    <p>当前还没有兑换码数据，可以先生成一批新码或导入后再做筛选与批量维护。</p>
+                    <button onclick="showModal('generateCodeModal')" class="btn btn-primary">立即生成</button>
+                </div>
+            </div>
+            {% endif %}
         </div>
-        <span class="pagination-info" style="margin-left: 1rem;">共 {{ pagination.total }} 条</span>
-        {% endif %}
     </div>
-    {% endif %}
-    {% else %}
-    <div class="empty-state">
-        <i data-lucide="package-open" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
-        <p>暂无兑换码数据</p>
-        <button onclick="showModal('generateCodeModal')" class="btn btn-primary">立即生成</button>
-    </div>
-    {% endif %}
-</div>
 
 <!-- 批量编辑兑换码模态框 -->
 <div id="bulkEditCodeModal" class="modal-overlay">
@@ -431,6 +478,7 @@
         </div>
     </div>
 </div>
+</div>
 {% endblock %}
 
 {% block extra_css %}
@@ -458,8 +506,8 @@
     }
 
     .codes-search-form .input-group-clean {
-        width: 240px;
-        min-width: 240px;
+        width: 280px;
+        min-width: 280px;
     }
 
     .codes-header-actions {
@@ -475,61 +523,41 @@
     }
 
     .bulk-action-bar {
-        background: white;
-        padding: 1rem 2rem;
-        border-radius: 12px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-        display: flex;
+        display: none;
         align-items: center;
-        gap: 2rem;
-        z-index: 100;
-        border: 1px solid var(--border-color);
-        animation: slideUp 0.3s ease-out;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding: 0.85rem 1rem;
+        border-radius: 16px;
+        border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border-base) 82%);
+        background: color-mix(in srgb, var(--bg-surface) 88%, var(--primary-soft) 12%);
+        box-shadow: var(--shadow-sm);
     }
 
     #bulkActionBar.bulk-action-bar.viewport-floating {
-        position: fixed;
-        left: calc(50% + 130px);
-        top: 50%;
-        right: auto;
-        bottom: auto;
-        transform: translate(-50%, -50%);
-        width: min(760px, calc(100vw - 300px));
-        max-width: min(760px, calc(100vw - 300px));
-        padding: 0.625rem 0.875rem;
-        background: color-mix(in srgb, var(--bg-surface) 94%, #0f172a 6%);
-        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
-        border: 1px solid var(--primary);
-        border-radius: var(--radius-lg);
-        backdrop-filter: blur(10px);
-        z-index: 1100;
+        position: static;
+        inset: auto;
+        transform: none;
+        width: 100%;
+        max-width: 100%;
+        padding: 0.85rem 1rem;
+        box-shadow: var(--shadow-sm);
+        border-radius: 16px;
+        backdrop-filter: none;
         animation: none;
-        justify-content: space-between;
-        gap: 1rem;
-    }
-
-    @keyframes slideUp {
-        from {
-            transform: translate(-50%, 100%);
-            opacity: 0;
-        }
-
-        to {
-            transform: translate(-50%, 0);
-            opacity: 1;
-        }
     }
 
     .bulk-info {
-        font-weight: 500;
-        color: var(--text-color);
+        font-weight: 600;
+        color: var(--text-main);
         white-space: nowrap;
     }
 
     .bulk-actions {
         display: flex;
         gap: 0.5rem;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
     }
 
     .invalid-cleanup-bar {
@@ -537,8 +565,8 @@
         bottom: 0;
         margin-top: 1rem;
         padding: 1rem;
-        border-top: 1px solid var(--border-color);
-        background: rgba(255, 255, 255, 0.96);
+        border-top: 1px solid var(--border-base);
+        background: color-mix(in srgb, var(--bg-surface) 96%, var(--bg-main) 4%);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -575,15 +603,8 @@
             justify-content: flex-start;
             flex-wrap: wrap;
         }
-    }
 
-    @media (max-width: 768px) {
         #bulkActionBar.bulk-action-bar.viewport-floating {
-            width: calc(100vw - 1rem);
-            max-width: calc(100vw - 1rem);
-            left: 0.5rem;
-            right: auto;
-            transform: translateY(-50%);
             padding: 0.75rem;
             gap: 0.75rem;
             flex-direction: column;

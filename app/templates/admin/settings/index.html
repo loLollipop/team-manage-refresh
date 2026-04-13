@@ -3,21 +3,48 @@
 {% block title %}系统设置 - GPT Team 管理系统{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h2>系统设置</h2>
-</div>
-<div class="settings-top-nav">
-    <a href="#settings-proxy" class="settings-nav-pill settings-nav-link" data-target="settings-proxy">代理配置</a>
-    <a href="#settings-password" class="settings-nav-pill settings-nav-link" data-target="settings-password">修改密码</a>
-    <a href="#settings-log" class="settings-nav-pill settings-nav-link" data-target="settings-log">日志级别</a>
-    <a href="#settings-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-refresh">Token 预刷新</a>
-    <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
-    <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
-    <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
-    <a href="#settings-cliproxyapi" class="settings-nav-pill settings-nav-link" data-target="settings-cliproxyapi">CliproxyAPI 推送</a>
-    <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
-    <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
-</div>
+<div class="workspace-page settings-workspace-page">
+    <div class="page-header">
+        <div class="page-header-copy">
+            <div class="page-header-kicker">
+                <i data-lucide="settings-2"></i>
+                <span>System Hub</span>
+            </div>
+            <h2>系统中心</h2>
+            <p>把运行参数、自动化任务、导入规则、外部推送和系统配色放到统一中心里维护，减少在分散配置块之间跳转。</p>
+            <div class="page-header-meta">
+                <span class="page-meta-pill"><i data-lucide="shield"></i><span>系统配置</span></span>
+                <span class="page-meta-pill"><i data-lucide="bot"></i><span>自动化任务</span></span>
+                <span class="page-meta-pill"><i data-lucide="palette"></i><span>主题与公告</span></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-top-nav">
+        <div class="settings-nav-group">
+            <div class="settings-nav-group-title">运行与网络</div>
+            <a href="#settings-proxy" class="settings-nav-pill settings-nav-link" data-target="settings-proxy">代理配置</a>
+            <a href="#settings-log" class="settings-nav-pill settings-nav-link" data-target="settings-log">日志级别</a>
+            <a href="#settings-webhook" class="settings-nav-pill settings-nav-link" data-target="settings-webhook">库存预警</a>
+        </div>
+        <div class="settings-nav-group">
+            <div class="settings-nav-group-title">自动化</div>
+            <a href="#settings-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-refresh">Token 预刷新</a>
+            <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
+        </div>
+        <div class="settings-nav-group">
+            <div class="settings-nav-group-title">业务规则</div>
+            <a href="#settings-warranty" class="settings-nav-pill settings-nav-link" data-target="settings-warranty">质保设置</a>
+            <a href="#settings-team-import" class="settings-nav-pill settings-nav-link" data-target="settings-team-import">Team 导入</a>
+            <a href="#settings-cliproxyapi" class="settings-nav-pill settings-nav-link" data-target="settings-cliproxyapi">CliproxyAPI 推送</a>
+        </div>
+        <div class="settings-nav-group">
+            <div class="settings-nav-group-title">账户与外观</div>
+            <a href="#settings-password" class="settings-nav-pill settings-nav-link" data-target="settings-password">修改密码</a>
+            <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
+            <a href="/admin/announcement" class="settings-nav-pill">公告通知</a>
+        </div>
+    </div>
 
 <!-- 代理配置 -->
 <div class="content-section settings-panel" id="settings-proxy">
@@ -243,11 +270,23 @@
 
     <form id="uiThemeForm" class="settings-form">
         <div class="form-group">
-            <label for="uiThemeSelect">当前配色方案</label>
-            <select id="uiThemeSelect" name="theme" class="form-control">
-                <option value="ocean" {% if ui_theme == 'ocean' %}selected{% endif %}>深海蓝（默认）</option>
-                <option value="warm" {% if ui_theme == 'warm' %}selected{% endif %}>暖杏米（新配色）</option>
-            </select>
+            <label>当前配色方案</label>
+            <div class="theme-options">
+                <label class="theme-option-card" for="uiThemeOcean">
+                    <input type="radio" id="uiThemeOcean" name="theme" value="ocean" {% if ui_theme == 'ocean' %}checked{% endif %}>
+                    <span>
+                        <strong>冷调 Ocean</strong>
+                        <small>蓝灰工作台风格，适合高密度数据浏览。</small>
+                    </span>
+                </label>
+                <label class="theme-option-card" for="uiThemeWarm">
+                    <input type="radio" id="uiThemeWarm" name="theme" value="warm" {% if ui_theme == 'warm' %}checked{% endif %}>
+                    <span>
+                        <strong>暖调 Warm</strong>
+                        <small>米白琥珀风格，层级更柔和，适合长时间运营查看。</small>
+                    </span>
+                </label>
+            </div>
             <p class="form-help">保存后控制台和兑换页会统一使用同一套配色。</p>
         </div>
 
@@ -285,6 +324,7 @@
 
         <button type="submit" class="btn btn-primary">保存配置</button>
     </form>
+</div>
 </div>
 {% endblock %}
 
@@ -641,7 +681,7 @@
     document.getElementById('uiThemeForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const theme = document.getElementById('uiThemeSelect').value;
+        const theme = document.querySelector('input[name="theme"]:checked')?.value || 'ocean';
 
         try {
             const response = await fetch('/admin/settings/ui-theme', {

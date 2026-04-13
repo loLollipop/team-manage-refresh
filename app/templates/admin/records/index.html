@@ -3,244 +3,261 @@
 {% block title %}使用记录 - GPT Team 管理系统{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h2>使用记录</h2>
-</div>
-
-<!-- 统计卡片 -->
-<div class="stats-container">
-    <div class="stat-card">
-        <div class="stat-icon"><i data-lucide="file-text"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.total }}</div>
-            <div class="stat-label">总记录数</div>
-        </div>
-    </div>
-    <div class="stat-card stat-info">
-        <div class="stat-icon"><i data-lucide="calendar"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.today }}</div>
-            <div class="stat-label">今日使用</div>
-        </div>
-    </div>
-    <div class="stat-card stat-success">
-        <div class="stat-icon"><i data-lucide="bar-chart-3"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.this_week }}</div>
-            <div class="stat-label">本周使用</div>
-        </div>
-    </div>
-    <div class="stat-card stat-warning">
-        <div class="stat-icon"><i data-lucide="trending-up"></i></div>
-        <div class="stat-content">
-            <div class="stat-value">{{ stats.this_month }}</div>
-            <div class="stat-label">本月使用</div>
-        </div>
-    </div>
-</div>
-
-<!-- 搜索和筛选 -->
-<div class="content-section">
-    <div class="section-header">
-        <h3><i data-lucide="search"></i> 搜索筛选</h3>
-    </div>
-
-    <form method="get" action="/admin/records" class="search-form-grid">
-        <div class="form-group">
-            <label for="email">用户邮箱</label>
-            <input type="text" id="email" name="email" value="{{ filters.email or '' }}" placeholder="输入邮箱搜索"
-                class="form-control">
-        </div>
-        <div class="form-group">
-            <label for="code">兑换码</label>
-            <input type="text" id="code" name="code" value="{{ filters.code or '' }}" placeholder="输入兑换码搜索"
-                class="form-control">
-        </div>
-        <div class="form-group">
-            <label for="team_id">Team ID</label>
-            <input type="number" id="team_id" name="team_id" value="{{ filters.team_id or '' }}" placeholder="输入Team ID"
-                class="form-control">
-        </div>
-        <div class="form-group">
-            <label for="start_date">开始日期</label>
-            <input type="date" id="start_date" name="start_date" value="{{ filters.start_date or '' }}"
-                class="form-control">
-        </div>
-        <div class="form-group">
-            <label for="end_date">结束日期</label>
-            <input type="date" id="end_date" name="end_date" value="{{ filters.end_date or '' }}" class="form-control">
-        </div>
-        <div class="form-actions" style="display: flex; gap: 0.5rem;">
-            <button type="submit" class="btn btn-primary" style="flex: 1;">
-                <i data-lucide="search" style="width: 16px; height: 16px;"></i> 搜索
-            </button>
-            <a href="/admin/records" class="btn btn-secondary">
-                <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> 重置
-            </a>
-        </div>
-    </form>
-</div>
-
-<!-- 使用记录列表 -->
-<div class="content-section">
-    <div class="section-header">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <h3>使用记录列表</h3>
-            <span class="badge badge-info">{{ pagination.total }} 条记录</span>
-        </div>
-        <div class="header-group">
-            <div class="dropdown-wrapper">
-                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
-                    <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
-                </button>
-                <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
-                    <!-- Column checkboxes will be generated here -->
-                </div>
+<div class="workspace-page records-workspace-page">
+    <div class="page-header">
+        <div class="page-header-copy">
+            <div class="page-header-kicker">
+                <i data-lucide="file-text"></i>
+                <span>Records Workspace</span>
+            </div>
+            <h2>使用记录工作台</h2>
+            <p>集中查询兑换记录、定位用户与 Team 关系，并在需要时快速撤回邀请，适合售后排查和历史追踪。</p>
+            <div class="page-header-meta">
+                <span class="page-meta-pill">
+                    <i data-lucide="database"></i>
+                    <span>{{ stats.total }} 条总记录</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="calendar"></i>
+                    <span>今日 {{ stats.today }} 条</span>
+                </span>
+                <span class="page-meta-pill">
+                    <i data-lucide="bar-chart-3"></i>
+                    <span>本周 {{ stats.this_week }} 条</span>
+                </span>
             </div>
         </div>
     </div>
 
-    {% if records %}
-    <div class="table-container">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>用户邮箱</th>
-                    <th>兑换码</th>
-                    <th>Team名称</th>
-                    <th>Team ID</th>
-                    <th>Account ID</th>
-                    <th style="text-align: right;">兑换时间</th>
-                    <th style="text-align: right;">操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for record in records %}
-                <tr>
-                    <td><span class="text-muted">{{ record.id }}</span></td>
-                    <td><strong>{{ record.email }}</strong></td>
-                    <td><code>{{ record.code }}</code></td>
-                    <td>{{ record.team_name or '-' }}</td>
-                    <td><span class="badge badge-secondary">{{ record.team_id }}</span></td>
-                    <td><code class="account-id" title="{{ record.account_id }}">{{ record.account_id[:8] }}...</code>
-                    </td>
-                    <td style="text-align: right;">{{ record.redeemed_at }}</td>
-                    <td style="text-align: right;">
-                        <button onclick='withdrawRecord({{ record.id|tojson }}, {{ record.email|tojson }}, this)'
-                            class="btn btn-sm btn-danger" title="撤回邀请并恢复兑换码">
-                            <i data-lucide="undo-2" style="width: 14px; height: 14px;"></i> 撤回
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-icon"><i data-lucide="file-text"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.total }}</div>
+                <div class="stat-label">总记录数</div>
+            </div>
+        </div>
+        <div class="stat-card stat-info">
+            <div class="stat-icon"><i data-lucide="calendar"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.today }}</div>
+                <div class="stat-label">今日使用</div>
+            </div>
+        </div>
+        <div class="stat-card stat-success">
+            <div class="stat-icon"><i data-lucide="bar-chart-3"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.this_week }}</div>
+                <div class="stat-label">本周使用</div>
+            </div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-icon"><i data-lucide="trending-up"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.this_month }}</div>
+                <div class="stat-label">本月使用</div>
+            </div>
+        </div>
     </div>
 
-    <!-- 分页 -->
-    {% if pagination %}
-    <div class="pagination">
-        <div class="per-page-selector">
-            每页
-            <select class="per-page-select" onchange="changePerPage(this.value)">
-                <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
-                <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
-                <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
-            </select>
+    <div class="workbench-panel">
+        <div class="content-section workbench-toolbar">
+            <div class="workbench-toolbar-row">
+                <div class="workbench-toolbar-copy">
+                    <h3>查询条件</h3>
+                    <p>按邮箱、兑换码、Team ID 与日期范围交叉筛选，缩小排查范围后再做单条撤回操作。</p>
+                </div>
+                <div class="workbench-toolbar-actions">
+                    <div class="dropdown-wrapper">
+                        <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown', this)">
+                            <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
+                        </button>
+                        <div id="columnToggleDropdown" class="dropdown-menu dropdown-menu-floating">
+                            <!-- Column checkboxes will be generated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <form method="get" action="/admin/records" class="search-form-grid">
+                <div class="form-group">
+                    <label for="email">用户邮箱</label>
+                    <input type="text" id="email" name="email" value="{{ filters.email or '' }}" placeholder="输入邮箱搜索" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="code">兑换码</label>
+                    <input type="text" id="code" name="code" value="{{ filters.code or '' }}" placeholder="输入兑换码搜索" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="team_id">Team ID</label>
+                    <input type="number" id="team_id" name="team_id" value="{{ filters.team_id or '' }}" placeholder="输入 Team ID" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="start_date">开始日期</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ filters.start_date or '' }}" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="end_date">结束日期</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ filters.end_date or '' }}" class="form-control">
+                </div>
+                <div class="form-actions" style="display: flex; gap: 0.5rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        <i data-lucide="search" style="width: 16px; height: 16px;"></i> 搜索
+                    </button>
+                    <a href="/admin/records" class="btn btn-secondary">
+                        <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> 重置
+                    </a>
+                </div>
+            </form>
         </div>
 
-        {% if pagination.total_pages > 1 %}
-        {% set query_params = [] %}
-        {% if filters.email %}{% set _ = query_params.append('email=' + filters.email|urlencode) %}{% endif %}
-        {% if filters.code %}{% set _ = query_params.append('code=' + filters.code|urlencode) %}{% endif %}
-        {% if filters.team_id %}{% set _ = query_params.append('team_id=' + filters.team_id|string|urlencode) %}{% endif
-        %}
-        {% if filters.start_date %}{% set _ = query_params.append('start_date=' + filters.start_date) %}{% endif %}
-        {% if filters.end_date %}{% set _ = query_params.append('end_date=' + filters.end_date) %}{% endif %}
-        {% if pagination.per_page != 20 %}{% set _ = query_params.append('per_page=' + pagination.per_page|string) %}{%
-        endif %}
+        <div class="content-section workbench-table-card">
+            <div class="table-section-head">
+                <div class="table-section-copy">
+                    <h3>使用记录明细</h3>
+                    <p>{% if filters.email or filters.code or filters.team_id or filters.start_date or filters.end_date %}当前列表已应用查询条件，可继续核对记录并执行撤回。{% else %}集中查看用户兑换历史、绑定 Team 与时间线，适合售后追踪和问题回溯。{% endif %}</p>
+                </div>
+                <div class="table-section-meta">
+                    {% if filters.email %}
+                    <span class="table-meta-pill"><i data-lucide="mail"></i><span>{{ filters.email }}</span></span>
+                    {% endif %}
+                    {% if filters.code %}
+                    <span class="table-meta-pill"><i data-lucide="ticket"></i><span>{{ filters.code }}</span></span>
+                    {% endif %}
+                    <span class="table-meta-pill"><i data-lucide="rows-3"></i><span>每页 {{ pagination.per_page if pagination else 20 }} 条</span></span>
+                    <span class="table-meta-pill"><i data-lucide="database"></i><span>{{ pagination.total if pagination else 0 }} 条记录</span></span>
+                </div>
+            </div>
 
-        {% set base_query = '&' + query_params|join('&') if query_params else '' %}
+            {% if records %}
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>用户邮箱</th>
+                            <th>兑换码</th>
+                            <th>Team名称</th>
+                            <th>Team ID</th>
+                            <th>Account ID</th>
+                            <th style="text-align: right;">兑换时间</th>
+                            <th style="text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in records %}
+                        <tr>
+                            <td><span class="text-muted">{{ record.id }}</span></td>
+                            <td><strong>{{ record.email }}</strong></td>
+                            <td><code>{{ record.code }}</code></td>
+                            <td>{{ record.team_name or '-' }}</td>
+                            <td><span class="badge badge-secondary">{{ record.team_id }}</span></td>
+                            <td><code class="account-id" title="{{ record.account_id }}">{{ record.account_id[:8] }}...</code></td>
+                            <td style="text-align: right;">{{ record.redeemed_at }}</td>
+                            <td style="text-align: right;">
+                                <button onclick='withdrawRecord({{ record.id|tojson }}, {{ record.email|tojson }}, this)' class="btn btn-sm btn-danger" title="撤回邀请并恢复兑换码">
+                                    <i data-lucide="undo-2" style="width: 14px; height: 14px;"></i> 撤回
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
 
-        <div class="pagination-controls">
-            <!-- 首页 -->
-            <a href="?page=1{{ base_query }}"
-                class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
-                <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
-            </a>
+            {% if pagination %}
+            <div class="pagination">
+                <div class="per-page-selector">
+                    每页
+                    <select class="per-page-select" onchange="changePerPage(this.value)">
+                        <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
+                        <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
+                    </select>
+                </div>
 
-            <!-- 上一页 -->
-            {% if pagination.current_page > 1 %}
-            <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
-                title="上一页">
-                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
-            </a>
-            {% else %}
-            <button class="btn btn-sm btn-secondary" disabled>
-                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
-            </button>
-            {% endif %}
+                {% if pagination.total_pages > 1 %}
+                {% set query_params = [] %}
+                {% if filters.email %}{% set _ = query_params.append('email=' + filters.email|urlencode) %}{% endif %}
+                {% if filters.code %}{% set _ = query_params.append('code=' + filters.code|urlencode) %}{% endif %}
+                {% if filters.team_id %}{% set _ = query_params.append('team_id=' + filters.team_id|string|urlencode) %}{% endif %}
+                {% if filters.start_date %}{% set _ = query_params.append('start_date=' + filters.start_date) %}{% endif %}
+                {% if filters.end_date %}{% set _ = query_params.append('end_date=' + filters.end_date) %}{% endif %}
+                {% if pagination.per_page != 20 %}{% set _ = query_params.append('per_page=' + pagination.per_page|string) %}{% endif %}
+                {% set base_query = '&' + query_params|join('&') if query_params else '' %}
 
-            <!-- 页码 -->
-            <div class="pagination-numbers">
-                {% set start_page = pagination.current_page - 2 %}
-                {% set end_page = pagination.current_page + 2 %}
+                <div class="pagination-controls">
+                    <a href="?page=1{{ base_query }}" class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
+                        <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
+                    </a>
 
-                {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif
-                    %} {% if end_page> pagination.total_pages %}
-                    {% set start_page = start_page - (end_page - pagination.total_pages) %}
-                    {% set end_page = pagination.total_pages %}
-                    {% if start_page < 1 %} {% set start_page=1 %} {% endif %} {% endif %} {% if start_page> 1 %}
-                        <a href="?page=1{{ base_query }}" class="page-number">1</a>
-                        {% if start_page > 2 %}
-                        <span class="page-dots">...</span>
+                    {% if pagination.current_page > 1 %}
+                    <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="上一页">
+                        <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm btn-secondary" disabled>
+                        <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    {% endif %}
+
+                    <div class="pagination-numbers">
+                        {% set start_page = pagination.current_page - 2 %}
+                        {% set end_page = pagination.current_page + 2 %}
+                        {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif %}
+                        {% if end_page > pagination.total_pages %}
+                            {% set start_page = start_page - (end_page - pagination.total_pages) %}
+                            {% set end_page = pagination.total_pages %}
+                            {% if start_page < 1 %}{% set start_page=1 %}{% endif %}
                         {% endif %}
+                        {% if start_page > 1 %}
+                            <a href="?page=1{{ base_query }}" class="page-number">1</a>
+                            {% if start_page > 2 %}
+                            <span class="page-dots">...</span>
+                            {% endif %}
                         {% endif %}
 
                         {% for p in range(start_page, end_page + 1) %}
-                        <a href="?page={{ p }}{{ base_query }}"
-                            class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
+                        <a href="?page={{ p }}{{ base_query }}" class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
                         {% endfor %}
 
-                        {% if end_page < pagination.total_pages %} {% if end_page < pagination.total_pages - 1 %} <span
-                            class="page-dots">...</span>
+                        {% if end_page < pagination.total_pages %}
+                            {% if end_page < pagination.total_pages - 1 %}
+                            <span class="page-dots">...</span>
                             {% endif %}
-                            <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{
-                                pagination.total_pages }}</a>
-                            {% endif %}
-            </div>
+                            <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{ pagination.total_pages }}</a>
+                        {% endif %}
+                    </div>
 
-            <!-- 下一页 -->
-            {% if pagination.current_page < pagination.total_pages %} <a
-                href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
-                title="下一页">
-                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
-                </a>
-                {% else %}
-                <button class="btn btn-sm btn-secondary" disabled>
-                    <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
-                </button>
+                    {% if pagination.current_page < pagination.total_pages %}
+                    <a href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary" title="下一页">
+                        <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm btn-secondary" disabled>
+                        <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    {% endif %}
+
+                    <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}" title="末页">
+                        <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
+                    </a>
+                </div>
+                <span class="pagination-summary">共 {{ pagination.total }} 条记录</span>
                 {% endif %}
+            </div>
+            {% endif %}
 
-                <!-- 末页 -->
-                <a href="?page={{ pagination.total_pages }}{{ base_query }}"
-                    class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}"
-                    title="末页">
-                    <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
-                </a>
+            {% else %}
+            <div class="workbench-empty-state">
+                <div class="empty-state">
+                    <i data-lucide="clipboard-list" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
+                    <p>当前没有符合条件的使用记录，可以调整筛选条件后重试。</p>
+                </div>
+            </div>
+            {% endif %}
         </div>
-        <span class="pagination-info" style="margin-left: 1rem;">共 {{ pagination.total }} 条</span>
-        {% endif %}
     </div>
-    {% endif %}
-
-    {% else %}
-    <div class="empty-state">
-        <i data-lucide="clipboard-list" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
-        <p>暂无使用记录</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}
 

@@ -206,17 +206,7 @@ function getFriendlyAdminErrorMessage(rawMessage, statusCode = 0, scene = 'commo
 }
 
 function cleanupLegacyThemeSettingsSection() {
-    const legacyLinks = document.querySelectorAll('[data-target="settings-ui-theme"], a[href="#settings-ui-theme"]');
-    legacyLinks.forEach((node) => node.remove());
-
-    const legacyPanel = document.getElementById('settings-ui-theme');
-    if (legacyPanel) {
-        legacyPanel.remove();
-    }
-
-    if (window.location.hash === '#settings-ui-theme') {
-        history.replaceState(null, '', '#settings-proxy');
-    }
+    // 保留系统配色分区；新的系统中心页面仍然需要该面板。
 }
 
 
@@ -264,7 +254,7 @@ async function saveSystemTheme(theme) {
 function updateThemeToggleButton(theme) {
     const openBtn = document.getElementById('openThemeSwitcherBtn');
     if (!openBtn) return;
-    const targetLabel = theme === 'warm' ? '暖色' : '深色';
+    const targetLabel = theme === 'warm' ? '暖调' : '冷调';
     openBtn.innerHTML = `<i data-lucide="palette" style="width: 15px; height: 15px;"></i> ${targetLabel}`;
     if (window.lucide) {
         lucide.createIcons();
@@ -1774,7 +1764,6 @@ async function deleteMember(teamId, userId, email, inModal = false) {
 if (typeof window !== 'undefined') {
     window.generateOAuthAuthorizeLink = generateOAuthAuthorizeLink;
     window.parseOAuthCallbackAndFill = parseOAuthCallbackAndFill;
-    window.exportOAuthJsonTemplateFile = exportOAuthJsonTemplateFile;
     window.handleJsonFileImport = handleJsonFileImport;
     window.copyWelfareCode = copyWelfareCode;
 }

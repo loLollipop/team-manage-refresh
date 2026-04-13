@@ -21,7 +21,10 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/static/css/style.css?v=20260328-ui-polish-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260413-workbench-refresh-1">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     {% block extra_css %}{% endblock %}
@@ -29,51 +32,75 @@
 
 <body class="bg-gray-50 text-slate-900{% if user %} admin-theme theme-{{ ui_theme|default('ocean') }}{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}">
     {% if user %}
-    <!-- 导航栏 -->
+    {% set system_active = active_page in ['settings', 'announcement'] %}
     <nav class="navbar">
         <div class="navbar-container">
             <div class="navbar-left">
-                <button class="mobile-menu-toggle" onclick="toggleSidebar()">
+                <button class="mobile-menu-toggle" onclick="toggleSidebar()" aria-label="打开导航菜单">
                     <i data-lucide="menu"></i>
                 </button>
-                <div class="navbar-brand">
-                    <h1>GPT Team 管理系统</h1>
+                <a href="/admin" class="navbar-brand">
+                    <span class="brand-badge">GT</span>
+                    <span class="navbar-brand-copy">
+                        <span class="navbar-eyebrow">Operations Workspace</span>
+                        <h1>GPT Team 管理系统</h1>
+                    </span>
+                </a>
+            </div>
+
+            <div class="navbar-center">
+                <div class="desktop-primary-nav" role="navigation" aria-label="主导航">
+                    <a href="/admin" class="desktop-nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>工作台</span>
+                    </a>
+                    <a href="/admin/welfare" class="desktop-nav-link {% if active_page == 'welfare' %}active{% endif %}">
+                        <i data-lucide="heart-handshake"></i>
+                        <span>福利车位</span>
+                    </a>
+                    <a href="/admin/codes" class="desktop-nav-link {% if active_page == 'codes' %}active{% endif %}">
+                        <i data-lucide="ticket"></i>
+                        <span>兑换码</span>
+                    </a>
+                    <a href="/admin/records" class="desktop-nav-link {% if active_page == 'records' %}active{% endif %}">
+                        <i data-lucide="file-text"></i>
+                        <span>使用记录</span>
+                    </a>
+                    <a href="/admin/settings" class="desktop-nav-link {% if system_active %}active{% endif %}">
+                        <i data-lucide="settings-2"></i>
+                        <span>系统中心</span>
+                    </a>
                 </div>
             </div>
+
             <div class="navbar-menu">
-                <span class="navbar-user">管理员</span>
+                <span class="navbar-user">运营后台</span>
                 <button type="button" class="btn btn-secondary" id="openThemeSwitcherBtn">
-                    <i data-lucide="palette" style="width: 15px; height: 15px;"></i> 深色
+                    <i data-lucide="palette" style="width: 15px; height: 15px;"></i> 冷调
                 </button>
                 <button onclick="logout()" class="btn btn-secondary">登出</button>
             </div>
         </div>
     </nav>
 
-    <!-- 移动端侧边栏遮罩 -->
     <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
-    <!-- 主容器 -->
     <div class="main-container">
-        <!-- 侧边栏 -->
-        <aside class="sidebar" id="adminSidebar">
+        <aside class="sidebar" id="adminSidebar" aria-label="移动端导航菜单">
+            <div class="sidebar-mobile-head">
+                <div>
+                    <div class="sidebar-mobile-title">导航</div>
+                    <div class="sidebar-mobile-subtitle">切换后台工作区</div>
+                </div>
+                <button class="mobile-menu-toggle" onclick="toggleSidebar()" aria-label="关闭导航菜单">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
             <ul class="sidebar-menu">
                 <li class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">
                     <a href="/admin">
                         <span class="menu-icon" data-lucide="layout-dashboard"></span>
-                        <span class="menu-text">控制台</span>
-                    </a>
-                </li>
-                <li class="menu-item {% if active_page == 'codes' %}active{% endif %}">
-                    <a href="/admin/codes">
-                        <span class="menu-icon" data-lucide="ticket"></span>
-                        <span class="menu-text">兑换码管理</span>
-                    </a>
-                </li>
-                <li class="menu-item {% if active_page == 'records' %}active{% endif %}">
-                    <a href="/admin/records">
-                        <span class="menu-icon" data-lucide="file-text"></span>
-                        <span class="menu-text">使用记录</span>
+                        <span class="menu-text">工作台</span>
                     </a>
                 </li>
                 <li class="menu-item {% if active_page == 'welfare' %}active{% endif %}">
@@ -82,22 +109,27 @@
                         <span class="menu-text">福利车位</span>
                     </a>
                 </li>
-                <li class="menu-item {% if active_page == 'announcement' %}active{% endif %}">
-                    <a href="/admin/announcement">
-                        <span class="menu-icon" data-lucide="megaphone"></span>
-                        <span class="menu-text">公告通知</span>
+                <li class="menu-item {% if active_page == 'codes' %}active{% endif %}">
+                    <a href="/admin/codes">
+                        <span class="menu-icon" data-lucide="ticket"></span>
+                        <span class="menu-text">兑换码</span>
                     </a>
                 </li>
-                <li class="menu-item {% if active_page == 'settings' %}active{% endif %}">
+                <li class="menu-item {% if active_page == 'records' %}active{% endif %}">
+                    <a href="/admin/records">
+                        <span class="menu-icon" data-lucide="file-text"></span>
+                        <span class="menu-text">使用记录</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if system_active %}active{% endif %}">
                     <a href="/admin/settings">
-                        <span class="menu-icon" data-lucide="settings"></span>
-                        <span class="menu-text">系统设置</span>
+                        <span class="menu-icon" data-lucide="settings-2"></span>
+                        <span class="menu-text">系统中心</span>
                     </a>
                 </li>
             </ul>
         </aside>
 
-        <!-- 主内容区 -->
         <main class="main-content">
             {% block content %}{% endblock %}
         </main>
