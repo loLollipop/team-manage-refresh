@@ -202,6 +202,53 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
     async def _noop_async(*args, **kwargs):
         return None
 
+    @staticmethod
+    async def _return_token(*args, **kwargs):
+        return "token"
+
+    @staticmethod
+    async def _stub_account_info_success(*args, **kwargs):
+        return {
+            "success": True,
+            "accounts": [{
+                "account_id": "acct-64",
+                "name": "Floor Team",
+                "plan_type": "team",
+                "subscription_plan": "chatgpt-team",
+                "has_active_subscription": True,
+                "expires_at": None,
+                "account_user_role": "account-owner",
+            }],
+        }
+
+    @staticmethod
+    async def _stub_members_four(*args, **kwargs):
+        return {
+            "success": True,
+            "total": 4,
+            "members": [
+                {"email": "one@example.com"},
+                {"email": "two@example.com"},
+                {"email": "three@example.com"},
+                {"email": "four@example.com"},
+            ],
+        }
+
+    @staticmethod
+    async def _stub_empty_invites(*args, **kwargs):
+        return {
+            "success": True,
+            "total": 0,
+            "items": [],
+        }
+
+    @staticmethod
+    async def _stub_account_settings_success(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {"beta_settings": {}},
+        }
+
     async def test_auto_select_skips_team_where_user_already_exists(self):
         await self._seed_basic_data()
         service = RedeemFlowService()
@@ -838,16 +885,21 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             ])
             await session.commit()
 
+            await settings_service.update_setting(session, "welfare_common_code_limit", "5")
+            await settings_service.update_setting(session, "welfare_common_code_used_count", "2")
+
             usage = await service.get_virtual_welfare_code_usage(session, welfare_code="WELF-CODE-001")
             self.assertEqual(usage["used_count"], 2)
+            self.assertEqual(usage["configured_limit"], 5)
             self.assertEqual(usage["usable_capacity"], 3)
             self.assertEqual(usage["remaining_count"], 3)
 
             result = await service.validate_code("WELF-CODE-001", session)
             self.assertTrue(result["success"])
             self.assertTrue(result["valid"])
-            self.assertEqual(result["redemption_code"]["limit"], 3)
+            self.assertEqual(result["redemption_code"]["limit"], 5)
             self.assertEqual(result["redemption_code"]["used_count"], 2)
+            self.assertEqual(result["redemption_code"]["remaining"], 3)
 
     async def test_virtual_welfare_code_handles_concurrent_redemptions_up_to_capacity(self):
         async with self.session_factory() as session:
@@ -858,7 +910,7 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
                 account_id="acct-61",
                 team_name="Welfare Concurrent Team",
                 current_members=0,
-                max_members=5,
+                max_members=10,
                 status="active",
                 pool_type="welfare",
             )
@@ -868,6 +920,8 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
             settings_service.clear_cache()
             await settings_service.update_setting(session, "welfare_common_code", "WELF-CONCURRENT-001")
+            await settings_service.update_setting(session, "welfare_common_code_limit", "5")
+            await settings_service.update_setting(session, "welfare_common_code_used_count", "0")
 
             service = RedeemFlowService()
             service.team_service = StubTeamService()
@@ -904,7 +958,7 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             async with self.session_factory() as verify_session:
                 stored_team = await verify_session.get(Team, 61)
                 self.assertEqual(stored_team.current_members, 5)
-                self.assertEqual(stored_team.status, "full")
+                self.assertEqual(stored_team.status, "active")
 
                 records = (
                     await verify_session.execute(
@@ -917,4 +971,162 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
                     verify_session,
                     welfare_code="WELF-CONCURRENT-001",
                 )
+                self.assertEqual(usage["configured_limit"], 5)
                 self.assertEqual(usage["remaining_count"], 0)
+
+    async def test_virtual_welfare_code_stays_invalid_after_rotation_even_if_new_capacity_appears(self):
+        async with self.session_factory() as session:
+            old_team = Team(
+                id=62,
+                email="welfare-owner-62@example.com",
+                access_token_encrypted="token-62",
+                account_id="acct-62",
+                team_name="Old Welfare Team",
+                current_members=5,
+                max_members=5,
+                status="full",
+                pool_type="welfare",
+            )
+            session.add(old_team)
+            await session.commit()
+
+            service = RedemptionService()
+            await service.ensure_virtual_welfare_shadow_code(session, "OLD-WELF-CODE")
+            settings_service.clear_cache()
+            await settings_service.update_setting(session, "welfare_common_code", "OLD-WELF-CODE")
+            await settings_service.update_setting(session, "welfare_common_code_limit", "5")
+            await settings_service.update_setting(session, "welfare_common_code_used_count", "5")
+            await session.commit()
+
+            old_result = await service.validate_code("OLD-WELF-CODE", session)
+            self.assertTrue(old_result["success"])
+            self.assertFalse(old_result["valid"])
+
+            new_team = Team(
+                id=63,
+                email="welfare-owner-63@example.com",
+                access_token_encrypted="token-63",
+                account_id="acct-63",
+                team_name="New Welfare Team",
+                current_members=0,
+                max_members=5,
+                status="active",
+                pool_type="welfare",
+            )
+            session.add(new_team)
+            await session.commit()
+
+            await service.ensure_virtual_welfare_shadow_code(session, "NEW-WELF-CODE")
+            await settings_service.update_setting(session, "welfare_common_code", "NEW-WELF-CODE")
+            await settings_service.update_setting(session, "welfare_common_code_limit", "5")
+            await settings_service.update_setting(session, "welfare_common_code_used_count", "0")
+            await session.commit()
+
+            stale_result = await service.validate_code("OLD-WELF-CODE", session)
+            self.assertTrue(stale_result["success"])
+            self.assertFalse(stale_result["valid"])
+            self.assertIn("已失效", stale_result["reason"])
+
+            fresh_result = await service.validate_code("NEW-WELF-CODE", session)
+            self.assertTrue(fresh_result["success"])
+            self.assertTrue(fresh_result["valid"])
+            self.assertEqual(fresh_result["redemption_code"]["limit"], 5)
+            self.assertEqual(fresh_result["redemption_code"]["remaining"], 5)
+
+    async def test_virtual_welfare_code_limit_blocks_redemption_even_when_live_capacity_is_higher(self):
+        async with self.session_factory() as session:
+            welfare_team = Team(
+                id=65,
+                email="welfare-owner-65@example.com",
+                access_token_encrypted="token-65",
+                account_id="acct-65",
+                team_name="Large Welfare Team",
+                current_members=0,
+                max_members=10,
+                status="active",
+                pool_type="welfare",
+            )
+            session.add(welfare_team)
+            await session.commit()
+
+            service = RedemptionService()
+            await service.ensure_virtual_welfare_shadow_code(session, "WELF-LIMIT-001")
+            settings_service.clear_cache()
+            await settings_service.update_setting(session, "welfare_common_code", "WELF-LIMIT-001")
+            await settings_service.update_setting(session, "welfare_common_code_limit", "5")
+            await settings_service.update_setting(session, "welfare_common_code_used_count", "5")
+            await session.commit()
+
+            result = await service.validate_code("WELF-LIMIT-001", session)
+            self.assertTrue(result["success"])
+            self.assertFalse(result["valid"])
+            self.assertIn("次数已用完", result["reason"])
+
+    async def test_sync_team_info_keeps_local_member_floor_when_remote_count_is_stale(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=64,
+                email="welfare-owner-64@example.com",
+                access_token_encrypted="token-64",
+                account_id="acct-64",
+                team_name="Floor Team",
+                current_members=5,
+                max_members=5,
+                status="full",
+                pool_type="welfare",
+            )
+            session.add(team)
+            await session.commit()
+
+            team_service = TeamService()
+            await team_service.upsert_team_email_mapping(
+                team_id=64,
+                email="one@example.com",
+                status="joined",
+                db_session=session,
+                source="sync",
+            )
+            await team_service.upsert_team_email_mapping(
+                team_id=64,
+                email="two@example.com",
+                status="joined",
+                db_session=session,
+                source="sync",
+            )
+            await team_service.upsert_team_email_mapping(
+                team_id=64,
+                email="three@example.com",
+                status="joined",
+                db_session=session,
+                source="sync",
+            )
+            await team_service.upsert_team_email_mapping(
+                team_id=64,
+                email="four@example.com",
+                status="joined",
+                db_session=session,
+                source="sync",
+            )
+            await team_service.upsert_team_email_mapping(
+                team_id=64,
+                email="five@example.com",
+                status="invited",
+                db_session=session,
+                source="redeem",
+            )
+            await session.commit()
+
+            with patch.object(team_service, "ensure_access_token", new=self._return_token), \
+                 patch.object(team_service.chatgpt_service, "get_account_info", new=self._stub_account_info_success), \
+                 patch.object(team_service.chatgpt_service, "get_members", new=self._stub_members_four), \
+                 patch.object(team_service.chatgpt_service, "get_invites", new=self._stub_empty_invites), \
+                 patch.object(team_service.chatgpt_service, "get_account_settings", new=self._stub_account_settings_success):
+                result = await team_service.sync_team_info(64, session)
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["message"], "同步成功,当前成员数: 5")
+
+            self.assertTrue(result["success"])
+            refreshed_team = await session.get(Team, 64)
+            self.assertEqual(refreshed_team.current_members, 5)
+            self.assertEqual(refreshed_team.status, "full")

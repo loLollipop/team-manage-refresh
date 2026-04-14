@@ -366,6 +366,41 @@ class TeamService:
         normalized = str(email).strip().lower()
         return normalized or None
 
+    async def _get_active_mapping_count(self, team_id: int, db_session: AsyncSession) -> int:
+        """统计本地仍占位的成员/邀请数量，用作同步时的人数下限。"""
+        result = await db_session.execute(
+            select(func.count(TeamEmailMapping.id)).where(
+                TeamEmailMapping.team_id == team_id,
+                TeamEmailMapping.status.in_(ACTIVE_TEAM_EMAIL_STATUSES),
+            )
+        )
+        return int(result.scalar() or 0)
+
+    async def _apply_member_count_floor(
+        self,
+        team: Team,
+        observed_member_count: int,
+        db_session: AsyncSession,
+    ) -> int:
+        """将远端同步人数、本地占位和当前人数合并，避免短暂同步延迟把人数回写变小。"""
+        await db_session.flush()
+        active_mapping_count = await self._get_active_mapping_count(team.id, db_session)
+        current_members = int(team.current_members or 0)
+        observed_count = int(observed_member_count or 0)
+        effective_members = max(current_members, observed_count, active_mapping_count)
+        if team.max_members and team.max_members > 0:
+            effective_members = min(effective_members, team.max_members)
+
+        team.current_members = effective_members
+        if team.expires_at and team.expires_at < get_now():
+            team.status = "expired"
+        elif team.current_members >= team.max_members:
+            team.status = "full"
+        else:
+            team.status = "active"
+
+        return effective_members
+
     async def get_active_team_ids_for_email(
         self,
         email: str,
@@ -1832,8 +1867,6 @@ class TeamService:
             team.subscription_plan = current_account["subscription_plan"]
             team.account_role = current_account.get("account_user_role")
             team.expires_at = expires_at
-            team.current_members = current_members
-            team.status = status
             team.device_code_auth_enabled = device_code_auth_enabled
             team.error_count = 0  # 同步成功，重置错误次数
             team.last_sync = get_now()
@@ -1843,14 +1876,15 @@ class TeamService:
                 invited_member_emails,
                 db_session
             )
+            effective_members = await self._apply_member_count_floor(team, current_members, db_session)
 
             await db_session.commit()
 
-            logger.info(f"Team 同步成功: ID {team_id}, 成员数 {current_members}")
+            logger.info(f"Team 同步成功: ID {team_id}, 成员数 {effective_members}")
 
             return {
                 "success": True,
-                "message": f"同步成功,当前成员数: {current_members}",
+                "message": f"同步成功,当前成员数: {effective_members}",
                 "member_emails": list(all_member_emails),
                 "error": None
             }
@@ -2149,16 +2183,10 @@ class TeamService:
             logger.info(f"获取 Team {team_id} 成员列表成功: 共 {len(all_members)} 个成员 (已加入: {members_result['total']})")
 
             # 6. 持久化最新人数，避免“查看成员/撤回时已拿到实时列表，但数据库人数仍旧值”
-            #    这会直接影响可用席位统计、active/full 状态判断，以及基于数据库的撤回后显示。
+            #    同时保留本地已预留/已邀请的人数下限，避免远端同步延迟把人数回写变小。
             live_member_count = len(all_members)
-            team.current_members = live_member_count
-            if team.expires_at and team.expires_at < get_now():
-                team.status = "expired"
-            elif team.current_members >= team.max_members:
-                team.status = "full"
-            else:
-                team.status = "active"
             team.last_sync = get_now()
+            effective_members = await self._apply_member_count_floor(team, live_member_count, db_session)
 
             # 7. 请求成功，重置错误状态
             await self._reset_error_status(team, db_session)
@@ -2166,7 +2194,7 @@ class TeamService:
             return {
                 "success": True,
                 "members": all_members,
-                "total": len(all_members),
+                "total": effective_members,
                 "error": None
             }
 

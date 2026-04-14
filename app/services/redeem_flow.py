@@ -488,6 +488,26 @@ class RedeemFlowService:
                                         rc.warranty_expires_at = base_time + timedelta(days=days)
 
                             if is_virtual_welfare_code:
+                                current_welfare_code = (await settings_service.get_setting(
+                                    db_session,
+                                    "welfare_common_code",
+                                    "",
+                                    use_cache=False,
+                                ) or "").strip()
+                                if not current_welfare_code or current_welfare_code != code:
+                                    raise Exception("兑换码已失效，请刷新页面后使用最新福利通用兑换码")
+
+                                configured_limit_raw = await settings_service.get_setting(
+                                    db_session,
+                                    "welfare_common_code_limit",
+                                    "0",
+                                    use_cache=False,
+                                )
+                                try:
+                                    configured_limit = int(str(configured_limit_raw or "0").strip() or 0)
+                                except Exception:
+                                    configured_limit = 0
+
                                 setting_res = await db_session.execute(
                                     select(Setting)
                                     .where(Setting.key == "welfare_common_code_used_count")
@@ -500,16 +520,19 @@ class RedeemFlowService:
                                         current_used = int((used_setting.value or "0").strip() or 0)
                                     except Exception:
                                         current_used = 0
-                                    used_setting.value = str(current_used + 1)
                                 else:
+                                    current_used = 0
                                     used_setting = Setting(
                                         key="welfare_common_code_used_count",
-                                        value="1",
-                                        description="利通用兑换码已使用次数"
+                                        value="0",
+                                        description="福利通用兑换码已使用次数"
                                     )
                                     db_session.add(used_setting)
 
-                                # 同步更新缓存，避免下一次校验读取到旧值
+                                if configured_limit > 0 and current_used >= configured_limit:
+                                    raise Exception("兑换码次数已用完，无法进行兑换")
+
+                                used_setting.value = str(current_used + 1)
                                 settings_service._cache["welfare_common_code_used_count"] = used_setting.value
 
                             if is_virtual_welfare_code:

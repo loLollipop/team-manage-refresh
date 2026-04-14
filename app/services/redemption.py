@@ -11,7 +11,7 @@ from sqlalchemy import select, update, delete, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import RedemptionCode, RedemptionRecord, Team
+from app.models import RedemptionCode, RedemptionRecord, Team, Setting
 from app.services.settings import (
     settings_service,
     WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
@@ -64,6 +64,14 @@ class RedemptionService:
         redemption_code.used_team_id = None
         redemption_code.used_at = None
         redemption_code.warranty_expires_at = None
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """安全地将 settings/查询结果转换为整数。"""
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return default
 
     @staticmethod
     def _sync_code_status_fields(redemption_code: RedemptionCode) -> bool:
@@ -342,29 +350,54 @@ class RedemptionService:
     ) -> Dict[str, int | str | None]:
         """获取当前福利通用兑换码的实际使用情况。"""
         if welfare_code is None:
-            welfare_code = (await settings_service.get_setting(db_session, "welfare_common_code", "") or "").strip()
+            welfare_code = (await settings_service.get_setting(
+                db_session,
+                "welfare_common_code",
+                "",
+                use_cache=False,
+            ) or "").strip()
 
-        used_count = 0
-        if welfare_code:
-            used_result = await db_session.execute(
-                select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code == welfare_code)
-            )
-            used_count = int(used_result.scalar() or 0)
+        used_setting_result = await db_session.execute(
+            select(Setting).where(Setting.key == "welfare_common_code_used_count")
+        )
+        used_setting = used_setting_result.scalar_one_or_none()
 
-        capacity_result = await db_session.execute(
+        if used_setting is not None:
+            used_count = self._safe_int(used_setting.value, 0)
+        else:
+            used_count = 0
+            if welfare_code:
+                used_result = await db_session.execute(
+                    select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code == welfare_code)
+                )
+                used_count = int(used_result.scalar() or 0)
+
+        limit_result = await db_session.execute(
+            select(Setting).where(Setting.key == "welfare_common_code_limit")
+        )
+        limit_setting = limit_result.scalar_one_or_none()
+        configured_limit = self._safe_int(limit_setting.value if limit_setting else None, 0)
+
+        live_capacity_result = await db_session.execute(
             select(func.sum(Team.max_members - Team.current_members)).where(
                 Team.pool_type == "welfare",
                 Team.status == "active",
                 Team.current_members < Team.max_members
             )
         )
-        usable_capacity = int(capacity_result.scalar() or 0)
+        live_capacity = int(live_capacity_result.scalar() or 0)
+
+        effective_limit = configured_limit if configured_limit > 0 else live_capacity
+        remaining_by_limit = max(effective_limit - used_count, 0)
+        remaining_count = min(remaining_by_limit, live_capacity) if effective_limit > 0 else live_capacity
 
         return {
             "welfare_code": welfare_code,
             "used_count": used_count,
-            "usable_capacity": usable_capacity,
-            "remaining_count": usable_capacity,
+            "configured_limit": effective_limit,
+            "usable_capacity": live_capacity,
+            "remaining_count": remaining_count,
+            "remaining_by_limit": remaining_by_limit,
         }
 
     async def _rebuild_code_usage_state(
@@ -618,13 +651,19 @@ class RedemptionService:
         try:
             # 1. 优先按 settings 判断当前福利通用兑换码。
             # 即使数据库里存在用于兼容历史记录外键的影子码，也不能影响当前福利码的真实有效性。
-            welfare_code = (await settings_service.get_setting(db_session, "welfare_common_code", "") or "").strip()
+            welfare_code = (await settings_service.get_setting(
+                db_session,
+                "welfare_common_code",
+                "",
+                use_cache=False,
+            ) or "").strip()
             if welfare_code and code == welfare_code:
                 welfare_usage = await self.get_virtual_welfare_code_usage(db_session, welfare_code=welfare_code)
                 used_count = int(welfare_usage["used_count"] or 0)
-                effective_limit = int(welfare_usage["remaining_count"] or 0)
+                configured_limit = int(welfare_usage["configured_limit"] or 0)
+                remaining_count = int(welfare_usage["remaining_count"] or 0)
 
-                if effective_limit <= 0:
+                if configured_limit <= 0 or remaining_count <= 0:
                     return {
                         "success": True,
                         "valid": False,
@@ -648,8 +687,9 @@ class RedemptionService:
                         "pool_type": "welfare",
                         "reusable_by_seat": True,
                         "virtual_welfare_code": True,
-                        "limit": effective_limit,
+                        "limit": configured_limit,
                         "used_count": used_count,
+                        "remaining": remaining_count,
                     },
                     "error": None
                 }
@@ -664,9 +704,10 @@ class RedemptionService:
                 if welfare_code and code == welfare_code:
                     welfare_usage = await self.get_virtual_welfare_code_usage(db_session, welfare_code=welfare_code)
                     used_count = int(welfare_usage["used_count"] or 0)
-                    effective_limit = int(welfare_usage["remaining_count"] or 0)
+                    configured_limit = int(welfare_usage["configured_limit"] or 0)
+                    remaining_count = int(welfare_usage["remaining_count"] or 0)
 
-                    if effective_limit <= 0:
+                    if configured_limit <= 0 or remaining_count <= 0:
                         return {
                             "success": True,
                             "valid": False,
@@ -690,8 +731,9 @@ class RedemptionService:
                             "pool_type": "welfare",
                             "reusable_by_seat": True,
                             "virtual_welfare_code": True,
-                            "limit": effective_limit,
+                            "limit": configured_limit,
                             "used_count": used_count,
+                            "remaining": remaining_count,
                         },
                         "error": None
                     }

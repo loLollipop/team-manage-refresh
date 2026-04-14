@@ -241,16 +241,17 @@ async def welfare_dashboard(
         welfare_usage = await redemption_service.get_virtual_welfare_code_usage(db)
         welfare_code = str(welfare_usage.get("welfare_code") or "")
         welfare_used = int(welfare_usage.get("used_count") or 0)
-        effective_limit = max(int(welfare_usage.get("remaining_count") or 0), 0)
+        configured_limit = max(int(welfare_usage.get("configured_limit") or 0), 0)
+        remaining_count = max(int(welfare_usage.get("remaining_count") or 0), 0)
 
         stats = {
             "total_teams": team_stats["total"],
             "available_teams": team_stats["available"],
             "remaining_spots": remaining_spots,
             "welfare_code": welfare_code,
-            "welfare_code_limit": effective_limit,
+            "welfare_code_limit": configured_limit,
             "welfare_code_used": welfare_used,
-            "welfare_code_remaining": effective_limit,
+            "welfare_code_remaining": remaining_count,
         }
 
         return templates.TemplateResponse(
@@ -299,7 +300,7 @@ async def generate_welfare_common_code(
                 content={"success": False, "error": "当前没有可用的福利车位，无法生成通用兑换码"}
             )
 
-        current_welfare_code = (await settings_service.get_setting(db, "welfare_common_code", "") or "").strip()
+        current_welfare_code = (await settings_service.get_setting(db, "welfare_common_code", "", use_cache=False) or "").strip()
         max_attempts = 10
         code = None
         for _ in range(max_attempts):

@@ -157,8 +157,8 @@
             </div>
 
             {% if codes %}
-            <div class="table-container">
-                <table class="data-table">
+            <div class="table-container mobile-card-table-container">
+                <table class="data-table mobile-card-table">
                     <thead>
                         <tr>
                             <th style="width: 40px;">
@@ -178,16 +178,16 @@
                     <tbody id="codesTableBody">
                         {% for code in codes %}
                         <tr data-status="{{ code.status }}">
-                            <td>
+                            <td class="table-select-cell" data-label="选择">
                                 <input type="checkbox" class="code-checkbox" value="{{ code.code }}" onchange="updateSelectionCount()" style="width: auto; margin: 0;">
                             </td>
-                            <td>
+                            <td data-label="兑换码">
                                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                                     <i data-lucide="ticket" style="width: 14px; height: 14px; color: var(--text-muted);"></i>
                                     <code>{{ code.code }}</code>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="状态">
                                 {% if code.status == 'unused' %}
                                 <span class="status-badge status-active">未使用</span>
                                 {% elif code.status == 'used' %}
@@ -198,25 +198,25 @@
                                 <span class="status-badge status-error">已过期</span>
                                 {% endif %}
                             </td>
-                            <td>{{ code.created_at }}</td>
-                            <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
-                            <td>{{ code.used_by_email if code.used_by_email else '-' }}</td>
-                            <td>{{ code.used_at if code.used_at else '-' }}</td>
-                            <td>
+                            <td data-label="创建时间">{{ code.created_at }}</td>
+                            <td data-label="过期时间">{{ code.expires_at if code.expires_at else '永久有效' }}</td>
+                            <td data-label="使用者邮箱">{{ code.used_by_email if code.used_by_email else '-' }}</td>
+                            <td data-label="使用时间">{{ code.used_at if code.used_at else '-' }}</td>
+                            <td data-label="质保">
                                 {% if code.has_warranty %}
                                 <span class="status-badge status-info">是</span>
                                 {% else %}
                                 <span class="status-badge" style="background: #f3f4f6; color: #6b7280;">否</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="质保时长">
                                 {% if code.has_warranty %}
                                 <span style="font-size: 0.875rem;">{{ code.warranty_days }} 天</span>
                                 {% else %}
                                 -
                                 {% endif %}
                             </td>
-                            <td style="text-align: right;">
+                            <td class="table-actions-cell" data-label="操作" style="text-align: right;">
                                 <div class="action-buttons" style="justify-content: flex-end;">
                                     <button onclick='copyCode({{ code.code|tojson }})' class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
                                         <i data-lucide="copy" style="width: 14px; height: 14px;"></i>

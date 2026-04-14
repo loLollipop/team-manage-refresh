@@ -130,8 +130,8 @@
             </div>
 
             {% if records %}
-            <div class="table-container">
-                <table class="data-table">
+            <div class="table-container mobile-card-table-container">
+                <table class="data-table mobile-card-table">
                     <thead>
                         <tr>
                             <th>ID</th>
@@ -147,17 +147,19 @@
                     <tbody>
                         {% for record in records %}
                         <tr>
-                            <td><span class="text-muted">{{ record.id }}</span></td>
-                            <td><strong>{{ record.email }}</strong></td>
-                            <td><code>{{ record.code }}</code></td>
-                            <td>{{ record.team_name or '-' }}</td>
-                            <td><span class="badge badge-secondary">{{ record.team_id }}</span></td>
-                            <td><code class="account-id" title="{{ record.account_id }}">{{ record.account_id[:8] }}...</code></td>
-                            <td style="text-align: right;">{{ record.redeemed_at }}</td>
-                            <td style="text-align: right;">
-                                <button onclick='withdrawRecord({{ record.id|tojson }}, {{ record.email|tojson }}, this)' class="btn btn-sm btn-danger" title="撤回邀请并恢复兑换码">
-                                    <i data-lucide="undo-2" style="width: 14px; height: 14px;"></i> 撤回
-                                </button>
+                            <td data-label="ID"><span class="text-muted">{{ record.id }}</span></td>
+                            <td data-label="用户邮箱"><strong>{{ record.email }}</strong></td>
+                            <td data-label="兑换码"><code>{{ record.code }}</code></td>
+                            <td data-label="Team名称">{{ record.team_name or '-' }}</td>
+                            <td data-label="Team ID"><span class="badge badge-secondary">{{ record.team_id }}</span></td>
+                            <td data-label="Account ID"><code class="account-id" title="{{ record.account_id }}">{{ record.account_id[:8] }}...</code></td>
+                            <td data-label="兑换时间" style="text-align: right;">{{ record.redeemed_at }}</td>
+                            <td class="table-actions-cell" data-label="操作" style="text-align: right;">
+                                <div class="action-buttons" style="justify-content: flex-end;">
+                                    <button onclick='withdrawRecord({{ record.id|tojson }}, {{ record.email|tojson }}, this)' class="btn btn-sm btn-danger" title="撤回邀请并恢复兑换码">
+                                        <i data-lucide="undo-2" style="width: 14px; height: 14px;"></i> 撤回
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

@@ -3361,3 +3361,161 @@ body.admin-theme .dropdown-menu {
         flex-wrap: wrap;
     }
 }
+
+@media (max-width: 640px) {
+    .mobile-card-table-container {
+        overflow: visible;
+        background: none;
+    }
+
+    .mobile-card-table-container .data-table,
+    .mobile-card-table-container .data-table tbody,
+    .mobile-card-table-container .data-table tr,
+    .mobile-card-table-container .data-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .mobile-card-table-container .data-table {
+        white-space: normal;
+    }
+
+    .mobile-card-table-container .data-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .mobile-card-table-container .data-table tbody {
+        display: grid;
+        gap: 0.85rem;
+    }
+
+    .mobile-card-table-container .data-table tbody tr {
+        border: 1px solid var(--border-base);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--bg-surface) 86%, var(--bg-main) 14%);
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+    }
+
+    .mobile-card-table-container .data-table tbody tr:hover td {
+        background: transparent;
+    }
+
+    .mobile-card-table-container .data-table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.85rem;
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--border-base);
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        text-align: left !important;
+    }
+
+    .mobile-card-table-container .data-table td::before {
+        content: attr(data-label);
+        flex: 0 0 96px;
+        max-width: 96px;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .mobile-card-table-container .data-table td:last-child {
+        border-bottom: none;
+    }
+
+    .mobile-card-table-container .data-table td code,
+    .mobile-card-table-container .data-table td strong,
+    .mobile-card-table-container .data-table td span {
+        overflow-wrap: anywhere;
+    }
+
+    .mobile-card-table-container .data-table td.table-select-cell {
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.65rem;
+        background: color-mix(in srgb, var(--bg-main) 60%, var(--bg-surface) 40%);
+    }
+
+    .mobile-card-table-container .data-table td.table-select-cell::before {
+        flex-basis: auto;
+        max-width: none;
+    }
+
+    .mobile-card-table-container .data-table td.table-actions-cell {
+        display: block;
+        padding-top: 1rem;
+    }
+
+    .mobile-card-table-container .data-table td.table-actions-cell::before {
+        display: block;
+        max-width: none;
+        margin-bottom: 0.75rem;
+    }
+
+    .mobile-card-table-container .data-table td.table-actions-cell .action-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: stretch !important;
+    }
+
+    .mobile-card-table-container .data-table td.table-actions-cell .btn {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+
+    .mobile-card-table-container .data-table td.table-actions-cell .btn-icon {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+    }
+
+    .mobile-card-table-container .pagination {
+        gap: 0.75rem;
+    }
+
+    .mobile-card-table-container .per-page-selector {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .mobile-card-table-container .pagination-controls {
+        width: 100%;
+        padding-inline: 0;
+    }
+
+    .search-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .search-form-grid .form-actions {
+        flex-direction: column;
+    }
+
+    .search-form-grid .form-actions .btn {
+        width: 100%;
+    }
+
+    .table-section-meta {
+        width: 100%;
+    }
+
+    .table-meta-pill {
+        width: 100%;
+        justify-content: center;
+    }
+}

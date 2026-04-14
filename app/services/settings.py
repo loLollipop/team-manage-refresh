@@ -49,7 +49,13 @@ class SettingsService:
             return normalized
         return DEFAULT_UI_THEME
 
-    async def get_setting(self, session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
+    async def get_setting(
+        self,
+        session: AsyncSession,
+        key: str,
+        default: Optional[str] = None,
+        use_cache: bool = True,
+    ) -> Optional[str]:
         """
         获取单个配置项
 
@@ -57,12 +63,13 @@ class SettingsService:
             session: 数据库会话
             key: 配置项键名
             default: 默认值
+            use_cache: 是否优先使用进程内缓存
 
         Returns:
             配置项值,如果不存在则返回默认值
         """
         # 先从缓存获取
-        if key in self._cache:
+        if use_cache and key in self._cache:
             return self._cache[key]
 
         # 从数据库获取
