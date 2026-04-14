@@ -2229,6 +2229,11 @@ html.theme-warm body.admin-theme {
     --minimal-button-bg: #fbf7f1;
     --minimal-button-border: #e7dbc9;
     --minimal-button-hover-bg: #f7efe4;
+    --team-warm-minimal-primary-fg: #9f4f18;
+    --team-warm-minimal-primary-bg: #fff1e4;
+    --team-warm-minimal-primary-hover-bg: #fde3cf;
+    --team-warm-minimal-primary-border: #e3bc96;
+    --team-warm-minimal-primary-focus: rgba(159, 79, 24, 0.2);
 }
 
 body.admin-theme::before {

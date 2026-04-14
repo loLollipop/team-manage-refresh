@@ -440,9 +440,64 @@
         }
     }
 
+    body.admin-theme.theme-warm .team-list-table-container .btn-edit-team.btn-minimal.btn-primary,
+    body.admin-theme.theme-warm .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-edit-team.btn-minimal.btn-primary,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary {
+        color: var(--team-warm-minimal-primary-fg);
+        background: var(--team-warm-minimal-primary-bg);
+        border-color: var(--team-warm-minimal-primary-border);
+    }
+
+    body.admin-theme.theme-warm .team-list-table-container .btn-edit-team.btn-minimal.btn-primary:hover,
+    body.admin-theme.theme-warm .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary:hover,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-edit-team.btn-minimal.btn-primary:hover,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary:hover {
+        color: var(--team-warm-minimal-primary-fg);
+        background: var(--team-warm-minimal-primary-hover-bg);
+        border-color: color-mix(in srgb, var(--team-warm-minimal-primary-border) 68%, var(--team-warm-minimal-primary-fg) 32%);
+    }
+
+    body.admin-theme.theme-warm .team-list-table-container .btn-edit-team.btn-minimal.btn-primary:focus-visible,
+    body.admin-theme.theme-warm .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary:focus-visible,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-edit-team.btn-minimal.btn-primary:focus-visible,
+    html.theme-warm body.admin-theme .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary:focus-visible {
+        box-shadow: 0 0 0 3px var(--team-warm-minimal-primary-focus);
+    }
+
     @media (max-width: 768px) {
+        .team-dashboard-page .page-header {
+            gap: 1rem;
+        }
+
+        .team-dashboard-page .page-header-actions,
+        .team-toolbar,
+        .team-toolbar .header-group {
+            width: 100%;
+            align-items: stretch;
+        }
+
+        .team-dashboard-page .page-header-actions {
+            flex-direction: column;
+        }
+
+        .team-dashboard-page .page-header-actions .btn,
+        .team-toolbar .dropdown-wrapper,
+        .team-toolbar .btn {
+            width: 100%;
+        }
+
         .table-section-head {
             flex-direction: column;
+        }
+
+        .table-section-meta {
+            width: 100%;
+        }
+
+        .table-meta-pill {
+            width: 100%;
+            justify-content: center;
         }
 
         .team-toolbar .search-form {
@@ -470,6 +525,134 @@
         .pagination-summary {
             width: 100%;
             margin-left: 0;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .team-list-table-container {
+            overflow: visible;
+            background: none;
+        }
+
+        .team-list-table-container .data-table,
+        .team-list-table-container .data-table tbody,
+        .team-list-table-container .data-table tr,
+        .team-list-table-container .data-table td {
+            display: block;
+            width: 100%;
+        }
+
+        .team-list-table-container .data-table {
+            white-space: normal;
+        }
+
+        .team-list-table-container .data-table thead {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .team-list-table-container .data-table tbody {
+            display: grid;
+            gap: 0.85rem;
+        }
+
+        .team-list-table-container .data-table tbody tr {
+            border: 1px solid var(--border-base);
+            border-radius: 18px;
+            background: color-mix(in srgb, var(--bg-surface) 86%, var(--bg-main) 14%);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .team-list-table-container .data-table tbody tr:hover td {
+            background: transparent;
+        }
+
+        .team-list-table-container .data-table td {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.85rem;
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--border-base);
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .team-list-table-container .data-table td::before {
+            content: attr(data-label);
+            flex: 0 0 88px;
+            max-width: 88px;
+            color: var(--text-muted);
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .team-list-table-container .data-table td:last-child {
+            border-bottom: none;
+        }
+
+        .team-list-table-container .data-table td.team-select-cell {
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.65rem;
+            background: color-mix(in srgb, var(--bg-main) 60%, var(--bg-surface) 40%);
+        }
+
+        .team-list-table-container .data-table td.team-select-cell::before {
+            flex-basis: auto;
+            max-width: none;
+        }
+
+        .team-list-table-container .data-table td.team-actions-cell {
+            display: block;
+            padding-top: 1rem;
+        }
+
+        .team-list-table-container .data-table td.team-actions-cell::before {
+            display: block;
+            max-width: none;
+            margin-bottom: 0.75rem;
+        }
+
+        .team-list-table-container .data-table td.team-actions-cell .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .team-list-table-container .data-table td.team-actions-cell .btn-icon {
+            width: 40px;
+            height: 40px;
+            min-height: 40px;
+        }
+
+        .team-list-table-container .data-table td .role-hint {
+            margin-left: 0;
+            margin-top: 0.45rem;
+            display: inline-flex;
+        }
+
+        .pagination {
+            gap: 0.75rem;
+        }
+
+        .per-page-selector {
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .pagination-controls {
+            width: 100%;
+            padding-inline: 0;
         }
     }
 </style>
@@ -721,38 +904,38 @@
         <tbody>
             {% for team in teams %}
             <tr>
-                <td><input type="checkbox" class="team-checkbox" value="{{ team.id }}" onchange="updateSelectedCount()">
+                <td class="team-select-cell" data-label="选择"><input type="checkbox" class="team-checkbox" value="{{ team.id }}" onchange="updateSelectedCount()">
                 </td>
-                <td><span class="text-muted">{% if active_page == "welfare" %}{{ ((pagination.current_page - 1) * pagination.per_page) + loop.index }}{% else %}{{ team.id }}{% endif %}</span></td>
-                <td>
+                <td data-label="{% if active_page == 'welfare' %}编号{% else %}ID{% endif %}"><span class="text-muted">{% if active_page == "welfare" %}{{ ((pagination.current_page - 1) * pagination.per_page) + loop.index }}{% else %}{{ team.id }}{% endif %}</span></td>
+                <td data-label="邮箱">
                     {{ team.email }}
                     {% if team.account_role and team.account_role != 'account-owner' %}
                     <span class="role-hint" title="账号角色: {{ team.account_role }}">已降级</span>
                     {% endif %}
                 </td>
-                <td><span class="text-muted small">{{ team.account_id or '-' }}</span></td>
-                <td>{{ team.team_name or '-' }}</td>
-                <td>
+                <td data-label="Account ID"><span class="text-muted small">{{ team.account_id or '-' }}</span></td>
+                <td data-label="Team 名称">{{ team.team_name or '-' }}</td>
+                <td data-label="成员数">
                     <span class="member-count">
                         {{ team.current_members }}/{{ team.max_members }}
                     </span>
                 </td>
-                <td>{{ team.subscription_plan or '-' }}</td>
-                <td>
+                <td data-label="订阅计划">{{ team.subscription_plan or '-' }}</td>
+                <td data-label="到期时间">
                     {% if team.expires_at %}
                     {{ team.expires_at|format_datetime }}
                     {% else %}
                     -
                     {% endif %}
                 </td>
-                <td>
+                <td data-label="设备验证">
                     {% if team.device_code_auth_enabled %}
                     <span class="status-badge status-active">已开启</span>
                     {% else %}
                     <span class="status-badge status-banned">未开启</span>
                     {% endif %}
                 </td>
-                <td>
+                <td data-label="状态">
                     <span class="status-badge status-{{ team.status }}">
                         {% if team.status == 'active' %}
                         可用
@@ -769,7 +952,7 @@
                         {% endif %}
                     </span>
                 </td>
-                <td>
+                <td class="team-actions-cell" data-label="操作">
                     <div class="action-buttons">
                         <button class="btn btn-sm btn-icon btn-minimal btn-info btn-view-members"
                             data-id="{{ team.id }}" data-email="{{ team.email }}" title="查看成员" aria-label="查看成员">

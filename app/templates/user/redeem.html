@@ -111,18 +111,20 @@
                             <p>质保期为 <strong>一个月</strong>，在有效期内可用原兑换码重新加入 Team。</p>
                         </div>
 
-                        <form id="warrantyForm" class="warranty-query-row">
-                            <div class="form-group warranty-query-field">
-                                <label for="warrantyInput">兑换码或邮箱</label>
-                                <div class="field-wrap">
-                                    <i data-lucide="search" class="field-icon"></i>
-                                    <input type="text" id="warrantyInput" name="warrantyInput" placeholder="请输入原兑换码或邮箱进行查询" class="form-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="warrantyHint">
+                        <form id="warrantyForm" class="warranty-query-form">
+                            <div class="warranty-query-row">
+                                <div class="form-group warranty-query-field">
+                                    <label for="warrantyInput">兑换码或邮箱</label>
+                                    <div class="field-wrap">
+                                        <i data-lucide="search" class="field-icon"></i>
+                                        <input type="text" id="warrantyInput" name="warrantyInput" placeholder="请输入原兑换码或邮箱进行查询" class="form-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="warrantyHint">
+                                    </div>
                                 </div>
-                                <p id="warrantyHint" class="field-hint">优先支持邮箱查询，可同时查看该账号下的兑换记录与质保状态。</p>
+                                <button type="submit" class="btn btn-secondary warranty-query-btn" id="checkWarrantyBtn">
+                                    <i data-lucide="search-check"></i> 查询质保状态
+                                </button>
                             </div>
-                            <button type="submit" class="btn btn-secondary warranty-query-btn" id="checkWarrantyBtn">
-                                <i data-lucide="search-check"></i> 查询质保状态
-                            </button>
+                            <p id="warrantyHint" class="field-hint warranty-query-hint">优先支持邮箱查询，可同时查看该账号下的兑换记录与质保状态。</p>
                         </form>
 
                         <div id="warrantyResultContainer" class="warranty-result-container" hidden>

@@ -426,21 +426,38 @@ body {
 .toast.success { border-left: 4px solid var(--success); }
 .toast.error { border-left: 4px solid var(--danger); }
 
-.warranty-query-row {
+.warranty-query-form {
   margin-top: 22px;
   display: grid;
+  gap: 10px;
+}
+
+.warranty-query-row {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
+  gap: 14px;
+  align-items: stretch;
 }
 
 .warranty-query-field {
   margin-bottom: 0;
 }
 
-.warranty-query-row .btn {
+.warranty-query-field .field-wrap,
+.warranty-query-field .form-input {
+  height: 100%;
+}
+
+.warranty-query-btn {
+  align-self: end;
   width: auto;
-  min-width: 176px;
+  min-width: 188px;
+  min-height: 48px;
+  white-space: nowrap;
+}
+
+.warranty-query-hint {
+  margin-top: 0;
 }
 
 .warranty-result-container {
@@ -765,7 +782,7 @@ body {
     align-items: stretch;
   }
 
-  .warranty-query-row .btn {
+  .warranty-query-btn {
     width: 100%;
     min-width: 0;
   }
