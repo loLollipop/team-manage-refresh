@@ -2988,6 +2988,12 @@ class TeamService:
             available_result = await db_session.execute(available_stmt)
             available = available_result.scalar() or 0
 
+            live_stmt = select(func.count(Team.id)).where(Team.status.in_(("active", "full")))
+            if pool_type:
+                live_stmt = live_stmt.where(Team.pool_type == pool_type)
+            live_result = await db_session.execute(live_stmt)
+            live = live_result.scalar() or 0
+
             banned_stmt = select(func.count(Team.id)).where(Team.status == "banned")
             if pool_type:
                 banned_stmt = banned_stmt.where(Team.pool_type == pool_type)
@@ -3003,12 +3009,13 @@ class TeamService:
             return {
                 "total": total,
                 "available": available,
+                "live": live,
                 "banned": banned,
                 "expired": expired,
             }
         except Exception as e:
             logger.error(f"获取 Team 统计信息失败: {e}")
-            return {"total": 0, "available": 0, "banned": 0, "expired": 0}
+            return {"total": 0, "available": 0, "live": 0, "banned": 0, "expired": 0}
 
 
 # 创建全局 Team 服务实例

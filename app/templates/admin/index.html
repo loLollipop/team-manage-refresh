@@ -484,13 +484,6 @@
                 <span>{% if active_page == "welfare" %}Welfare Workspace{% else %}Operations Workspace{% endif %}</span>
             </div>
             <h2>{% if active_page == "welfare" %}福利车位工作台{% else %}Team 工作台{% endif %}</h2>
-            <p>
-                {% if active_page == "welfare" %}
-                统一管理福利席位库存、通用兑换码与 Team 状态，适合快速筛选可发放席位并执行转池操作。
-                {% else %}
-                在一个工作区里完成 Team 搜索、状态筛选、批量刷新、推送、导出与成员维护，减少在列表和弹窗之间反复切换。
-                {% endif %}
-            </p>
             <div class="page-header-meta">
                 <span class="page-meta-pill">
                     <i data-lucide="database"></i>
@@ -564,10 +557,10 @@
             </div>
         </div>
         <div class="stat-card stat-warning">
-            <div class="stat-icon"><i data-lucide="clock-3"></i></div>
+            <div class="stat-icon"><i data-lucide="activity"></i></div>
             <div class="stat-info-group">
-                <div class="stat-value">{{ stats.expired_teams }}</div>
-                <div class="stat-label">已过期 Team</div>
+                <div class="stat-value">{{ stats.live_teams }}</div>
+                <div class="stat-label">存活 Team</div>
             </div>
         </div>
         {% endif %}
@@ -587,13 +580,6 @@
             <div class="workbench-toolbar-row">
                 <div class="workbench-toolbar-copy">
                     <h3>{% if active_page == "welfare" %}福利 Team 列表{% else %}Team 列表{% endif %}</h3>
-                    <p>
-                        {% if active_page == "welfare" %}
-                        在一个筛选工作区里快速查找剩余席位、转池候选和待处理账号。
-                        {% else %}
-                        先筛选，再批量处理，把高频操作集中在列表上方，减少逐行查找成本。
-                        {% endif %}
-                    </p>
                 </div>
                 <div id="batchActions" class="batch-actions-group" style="display: none;">
                     <button type="button" id="btnBatchRefresh" class="btn btn-secondary btn-sm">
@@ -694,13 +680,6 @@
             <div class="table-section-head">
                 <div class="table-section-copy">
                     <h3>{% if active_page == "welfare" %}福利席位明细{% else %}Team 运行明细{% endif %}</h3>
-                    <p>
-                        {% if search or status_filter %}
-                        当前列表已应用筛选条件，请在确认结果后进行批量处理或单项维护。
-                        {% else %}
-                        这里集中展示 Team 状态、订阅、成员数与设备验证情况，适合做高频巡检和批量处理。
-                        {% endif %}
-                    </p>
                 </div>
                 <div class="table-section-meta">
                     {% if search %}

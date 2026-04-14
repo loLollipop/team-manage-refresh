@@ -180,6 +180,7 @@ async def admin_dashboard(
         stats = {
             "total_teams": team_stats["total"],
             "available_teams": team_stats["available"],
+            "live_teams": team_stats["live"],
             "banned_teams": team_stats["banned"],
             "expired_teams": team_stats["expired"],
         }

@@ -253,7 +253,8 @@ body.admin-theme .status-badge.status-banned {
 }
 
 body.admin-theme .data-table th {
-    background: rgba(10, 20, 45, 0.98);
+    background: var(--table-header-bg);
+    color: var(--table-header-text);
 }
 
 body.admin-theme .toast {
@@ -539,51 +540,6 @@ body.admin-theme .toast {
     gap: 0.25rem;
     align-items: center;
     flex-wrap: nowrap;
-}
-
-/* Minimal/Ghost Buttons (Style A) */
-.btn-minimal {
-    background-color: transparent;
-    border-color: transparent;
-    color: var(--text-muted);
-    box-shadow: none;
-}
-
-.btn-minimal:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-    color: var(--text-main);
-    transform: none;
-    box-shadow: none;
-}
-
-.btn-minimal.btn-primary:hover {
-    background-color: var(--primary-soft);
-    color: var(--primary);
-}
-
-.btn-minimal.btn-info:hover {
-    background-color: var(--info-soft);
-    color: var(--info);
-}
-
-.btn-minimal.btn-success:hover {
-    background-color: var(--success-soft);
-    color: var(--success);
-}
-
-.btn-minimal.btn-warning:hover {
-    background-color: var(--warning-soft);
-    color: var(--warning);
-}
-
-.btn-minimal.btn-danger:hover {
-    background-color: var(--danger-soft);
-    color: var(--danger);
-}
-
-.btn-minimal.btn-secondary:hover {
-    background-color: var(--bg-main);
-    color: var(--text-main);
 }
 
 /* Layout Components */
@@ -2044,7 +2000,8 @@ html.theme-warm body.admin-theme .settings-nav-pill {
 
 body.admin-theme.theme-warm .data-table th,
 html.theme-warm body.admin-theme .data-table th {
-    background: #faf6f0;
+    background: var(--table-header-bg);
+    color: var(--table-header-text);
 }
 
 body.admin-theme.theme-warm .status-badge.status-banned,
@@ -2227,6 +2184,13 @@ body.admin-theme {
     --toast-border: #dbe4f2;
     --focus-ring: rgba(79, 70, 229, 0.18);
     --table-row-hover: #f5f7ff;
+    --table-header-bg: #edf2fb;
+    --table-header-text: #5c6b80;
+    --secondary-button-bg: #f1f5ff;
+    --secondary-button-hover-bg: #e5ebff;
+    --minimal-button-bg: #f6f8fc;
+    --minimal-button-border: #d9e1ee;
+    --minimal-button-hover-bg: #eef3ff;
     --shadow-sm: 0 10px 28px rgba(15, 23, 42, 0.05);
     --shadow-md: 0 20px 42px rgba(15, 23, 42, 0.08);
     --shadow-lg: 0 28px 56px rgba(15, 23, 42, 0.14);
@@ -2258,6 +2222,13 @@ html.theme-warm body.admin-theme {
     --toast-border: #e9decd;
     --focus-ring: rgba(194, 106, 45, 0.18);
     --table-row-hover: #fff8f1;
+    --table-header-bg: #faf3ea;
+    --table-header-text: #7a6957;
+    --secondary-button-bg: #faf4ec;
+    --secondary-button-hover-bg: #f4ebdf;
+    --minimal-button-bg: #fbf7f1;
+    --minimal-button-border: #e7dbc9;
+    --minimal-button-hover-bg: #f7efe4;
 }
 
 body.admin-theme::before {
@@ -2655,8 +2626,8 @@ body.admin-theme .dropdown-menu {
 .data-table th {
     top: 0;
     padding: 0.82rem 1rem;
-    background: color-mix(in srgb, var(--bg-surface) 76%, var(--bg-main) 24%);
-    color: var(--text-muted);
+    background: var(--table-header-bg);
+    color: var(--table-header-text);
 }
 
 .data-table td {
@@ -2759,14 +2730,14 @@ body.admin-theme .dropdown-menu {
 }
 
 .btn-secondary {
-    background: var(--bg-surface);
+    background: var(--secondary-button-bg);
     color: var(--text-main);
-    border-color: var(--border-base);
+    border-color: color-mix(in srgb, var(--border-base) 74%, var(--primary) 26%);
 }
 
 .btn-secondary:hover {
-    background: var(--bg-muted);
-    border-color: color-mix(in srgb, var(--border-base) 55%, var(--text-dim) 45%);
+    background: var(--secondary-button-hover-bg);
+    border-color: color-mix(in srgb, var(--border-base) 48%, var(--primary) 52%);
 }
 
 .btn-success {
@@ -2789,11 +2760,68 @@ body.admin-theme .dropdown-menu {
 }
 
 .btn-minimal {
-    color: var(--text-muted);
+    background-color: var(--minimal-button-bg);
+    border-color: var(--minimal-button-border);
+    color: var(--text-main);
+    box-shadow: none;
+}
+
+.btn-minimal.btn-primary {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 72%, var(--primary) 28%);
+}
+
+.btn-minimal.btn-info {
+    color: var(--info);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 72%, var(--info) 28%);
+}
+
+.btn-minimal.btn-success {
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 72%, var(--success) 28%);
+}
+
+.btn-minimal.btn-danger {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 72%, var(--danger) 28%);
 }
 
 .btn-minimal:hover {
-    background-color: var(--bg-muted);
+    background-color: var(--minimal-button-hover-bg);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--primary) 42%);
+    color: var(--text-main);
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-minimal.btn-primary:hover {
+    background-color: var(--primary-soft);
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--primary) 42%);
+}
+
+.btn-minimal.btn-info:hover {
+    background-color: var(--info-soft);
+    color: var(--info);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--info) 42%);
+}
+
+.btn-minimal.btn-success:hover {
+    background-color: var(--success-soft);
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--success) 42%);
+}
+
+.btn-minimal.btn-danger:hover {
+    background-color: var(--danger-soft);
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--danger) 42%);
+}
+
+.btn-minimal.btn-secondary:hover {
+    background-color: var(--bg-main);
+    border-color: color-mix(in srgb, var(--minimal-button-border) 58%, var(--text-dim) 42%);
+    color: var(--text-main);
 }
 
 .filter-tabs {
@@ -3100,20 +3128,6 @@ body.admin-theme .dropdown-menu {
     accent-color: var(--primary);
 }
 
-.announcement-shell {
-    max-width: 1080px;
-}
-
-.announcement-editor {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
-    gap: 1rem;
-}
-
-.announcement-help-card {
-    height: 100%;
-}
-
 .text-link {
     color: var(--primary);
     text-decoration: none;
@@ -3176,8 +3190,7 @@ body.admin-theme .dropdown-menu {
 
     .stats-container,
     .settings-top-nav,
-    .system-hub-grid,
-    .announcement-editor {
+    .system-hub-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -3298,7 +3311,6 @@ body.admin-theme .dropdown-menu {
     .stats-container,
     .settings-top-nav,
     .system-hub-grid,
-    .announcement-editor,
     .theme-options {
         grid-template-columns: 1fr;
     }
