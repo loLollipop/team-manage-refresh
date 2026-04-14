@@ -16,9 +16,10 @@ function escapeHtml(unsafe) {
 // 全局变量
 let currentEmail = '';
 let currentCode = '';
-let availableTeams = [];
-let selectedTeamId = null;
 let currentTopTab = 'redeem';
+let isRedeeming = false;
+let isCheckingWarranty = false;
+let lastAnnouncementTrigger = null;
 
 // Toast提示函数
 function showToast(message, type = 'info') {
@@ -435,17 +436,59 @@ function initAnnouncementModal() {
     const closeBtn = document.getElementById('announcementCloseBtn');
     const confirmBtn = document.getElementById('announcementConfirmBtn');
     const backdrop = document.getElementById('announcementBackdrop');
+    const dialog = modal?.querySelector('.announcement-dialog');
 
-    if (!modal || !content) return;
+    if (!modal || !content || !dialog) return;
 
-    content.innerHTML = renderMarkdownSafe(String(announcement.markdown));
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden', 'false');
+    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
     const closeModal = () => {
         modal.classList.remove('show');
         modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+        document.removeEventListener('keydown', handleKeydown);
+        if (lastAnnouncementTrigger && typeof lastAnnouncementTrigger.focus === 'function') {
+            lastAnnouncementTrigger.focus();
+        }
     };
+
+    const trapFocus = (event) => {
+        if (event.key !== 'Tab') return;
+        const focusableElements = Array.from(dialog.querySelectorAll(focusableSelector)).filter(el => !el.disabled && el.offsetParent !== null);
+        if (focusableElements.length === 0) return;
+
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    };
+
+    const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeModal();
+            return;
+        }
+        trapFocus(event);
+    };
+
+    content.innerHTML = renderMarkdownSafe(String(announcement.markdown));
+    lastAnnouncementTrigger = document.activeElement;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    document.addEventListener('keydown', handleKeydown);
+
+    const firstFocusable = dialog.querySelector(focusableSelector);
+    if (firstFocusable && typeof firstFocusable.focus === 'function') {
+        firstFocusable.focus();
+    }
 
     if (closeBtn) closeBtn.addEventListener('click', closeModal);
     if (confirmBtn) confirmBtn.addEventListener('click', closeModal);
@@ -482,27 +525,234 @@ function switchTopTab(tabName) {
 
     if (redeemPanel) redeemPanel.classList.toggle('active', tabName === 'redeem');
     if (warrantyPanel) warrantyPanel.classList.toggle('active', tabName === 'warranty');
-    if (tabRedeem) tabRedeem.classList.toggle('active', tabName === 'redeem');
-    if (tabWarranty) tabWarranty.classList.toggle('active', tabName === 'warranty');
+    if (tabRedeem) {
+        tabRedeem.classList.toggle('active', tabName === 'redeem');
+        tabRedeem.setAttribute('aria-selected', tabName === 'redeem' ? 'true' : 'false');
+        tabRedeem.setAttribute('tabindex', tabName === 'redeem' ? '0' : '-1');
+    }
+    if (tabWarranty) {
+        tabWarranty.classList.toggle('active', tabName === 'warranty');
+        tabWarranty.setAttribute('aria-selected', tabName === 'warranty' ? 'true' : 'false');
+        tabWarranty.setAttribute('tabindex', tabName === 'warranty' ? '0' : '-1');
+    }
 
     updateTabIndicator(tabName === 'redeem' ? tabRedeem : tabWarranty);
 }
 
+function resetRedeemResult() {
+    const resultContent = document.getElementById('resultContent');
+    if (resultContent) {
+        resultContent.innerHTML = '';
+    }
+}
+
 // 返回步骤1
-function backToStep1() {
+function backToStep1(targetTab = 'redeem') {
     showStep(1);
-    switchTopTab('redeem');
-    selectedTeamId = null;
+    switchTopTab(targetTab);
+}
+
+function restartRedeemFlow() {
+    currentEmail = '';
+    currentCode = '';
+    resetRedeemResult();
+    backToStep1('redeem');
+    const verifyForm = document.getElementById('verifyForm');
+    if (verifyForm) verifyForm.reset();
+    const emailInput = document.getElementById('email');
+    if (emailInput) emailInput.focus();
+}
+
+function setWarrantyResultVisible(visible) {
+    const warrantyResultContainer = document.getElementById('warrantyResultContainer');
+    if (warrantyResultContainer) {
+        warrantyResultContainer.hidden = !visible;
+    }
+}
+
+function focusElementLater(element) {
+    if (!element || typeof element.focus !== 'function') return;
+    requestAnimationFrame(() => element.focus());
+}
+
+function encodeActionValue(value) {
+    return encodeURIComponent(String(value ?? ''));
+}
+
+function decodeActionValue(value) {
+    try {
+        return decodeURIComponent(String(value ?? ''));
+    } catch (_) {
+        return String(value ?? '');
+    }
+}
+
+async function parseJsonResponse(response) {
+    const text = await response.text();
+    if (!text) {
+        return { text: '', data: null };
+    }
+
+    try {
+        return { text, data: JSON.parse(text) };
+    } catch (_) {
+        return { text, data: null };
+    }
+}
+
+function renderStepResult(html) {
+    const resultContent = document.getElementById('resultContent');
+    if (!resultContent) return;
+
+    resultContent.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+    showStep(3);
+    focusElementLater(resultContent);
+}
+
+function renderWarrantyPanel(html) {
+    const warrantyContent = document.getElementById('warrantyContent');
+    if (!warrantyContent) return;
+
+    warrantyContent.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+
+    showStep(1);
+    switchTopTab('warranty');
+    setWarrantyResultVisible(true);
+    focusElementLater(warrantyContent);
+}
+
+function renderResultDetails(items) {
+    const rows = items
+        .filter(item => item && item.value)
+        .map(item => `
+            <div class="result-detail-item">
+                <span class="result-detail-label">${escapeHtml(item.label)}</span>
+                <span class="result-detail-value">${escapeHtml(item.value)}</span>
+            </div>
+        `)
+        .join('');
+
+    if (!rows) return '';
+    return `<div class="result-details">${rows}</div>`;
+}
+
+function getTeamStatusMeta(status) {
+    switch (status) {
+        case 'active':
+            return { label: '正常', className: 'badge-success' };
+        case 'full':
+            return { label: '已满', className: 'badge-success' };
+        case 'banned':
+            return { label: '封号', className: 'badge-error' };
+        case 'error':
+            return { label: '异常', className: 'badge-warn' };
+        case 'expired':
+            return { label: '过期', className: 'badge-neutral' };
+        case 'suspected_inconsistent':
+            return { label: '同步异常', className: 'badge-warn' };
+        default:
+            return { label: status || '未知', className: 'badge-neutral' };
+    }
+}
+
+function getWarrantyStatusBadge(valid) {
+    return valid
+        ? '<span class="badge badge-success">质保有效</span>'
+        : '<span class="badge badge-error">质保已过期</span>';
+}
+
+async function handleDynamicActionClick(event) {
+    const actionButton = event.target.closest('[data-action]');
+    if (!actionButton) return;
+
+    const action = actionButton.dataset.action;
+    if (!action) return;
+
+    switch (action) {
+        case 'restart-redeem':
+            restartRedeemFlow();
+            break;
+        case 'back-redeem':
+            backToStep1('redeem');
+            focusElementLater(document.getElementById('email'));
+            break;
+        case 'go-warranty':
+            await goToWarrantyFromSuccess();
+            break;
+        case 'copy-warranty-code':
+            await copyWarrantyCode(decodeActionValue(actionButton.dataset.code));
+            break;
+        case 'one-click-replace':
+            await oneClickReplace(
+                decodeActionValue(actionButton.dataset.code),
+                decodeActionValue(actionButton.dataset.email),
+                actionButton
+            );
+            break;
+        case 'enable-device-auth':
+            await enableUserDeviceAuth(
+                Number(actionButton.dataset.teamId),
+                decodeActionValue(actionButton.dataset.code),
+                decodeActionValue(actionButton.dataset.email),
+                actionButton
+            );
+            break;
+        default:
+            break;
+    }
+}
+
+function handleTopTabKeydown(event) {
+    const tabs = [
+        document.getElementById('tabRedeem'),
+        document.getElementById('tabWarranty')
+    ].filter(Boolean);
+
+    const currentIndex = tabs.indexOf(event.currentTarget);
+    if (currentIndex === -1) return;
+
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    switchTopTab(nextTab.dataset.tab);
+    nextTab.focus();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const tabRedeem = document.getElementById('tabRedeem');
     const tabWarranty = document.getElementById('tabWarranty');
+    const warrantyForm = document.getElementById('warrantyForm');
 
-    if (tabRedeem) tabRedeem.addEventListener('click', () => switchTopTab('redeem'));
-    if (tabWarranty) tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
+    if (tabRedeem) {
+        tabRedeem.addEventListener('click', () => switchTopTab('redeem'));
+        tabRedeem.addEventListener('keydown', handleTopTabKeydown);
+    }
+    if (tabWarranty) {
+        tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
+        tabWarranty.addEventListener('keydown', handleTopTabKeydown);
+    }
+    if (warrantyForm) {
+        warrantyForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await checkWarranty();
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        void handleDynamicActionClick(event);
+    });
 
     switchTopTab('redeem');
+    setWarrantyResultVisible(false);
     initAnnouncementModal();
     window.addEventListener('resize', () => {
         const activeTab = document.querySelector('.top-tab.active');
@@ -542,75 +792,10 @@ document.getElementById('verifyForm').addEventListener('submit', async (e) => {
     if (window.lucide) lucide.createIcons();
 });
 
-// 渲染Team列表
-function renderTeamsList() {
-    const teamsList = document.getElementById('teamsList');
-    teamsList.innerHTML = '';
-
-    availableTeams.forEach(team => {
-        const teamCard = document.createElement('div');
-        teamCard.className = 'team-card';
-        teamCard.onclick = () => selectTeam(team.id, teamCard);
-
-        const planBadge = team.subscription_plan === 'Plus' ? 'badge-plus' : 'badge-pro';
-
-        teamCard.innerHTML = `
-            <div class="team-name">${escapeHtml(team.team_name) || 'Team ' + team.id}</div>
-            <div class="team-info">
-                <div class="team-info-item">
-                    <i data-lucide="users" style="width: 14px; height: 14px;"></i>
-                    <span>${team.current_members}/${team.max_members} 成员</span>
-                </div>
-                <div class="team-info-item">
-                    <span class="team-badge ${planBadge}">${escapeHtml(team.subscription_plan) || 'Plus'}</span>
-                </div>
-                ${team.expires_at ? `
-                <div class="team-info-item">
-                    <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
-                    <span>到期: ${formatDate(team.expires_at)}</span>
-                </div>
-                ` : ''}
-            </div>
-        `;
-
-        teamsList.appendChild(teamCard);
-        if (window.lucide) lucide.createIcons();
-    });
-}
-
-// 选择Team
-function selectTeam(teamId, teamCard) {
-    selectedTeamId = teamId;
-
-    // 更新UI
-    document.querySelectorAll('.team-card').forEach(card => {
-        card.classList.remove('selected');
-    });
-    if (teamCard) {
-        teamCard.classList.add('selected');
-    }
-
-    // 立即确认兑换
-    confirmRedeem(teamId);
-}
-
-// 自动选择Team
-function autoSelectTeam() {
-    if (availableTeams.length === 0) {
-        showToast('没有可用的 Team', 'error');
-        return;
-    }
-
-    // 自动选择第一个Team(后端会按过期时间排序)
-    confirmRedeem(null);
-}
-
 // 确认兑换
 async function confirmRedeem(teamId) {
-    console.log('Starting redemption process, teamId:', teamId);
-
-    // Safety check: Ensure confirmRedeem doesn't run if already running? 
-    // The button disable logic handles that.
+    if (isRedeeming) return;
+    isRedeeming = true;
 
     try {
         const response = await fetch('/redeem/confirm', {
@@ -625,112 +810,78 @@ async function confirmRedeem(teamId) {
             })
         });
 
-        console.log('Response status:', response.status);
-
-        let data;
-        const text = await response.text();
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            console.error('Failed to parse response JSON:', text);
+        const { text, data } = await parseJsonResponse(response);
+        if (!data) {
             throw new Error('服务器响应格式错误');
         }
 
         if (response.ok && data.success) {
-            // 兑换成功
-            console.log('Redemption success');
             showSuccessResult(data);
-        } else {
-            // 兑换失败
-            console.warn('Redemption failed:', data);
-
-            const rawError = (data && (data.detail ?? data.error ?? data.message ?? data.reason)) || text;
-            const errorMessage = getFriendlyRedeemErrorMessage(rawError, response.status);
-            showErrorResult(errorMessage);
+            return;
         }
+
+        const rawError = (data.detail ?? data.error ?? data.message ?? data.reason) || text;
+        const errorMessage = getFriendlyRedeemErrorMessage(rawError, response.status);
+        showErrorResult(errorMessage);
     } catch (error) {
-        console.error('Network or logic error:', error);
         const errorMessage = getFriendlyRedeemErrorMessage(error?.message || '');
         showErrorResult(errorMessage || '网络错误，请稍后重试');
+    } finally {
+        isRedeeming = false;
     }
 }
 
 // 显示成功结果
 function showSuccessResult(data) {
-    const resultContent = document.getElementById('resultContent');
     const teamInfo = data.team_info || {};
+    const detailsHtml = renderResultDetails([
+        { label: 'Team 名称', value: teamInfo.team_name || '-' },
+        { label: '邮箱地址', value: currentEmail || '-' },
+        { label: '到期时间', value: teamInfo.expires_at ? formatDate(teamInfo.expires_at) : '' }
+    ]);
 
-    resultContent.innerHTML = `
-        <div class="result-success">
-            <div class="result-icon"><i data-lucide="check-circle" style="width: 64px; height: 64px; color: var(--success);"></i></div>
-            <div class="result-title">兑换成功!</div>
-            <div class="result-message">${escapeHtml(data.message) || '您已成功加入 Team'}</div>
-
-            <div class="result-details">
-                <div class="result-detail-item">
-                    <span class="result-detail-label">Team 名称</span>
-                    <span class="result-detail-value">${escapeHtml(teamInfo.team_name) || '-'}</span>
-                </div>
-                <div class="result-detail-item">
-                    <span class="result-detail-label">邮箱地址</span>
-                    <span class="result-detail-value">${escapeHtml(currentEmail)}</span>
-                </div>
-                ${teamInfo.expires_at ? `
-                <div class="result-detail-item">
-                    <span class="result-detail-label">到期时间</span>
-                    <span class="result-detail-value">${formatDate(teamInfo.expires_at)}</span>
-                </div>
-                ` : ''}
+    renderStepResult(`
+        <div class="result-card result-success">
+            <div class="result-card-header">
+                <span class="result-icon success"><i data-lucide="check-circle"></i></span>
+                <div class="result-title">兑换成功</div>
+                <div class="result-message">${escapeHtml(data.message || '您已成功加入 Team')}</div>
             </div>
-
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; text-align: left;">
-                <i data-lucide="mail" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 5px;"></i>
-                邀请邮件已发送到您的邮箱，请查收并按照邮件指引接受邀请。
-            </p>
-
-            <div style="margin-bottom: 2rem; border-top: 1px solid var(--border-base); padding-top: 1.5rem;">
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-                    <strong>没收到邀请邮件？</strong><br>
-                    如果您在 1-5 分钟后仍未收到邮件（或被拦截），请前往“质保查询”进行自助修复。
-                </p>
-                <button onclick="goToWarrantyFromSuccess()" class="btn btn-secondary" style="width: 100%; border-style: dashed;">
+            ${detailsHtml}
+            <div class="result-inline-note">
+                <strong>邀请邮件已发送。</strong> 请前往邮箱查收，并按邮件指引接受邀请。如果 1-5 分钟后仍未收到，也可以前往质保查询进行自助修复。
+            </div>
+            <div class="result-card-actions">
+                <button type="button" class="btn btn-secondary" data-action="go-warranty">
                     <i data-lucide="shield"></i> 前往质保查询 / 自助修复
                 </button>
+                <button type="button" class="btn btn-primary" data-action="restart-redeem">
+                    <i data-lucide="refresh-cw"></i> 再次兑换
+                </button>
             </div>
-
-            <button onclick="location.reload()" class="btn btn-primary" style="width: 100%;">
-                <i data-lucide="refresh-cw"></i> 再次兑换
-            </button>
         </div>
-    `;
-    if (window.lucide) lucide.createIcons();
-
-    showStep(3);
+    `);
 }
 
 // 显示错误结果
 function showErrorResult(errorMessage) {
-    const resultContent = document.getElementById('resultContent');
-
-    resultContent.innerHTML = `
-        <div class="result-error">
-            <div class="result-icon"><i data-lucide="x-circle" style="width: 64px; height: 64px; color: var(--danger);"></i></div>
-            <div class="result-title">兑换失败</div>
-            <div class="result-message">${escapeHtml(errorMessage)}</div>
-
-            <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
-                <button onclick="backToStep1()" class="btn btn-secondary">
+    renderStepResult(`
+        <div class="result-card result-error">
+            <div class="result-card-header">
+                <span class="result-icon error"><i data-lucide="x-circle"></i></span>
+                <div class="result-title">兑换失败</div>
+                <div class="result-message">${escapeHtml(errorMessage)}</div>
+            </div>
+            <div class="result-card-actions">
+                <button type="button" class="btn btn-secondary" data-action="back-redeem">
                     <i data-lucide="arrow-left"></i> 返回重试
                 </button>
-                <button onclick="location.reload()" class="btn btn-primary">
+                <button type="button" class="btn btn-primary" data-action="restart-redeem">
                     <i data-lucide="rotate-ccw"></i> 重新开始
                 </button>
             </div>
         </div>
-    `;
-    if (window.lucide) lucide.createIcons();
-
-    showStep(3);
+    `);
 }
 
 // 格式化日期
@@ -752,18 +903,19 @@ function formatDate(dateString) {
 
 // 查询质保状态
 async function checkWarranty() {
-    const input = document.getElementById('warrantyInput').value.trim();
+    if (isCheckingWarranty) return;
 
-    // 验证输入
+    const warrantyInput = document.getElementById('warrantyInput');
+    const input = warrantyInput ? warrantyInput.value.trim() : '';
+
     if (!input) {
         showToast('请输入原兑换码或邮箱进行查询', 'error');
+        if (warrantyInput) warrantyInput.focus();
         return;
     }
 
     let email = null;
     let code = null;
-
-    // 简单判断是邮箱还是兑换码
     if (input.includes('@')) {
         email = input;
     } else {
@@ -771,14 +923,14 @@ async function checkWarranty() {
     }
 
     const checkBtn = document.getElementById('checkWarrantyBtn');
-    const warrantyResultContainer = document.getElementById('warrantyResultContainer');
-    if (warrantyResultContainer) {
-        warrantyResultContainer.style.display = 'none';
-    }
+    isCheckingWarranty = true;
+    setWarrantyResultVisible(false);
 
-    checkBtn.disabled = true;
-    checkBtn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 查询中...';
-    if (window.lucide) lucide.createIcons();
+    if (checkBtn) {
+        checkBtn.disabled = true;
+        checkBtn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 查询中...';
+        if (window.lucide) lucide.createIcons();
+    }
 
     try {
         const response = await fetch('/warranty/check', {
@@ -792,212 +944,199 @@ async function checkWarranty() {
             })
         });
 
-        const data = await response.json();
+        const { text, data } = await parseJsonResponse(response);
+        if (!data) {
+            throw new Error('服务器响应格式错误');
+        }
 
         if (response.ok && data.success) {
             showWarrantyResult(data);
-        } else {
-            const rawError = data?.error ?? data?.detail ?? data?.message ?? data?.reason;
-            const errorMessage = getFriendlyWarrantyErrorMessage(rawError, response.status);
-            showToast(errorMessage, 'error');
+            return;
         }
+
+        const rawError = (data.error ?? data.detail ?? data.message ?? data.reason) || text;
+        const errorMessage = getFriendlyWarrantyErrorMessage(rawError, response.status);
+        showToast(errorMessage, 'error');
     } catch (error) {
         const errorMessage = getFriendlyWarrantyErrorMessage(error?.message || '');
         showToast(errorMessage || '网络错误，请稍后重试', 'error');
     } finally {
-        checkBtn.disabled = false;
-        checkBtn.innerHTML = '<i data-lucide="search"></i> 查询质保状态';
-        if (window.lucide) lucide.createIcons();
+        isCheckingWarranty = false;
+        if (checkBtn) {
+            checkBtn.disabled = false;
+            checkBtn.innerHTML = '<i data-lucide="search-check"></i> 查询质保状态';
+            if (window.lucide) lucide.createIcons();
+        }
     }
 }
 
 // 显示质保查询结果
 function showWarrantyResult(data) {
-    const warrantyContent = document.getElementById('warrantyContent');
-
-    // 处理“虚假成功自愈”后的特殊提示
     if ((!data.records || data.records.length === 0) && data.can_reuse) {
-        warrantyContent.innerHTML = `
-            <div class="result-info" style="text-align: center; padding: 2rem;">
-                <div class="result-icon"><i data-lucide="check-circle" style="width: 56px; height: 56px; color: var(--success);"></i></div>
-                <div class="result-title" style="font-size: 1.25rem; margin: 1.2rem 0; color: var(--success);">修复成功！</div>
-                <div class="result-message" style="color: var(--text-primary); background: rgba(34, 197, 94, 0.05); padding: 1.2rem; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.2); line-height: 1.6;">
-                    ${escapeHtml(data.message || '系统检测到异常并已自动修复')}
+        renderWarrantyPanel(`
+            <div class="result-card result-info">
+                <div class="result-card-header">
+                    <span class="result-icon success"><i data-lucide="check-circle"></i></span>
+                    <div class="result-title">修复成功</div>
+                    <div class="result-message">${escapeHtml(data.message || '系统检测到异常并已自动修复')}</div>
                 </div>
-                
-                <div style="margin-top: 2rem; text-align: left; background: rgba(255,255,255,0.03); padding: 1.2rem; border-radius: 12px; border: 1px dashed var(--border-base);">
-                    <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.8rem;">请复制您的兑换码返回主页重试：</div>
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <input type="text" value="${escapeHtml(data.original_code)}" readonly 
-                            style="flex: 1; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-base); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 1.1rem;">
-                        <button onclick='copyWarrantyCode(${JSON.stringify(String(data.original_code || ''))})' class="btn btn-secondary" style="white-space: nowrap;">
-                            <i data-lucide="copy"></i> 复制
-                        </button>
-                    </div>
+                <div class="result-inline-note">
+                    <strong>请复制兑换码返回主页重试。</strong>
+                    系统已恢复您的可用状态，重新提交一次即可继续兑换。
                 </div>
-
-                <div style="margin-top: 2rem;">
-                    <button onclick="backToStep1()" class="btn btn-primary" style="width: 100%;">
+                <div class="inline-code-box">
+                    <input type="text" class="inline-code-input" value="${escapeHtml(data.original_code || '')}" readonly>
+                    <button type="button" class="btn btn-secondary" data-action="copy-warranty-code" data-code="${encodeActionValue(data.original_code || '')}">
+                        <i data-lucide="copy"></i> 复制
+                    </button>
+                </div>
+                <div class="result-card-actions">
+                    <button type="button" class="btn btn-primary" data-action="back-redeem">
                         <i data-lucide="arrow-left"></i> 立即返回重兑
                     </button>
                 </div>
             </div>
-        `;
-        if (window.lucide) lucide.createIcons();
+        `);
         return;
     }
 
     if (!data.records || data.records.length === 0) {
-        warrantyContent.innerHTML = `
-            <div class="result-info" style="text-align: center; padding: 2rem;">
-                <div class="result-icon"><i data-lucide="info" style="width: 48px; height: 48px; color: var(--text-muted);"></i></div>
-                <div class="result-title" style="font-size: 1.2rem; margin: 1rem 0;">未找到兑换记录</div>
-                <div class="result-message" style="color: var(--text-muted);">${escapeHtml(data.message || '未找到相关记录')}</div>
+        renderWarrantyPanel(`
+            <div class="empty-result">
+                <span class="result-icon info"><i data-lucide="info"></i></span>
+                <div class="result-title">未找到兑换记录</div>
+                <div class="result-message">${escapeHtml(data.message || '未找到相关记录')}</div>
             </div>
-        `;
-    } else {
-        // 1. 顶部状态概览 (如果有质保码)
-        let summaryHtml = '';
-        if (data.has_warranty) {
-            const warrantyStatus = data.warranty_valid ?
-                '<span class="badge badge-success">✓ 质保有效</span>' :
-                '<span class="badge badge-error">✗ 质保已过期</span>';
+        `);
+        return;
+    }
 
-            summaryHtml = `
-                <div class="warranty-summary" style="margin-bottom: 2rem; padding: 1.2rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border-base);">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.4rem;">当前质保状态</div>
-                            <div style="font-size: 1.1rem; font-weight: 600;">${warrantyStatus}</div>
+    const summaryHtml = data.has_warranty ? `
+        <div class="warranty-summary">
+            <div>
+                <div class="summary-card-label">当前质保状态</div>
+                <div class="summary-card-value">${getWarrantyStatusBadge(Boolean(data.warranty_valid))}</div>
+            </div>
+            <div>
+                <div class="summary-card-label">质保到期时间</div>
+                <div class="summary-card-value">${data.warranty_expires_at ? formatDate(data.warranty_expires_at) : '尚未开始计算'}</div>
+            </div>
+        </div>
+    ` : '';
+
+    const recordsHtml = data.records.map((record) => {
+        const typeBadge = record.has_warranty
+            ? '<span class="badge badge-success">质保码</span>'
+            : '<span class="badge badge-neutral">常规码</span>';
+        const teamStatus = getTeamStatusMeta(record.team_status);
+        const canReplace = record.has_warranty && record.warranty_valid && record.team_status === 'banned';
+        const canEnableDeviceAuth = !record.device_code_auth_enabled && record.team_status !== 'banned' && record.team_status !== 'expired' && record.team_status !== 'suspected_inconsistent' && record.team_id;
+        const warrantyExpiryText = record.warranty_expires_at
+            ? `${formatDate(record.warranty_expires_at)}${record.warranty_valid ? '（有效）' : '（已过期）'}`
+            : '尚未开始计算';
+
+        return `
+            <article class="record-card">
+                <div class="record-card-header">
+                    <div class="record-code">${escapeHtml(record.code || '-')}</div>
+                    <div>${typeBadge}</div>
+                </div>
+                <div class="record-meta-grid">
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">加入 Team</div>
+                        <div class="record-meta-value inline">
+                            <span>${escapeHtml(record.team_name || '未知 Team')}</span>
+                            <span class="badge ${teamStatus.className}">${escapeHtml(teamStatus.label)}</span>
                         </div>
-                        ${data.warranty_expires_at ? `
-                        <div style="text-align: right;">
-                            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.4rem;">质保到期时间</div>
-                            <div style="font-size: 1rem;">${formatDate(data.warranty_expires_at)}</div>
-                        </div>
+                    </div>
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">兑换时间</div>
+                        <div class="record-meta-value">${escapeHtml(formatDate(record.used_at))}</div>
+                    </div>
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">Team 到期</div>
+                        <div class="record-meta-value">${escapeHtml(formatDate(record.team_expires_at))}</div>
+                    </div>
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">设备身份验证</div>
+                        <div class="record-meta-value">${record.device_code_auth_enabled ? '已开启' : '未开启'}</div>
+                    </div>
+                    ${record.has_warranty ? `
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">质保到期</div>
+                        <div class="record-meta-value">${escapeHtml(warrantyExpiryText)}</div>
+                    </div>
+                    ` : ''}
+                    ${record.email ? `
+                    <div class="record-meta-item">
+                        <div class="record-meta-label">兑换邮箱</div>
+                        <div class="record-meta-value">${escapeHtml(record.email)}</div>
+                    </div>
+                    ` : ''}
+                </div>
+                <div class="record-footer">
+                    <div class="record-footer-copy">
+                        <div class="record-meta-label">当前处理建议</div>
+                        <div class="record-meta-value">${canReplace ? '该记录可直接触发质保重兑。' : '如 Team 状态异常，可联系管理员进一步排查。'}</div>
+                    </div>
+                    <div class="record-footer-actions">
+                        ${canReplace ? `
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            data-action="one-click-replace"
+                            data-code="${encodeActionValue(record.code || '')}"
+                            data-email="${encodeActionValue(record.email || currentEmail || '')}"
+                        >
+                            <i data-lucide="rotate-cw"></i> 一键换车
+                        </button>
+                        ` : ''}
+                        ${canEnableDeviceAuth ? `
+                        <button
+                            type="button"
+                            class="btn btn-secondary"
+                            data-action="enable-device-auth"
+                            data-team-id="${Number(record.team_id)}"
+                            data-code="${encodeActionValue(record.code || '')}"
+                            data-email="${encodeActionValue(record.email || '')}"
+                        >
+                            <i data-lucide="shield-check"></i> 一键开启设备验证
+                        </button>
                         ` : ''}
                     </div>
                 </div>
-            `;
-        }
-
-        // 2. 兑换记录列表
-        const recordsHtml = `
-            <div class="records-section">
-                <h4 style="margin: 0 0 1rem 0; font-size: 1rem; color: var(--text-primary);">我的兑换记录</h4>
-                <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    ${data.records.map(record => {
-            const typeMarker = record.has_warranty ?
-                '<span class="badge badge-warranty" style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">质保码</span>' :
-                '<span class="badge badge-normal" style="background: rgba(255,255,255,0.1); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">常规码</span>';
-
-            let teamStatusBadge = '';
-            if (record.team_status === 'active') teamStatusBadge = '<span style="color: var(--success); font-size: 0.8rem;">● 正常</span>';
-            else if (record.team_status === 'full') teamStatusBadge = '<span style="color: var(--success); font-size: 0.8rem;">● 已满</span>';
-            else if (record.team_status === 'banned') teamStatusBadge = '<span style="color: var(--danger); font-size: 0.8rem;">● 封号</span>';
-            else if (record.team_status === 'error') teamStatusBadge = '<span style="color: var(--warning); font-size: 0.8rem;">● 异常</span>';
-            else if (record.team_status === 'expired') teamStatusBadge = '<span style="color: var(--text-muted); font-size: 0.8rem;">● 过期</span>';
-            else teamStatusBadge = `<span style="color: var(--text-muted); font-size: 0.8rem;">● ${record.team_status || '未知'}</span>`;
-
-            return `
-                            <div class="record-card" style="padding: 1rem; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px;">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.8rem;">
-                                    <div style="font-family: monospace; font-size: 1.1rem; color: var(--text-primary);">${record.code}</div>
-                                    <div>${typeMarker}</div>
-                                </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 1rem; font-size: 0.9rem;">
-                                    <div>
-                                        <div style="color: var(--text-muted); margin-bottom: 0.2rem;">加入 Team</div>
-                                         <div style="font-weight: 500; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                                             <span>${escapeHtml(record.team_name || '未知 Team')}</span>
-                                             <span>${teamStatusBadge}</span>
-                                             ${(record.has_warranty && record.warranty_valid && record.team_status === 'banned') ? `
-                                             <button onclick='oneClickReplace(${JSON.stringify(String(record.code || ''))}, ${JSON.stringify(String(record.email || currentEmail || ''))}, this)' class="btn btn-xs btn-primary" style="padding: 2px 8px; font-size: 0.75rem; height: auto; min-height: 0;">
-                                                 一键换车
-                                             </button>
-                                             ` : ''}
-                                         </div>
-                                     </div>
-                                     <div>
-                                         <div style="color: var(--text-muted); margin-bottom: 0.2rem;">兑换时间</div>
-                                         <div>${formatDate(record.used_at)}</div>
-                                     </div>
-                                     <div style="grid-column: span 2;">
-                                         <div style="color: var(--text-muted); margin-bottom: 0.2rem;">Team 到期</div>
-                                         <div style="font-weight: 500;">${formatDate(record.team_expires_at)}</div>
-                                     </div>
-                                    ${record.has_warranty ? `
-                                    <div style="grid-column: span 2;">
-                                        <div style="color: var(--text-muted); margin-bottom: 0.2rem;">质保到期</div>
-                                        <div style="${record.warranty_valid ? 'color: var(--success);' : 'color: var(--danger);'}">
-                                            ${record.warranty_expires_at ? `${formatDate(record.warranty_expires_at)} ${record.warranty_valid ? '(有效)' : '(已过期)'}` : '尚未开始计算 (首次使用后开启)'}
-                                        </div>
-                                    </div>
-                                    ` : ''}
-                                     <div style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.8rem; margin-top: 0.2rem;">
-                                         <div>
-                                             <div style="color: var(--text-muted); margin-bottom: 0.2rem;">设备身份验证 (Codex)</div>
-                                             <div style="font-weight: 500;">
-                                                 ${record.device_code_auth_enabled ? '<span style="color: var(--success);">已开启</span>' : '<span style="color: var(--warning);">未开启</span>'}
-                                             </div>
-                                         </div>
-                                         ${(!record.device_code_auth_enabled && record.team_status !== 'banned' && record.team_status !== 'expired') ? `
-                                         <button onclick='enableUserDeviceAuth(${Number(record.team_id)}, ${JSON.stringify(String(record.code || ''))}, ${JSON.stringify(String(record.email || ''))}, this)' class="btn btn-xs btn-primary" style="padding: 4px 10px; font-size: 0.75rem; height: auto;">
-                                             一键开启
-                                         </button>
-                                         ` : ''}
-                                     </div>
-                                 </div>
-                             </div>
-                         `;
-        }).join('')}
-                </div>
-            </div>
+            </article>
         `;
+    }).join('');
 
-        // 3. 可重兑区域
-        const canReuseHtml = data.can_reuse ? `
-            <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
-                <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--success); margin-bottom: 0.8rem;">
-                    <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i> 
-                    <span style="font-weight: 600;">发现失效 Team，质保可触发</span>
-                </div>
-                <p style="margin: 0 0 1.2rem 0; color: var(--text-secondary); font-size: 0.95rem;">
-                    监测到您所在的 Team 已失效。由于您的质保码仍在有效期内，您可以立即复制兑换码进行重兑。
-                </p>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="text" value="${escapeHtml(data.original_code)}" readonly 
-                        style="flex: 1; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-base); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 1.1rem;">
-                    <button onclick='copyWarrantyCode(${JSON.stringify(String(data.original_code || ''))})' class="btn btn-secondary" style="white-space: nowrap;">
-                        <i data-lucide="copy"></i> 复制
-                    </button>
-                </div>
+    const canReuseHtml = data.can_reuse ? `
+        <div class="result-inline-note">
+            <strong>发现失效 Team，质保可触发。</strong>
+            您当前可复制原兑换码重新提交，系统会为您自动匹配新的可用 Team。
+            <div class="inline-code-box">
+                <input type="text" class="inline-code-input" value="${escapeHtml(data.original_code || '')}" readonly>
+                <button type="button" class="btn btn-secondary" data-action="copy-warranty-code" data-code="${encodeActionValue(data.original_code || '')}">
+                    <i data-lucide="copy"></i> 复制
+                </button>
             </div>
-        ` : '';
+        </div>
+    ` : '';
 
-        warrantyContent.innerHTML = `
-            <div class="warranty-view">
-                ${summaryHtml}
-                ${recordsHtml}
-                ${canReuseHtml}
-                <div style="margin-top: 2rem; text-align: center;">
-                    <button onclick="backToStep1()" class="btn btn-secondary" style="width: 100%;">
-                        <i data-lucide="arrow-left"></i> 返回兑换
-                    </button>
-                </div>
+    renderWarrantyPanel(`
+        <div class="warranty-view">
+            ${summaryHtml}
+            <section class="records-section">
+                <h3 class="records-section-title">我的兑换记录</h3>
+                <div class="records-list">${recordsHtml}</div>
+            </section>
+            ${canReuseHtml}
+            <div class="result-card-actions">
+                <button type="button" class="btn btn-secondary" data-action="back-redeem">
+                    <i data-lucide="arrow-left"></i> 返回兑换
+                </button>
             </div>
-        `;
-    }
-
-    if (window.lucide) lucide.createIcons();
-
-    // 在顶部导航下展示质保结果
-    showStep(1);
-    switchTopTab('warranty');
-    const warrantyResultContainer = document.getElementById('warrantyResultContainer');
-    if (warrantyResultContainer) {
-        warrantyResultContainer.style.display = 'block';
-    }
+        </div>
+    `);
 }
 
 // 复制质保兑换码
@@ -1030,36 +1169,27 @@ async function oneClickReplace(code, email, btn) {
         return;
     }
 
-    // 更新全局变量
     currentEmail = email;
     currentCode = code;
 
-    // 填充Step1表单 (以便如果失败返回可以看到)
     const emailInput = document.getElementById('email');
     const codeInput = document.getElementById('code');
     if (emailInput) emailInput.value = email;
     if (codeInput) codeInput.value = code;
 
-    const originalContent = btn ? btn.innerHTML : "";
-
-    // 禁用所有按钮防止重复提交
+    const originalContent = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 处理中...';
+        if (window.lucide) lucide.createIcons();
     }
-    if (window.lucide) lucide.createIcons();
 
     showToast('正在为您尝试自动兑换...', 'info');
 
     try {
-        // 直接调用confirmRedeem，传入null表示自动选择Team
         await confirmRedeem(null);
-    } catch (e) {
-        console.error(e);
-        showToast('一键换车请求失败', 'error');
     } finally {
-        // 如果页面未跳转（失败情况），恢复按钮
-        if (btn) {
+        if (btn && document.body.contains(btn)) {
             btn.disabled = false;
             btn.innerHTML = originalContent;
             if (window.lucide) lucide.createIcons();
@@ -1069,16 +1199,16 @@ async function oneClickReplace(code, email, btn) {
 
 // 用户一键开启设备身份验证
 async function enableUserDeviceAuth(teamId, code, email, btn) {
-    if (!confirm('确定要在该 Team 中开启设备代码身份验证吗？')) {
+    if (!window.confirm('确定要在该 Team 中开启设备代码身份验证吗？')) {
         return;
     }
 
-    const originalContent = btn ? btn.innerHTML : "";
+    const originalContent = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i data-lucide="loader" class="spinning"></i> 开启中...';
+        if (window.lucide) lucide.createIcons();
     }
-    if (window.lucide) lucide.createIcons();
 
     try {
         const response = await fetch('/warranty/enable-device-auth', {
@@ -1088,44 +1218,45 @@ async function enableUserDeviceAuth(teamId, code, email, btn) {
             },
             body: JSON.stringify({
                 team_id: teamId,
-                code: code,
-                email: email
+                code,
+                email
             })
         });
 
-        const data = await response.json();
+        const { text, data } = await parseJsonResponse(response);
+        if (!data) {
+            throw new Error('服务器响应格式错误');
+        }
+
         if (response.ok && data.success) {
             showToast(data.message || '开启成功', 'success');
-            // 刷新当前状态
-            checkWarranty();
-        } else {
-            const rawError = data?.error ?? data?.detail ?? data?.message ?? data?.reason;
-            const errorMessage = getFriendlyDeviceAuthErrorMessage(rawError, response.status);
-            showToast(errorMessage, 'error');
+            await checkWarranty();
+            return;
+        }
+
+        const rawError = (data.error ?? data.detail ?? data.message ?? data.reason) || text;
+        const errorMessage = getFriendlyDeviceAuthErrorMessage(rawError, response.status);
+        showToast(errorMessage, 'error');
+    } catch (error) {
+        const errorMessage = getFriendlyDeviceAuthErrorMessage(error?.message || '');
+        showToast(errorMessage || '网络错误，请稍后重试', 'error');
+    } finally {
+        if (btn && document.body.contains(btn)) {
             btn.disabled = false;
             btn.innerHTML = originalContent;
             if (window.lucide) lucide.createIcons();
         }
-    } catch (error) {
-        const errorMessage = getFriendlyDeviceAuthErrorMessage(error?.message || '');
-        showToast(errorMessage || '网络错误，请稍后重试', 'error');
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
-        if (window.lucide) lucide.createIcons();
     }
 }
 
 // 从成功页面跳转到质保查询
-function goToWarrantyFromSuccess() {
+async function goToWarrantyFromSuccess() {
     const warrantyInput = document.getElementById('warrantyInput');
     if (warrantyInput) {
-        // 优先填入邮箱，因为邮箱查询更全面
         warrantyInput.value = currentEmail || currentCode || '';
     }
 
     showStep(1);
     switchTopTab('warranty');
-
-    // 自动触发查询
-    checkWarranty();
+    await checkWarranty();
 }
