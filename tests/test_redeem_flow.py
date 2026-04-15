@@ -145,6 +145,184 @@ class StubChatGPTService:
         return {"success": True, "data": {"account_invites": [{"email": email}]}}
 
 
+class TeamServiceBulkInviteTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(__import__("sqlalchemy").text("PRAGMA foreign_keys=ON"))
+
+    async def asyncTearDown(self):
+        await self.engine.dispose()
+
+    async def _seed_team(self, *, current_members=1, max_members=5, status="active"):
+        async with self.session_factory() as session:
+            team = Team(
+                id=101,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-bulk",
+                team_name="Bulk Team",
+                current_members=current_members,
+                max_members=max_members,
+                status=status,
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+    @staticmethod
+    async def _return_token(*args, **kwargs):
+        return "token"
+
+    @staticmethod
+    async def _noop_reset(*args, **kwargs):
+        return None
+
+    async def test_add_team_members_filters_invalid_duplicate_and_existing(self):
+        await self._seed_team(current_members=1, max_members=5)
+        team_service = TeamService()
+
+        async def stub_sync(team_id, db_session, force_refresh=False):
+            team = await db_session.get(Team, team_id)
+            return {
+                "success": True,
+                "message": f"同步成功,当前成员数: {team.current_members}",
+                "member_emails": ["existing@example.com"],
+                "error": None,
+            }
+
+        async def stub_add_member(team_id, email, db_session):
+            return {
+                "success": True,
+                "message": f"邀请已发送到 {email}",
+                "error": None,
+                "status": "invited",
+                "email": email,
+            }
+
+        async with self.session_factory() as session:
+            with patch.object(team_service, "sync_team_info", new=stub_sync), \
+                 patch.object(team_service, "add_team_member", new=stub_add_member):
+                result = await team_service.add_team_members(
+                    101,
+                    ["valid@example.com", "bad-email", "VALID@example.com", "existing@example.com"],
+                    session,
+                )
+
+            self.assertTrue(result["success"])
+            self.assertTrue(result["partial_success"])
+            self.assertEqual(result["summary"]["submitted"], 4)
+            self.assertEqual(result["summary"]["unique"], 2)
+            self.assertEqual(result["summary"]["invited"], 1)
+            self.assertEqual(result["summary"]["invalid"], 1)
+            self.assertEqual(result["summary"]["duplicate"], 1)
+            self.assertEqual(result["summary"]["already_exists"], 1)
+            self.assertEqual(result["summary"]["failed"], 0)
+            self.assertEqual(result["summary"]["no_seat"], 0)
+
+            statuses = {item["email"]: item["status"] for item in result["results"]}
+            self.assertEqual(statuses["valid@example.com"], "invited")
+            self.assertEqual(statuses["bad-email"], "invalid_email")
+            self.assertEqual(statuses["existing@example.com"], "already_exists")
+
+    async def test_add_team_members_marks_no_seat_for_overflow(self):
+        await self._seed_team(current_members=4, max_members=5)
+        team_service = TeamService()
+        add_member_calls = []
+
+        async def stub_sync(team_id, db_session, force_refresh=False):
+            team = await db_session.get(Team, team_id)
+            return {
+                "success": True,
+                "message": f"同步成功,当前成员数: {team.current_members}",
+                "member_emails": [],
+                "error": None,
+            }
+
+        async def stub_add_member(team_id, email, db_session):
+            add_member_calls.append(email)
+            return {
+                "success": True,
+                "message": f"邀请已发送到 {email}",
+                "error": None,
+                "status": "invited",
+                "email": email,
+            }
+
+        async with self.session_factory() as session:
+            with patch.object(team_service, "sync_team_info", new=stub_sync), \
+                 patch.object(team_service, "add_team_member", new=stub_add_member):
+                result = await team_service.add_team_members(
+                    101,
+                    ["first@example.com", "second@example.com"],
+                    session,
+                )
+
+            self.assertTrue(result["success"])
+            self.assertTrue(result["partial_success"])
+            self.assertEqual(add_member_calls, ["first@example.com"])
+            self.assertEqual(result["summary"]["invited"], 1)
+            self.assertEqual(result["summary"]["no_seat"], 1)
+            statuses = {item["email"]: item["status"] for item in result["results"]}
+            self.assertEqual(statuses["second@example.com"], "no_seat")
+
+    async def test_add_team_members_stops_after_fatal_error(self):
+        await self._seed_team(current_members=1, max_members=5)
+        team_service = TeamService()
+        invited_calls = []
+
+        async def stub_sync(team_id, db_session, force_refresh=False):
+            team = await db_session.get(Team, team_id)
+            return {
+                "success": True,
+                "message": f"同步成功,当前成员数: {team.current_members}",
+                "member_emails": [],
+                "error": None,
+            }
+
+        async def stub_add_member(team_id, email, db_session):
+            invited_calls.append(email)
+            if email == "fatal@example.com":
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": "Token 已失效 (token_invalidated)",
+                    "error_code": "token_invalidated",
+                    "status": "failed",
+                    "email": email,
+                }
+            return {
+                "success": True,
+                "message": f"邀请已发送到 {email}",
+                "error": None,
+                "status": "invited",
+                "email": email,
+            }
+
+        async with self.session_factory() as session:
+            with patch.object(team_service, "sync_team_info", new=stub_sync), \
+                 patch.object(team_service, "add_team_member", new=stub_add_member):
+                result = await team_service.add_team_members(
+                    101,
+                    ["first@example.com", "fatal@example.com", "later@example.com"],
+                    session,
+                )
+
+            self.assertTrue(result["success"])
+            self.assertTrue(result["partial_success"])
+            self.assertEqual(invited_calls, ["first@example.com", "fatal@example.com"])
+            self.assertEqual(result["summary"]["invited"], 1)
+            self.assertEqual(result["summary"]["failed"], 1)
+            self.assertEqual(result["summary"]["not_processed"], 1)
+            self.assertEqual(result["results"][-1]["status"], "not_processed")
+
+
 class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")

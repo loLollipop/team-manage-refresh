@@ -407,12 +407,13 @@ eyJ..."></textarea>
                     <form id="addMemberForm" onsubmit="handleAddMember(event)"
                         style="display: flex; gap: 1rem; align-items: flex-end;">
                         <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                            <label for="memberEmail">新增成员邮箱</label>
-                            <input type="email" id="memberEmail" name="email" class="form-control"
-                                placeholder="user@example.com" required>
+                            <label for="memberEmails">新增成员邮箱</label>
+                            <textarea id="memberEmails" name="memberEmails" class="form-control" rows="4"
+                                placeholder="每行一个邮箱，也支持用逗号分隔&#10;user1@example.com&#10;user2@example.com" required></textarea>
+                            <small class="form-text">推荐一行一个邮箱，同时支持英文逗号和中文逗号，系统会自动去重并跳过空项。</small>
                         </div>
                         <button type="submit" class="btn btn-primary" id="addMemberSubmitBtn">
-                            <i data-lucide="user-plus"></i> 添加
+                            <i data-lucide="user-plus"></i> 发送邀请
                         </button>
                     </form>
                 </div>

@@ -1689,10 +1689,18 @@ async function revokeInvite(teamId, email, inModal = false) {
     }
 }
 
+function parseMemberEmails(rawValue) {
+    return String(rawValue || '')
+        .split(/[\n,，]+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
 async function handleAddMember(event) {
     event.preventDefault();
     const form = event.target;
-    const email = form.email.value.trim();
+    const rawEmails = form.memberEmails ? form.memberEmails.value : '';
+    const emails = parseMemberEmails(rawEmails);
     const submitButton = document.getElementById('addMemberSubmitBtn');
     const teamId = window.currentTeamId;
 
@@ -1701,29 +1709,48 @@ async function handleAddMember(event) {
         return;
     }
 
+    if (!emails.length) {
+        showToast('请至少输入一个邮箱', 'error');
+        return;
+    }
+
     submitButton.disabled = true;
     const originalText = submitButton.innerHTML;
-    submitButton.textContent = '添加中...';
+    submitButton.textContent = '发送中...';
 
     try {
         const result = await apiCall(`/admin/teams/${teamId}/members/add`, {
             method: 'POST',
-            body: JSON.stringify({ email })
+            body: JSON.stringify({ emails })
         });
 
-        if (result.success) {
-            showToast('成员添加成功！正在刷新列表...', 'success');
-            form.reset();
-
-            if (document.getElementById('manageMembersModal').classList.contains('show')) {
-                await loadModalMemberList(teamId);
-            }
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
-        } else {
+        if (!result.success) {
             showToast(getFriendlyAdminErrorMessage(result.error || '添加失败', 0, 'member'), 'error');
+            return;
+        }
+
+        const data = result.data || {};
+        const summary = data.summary || {};
+        const invitedCount = Number(summary.invited || 0);
+        const failedCount = Number(summary.failed || 0) + Number(summary.invalid || 0) + Number(summary.duplicate || 0) + Number(summary.already_exists || 0) + Number(summary.no_seat || 0) + Number(summary.not_processed || 0);
+        const message = data.message || `成功 ${invitedCount} 个，失败 ${failedCount} 个`;
+
+        if (invitedCount > 0 && failedCount > 0) {
+            showToast(message, 'warning');
+        } else if (invitedCount > 0) {
+            showToast(message, 'success');
+            form.reset();
+        } else {
+            showToast(getFriendlyAdminErrorMessage(message || '添加失败', 0, 'member'), 'error');
+        }
+
+        if (invitedCount > 0 && document.getElementById('manageMembersModal').classList.contains('show')) {
+            await loadModalMemberList(teamId);
+            if (failedCount === 0) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 800);
+            }
         }
     } catch (error) {
         showToast(getFriendlyAdminErrorMessage(error.message || '网络错误', 0, 'member'), 'error');

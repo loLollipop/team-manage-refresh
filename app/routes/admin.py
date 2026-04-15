@@ -85,8 +85,13 @@ class OAuthCallbackParseRequest(BaseModel):
     redirect_uri: str = Field("http://localhost:1455/auth/callback", description="回调地址")
 
 class AddMemberRequest(BaseModel):
-    """添加成员请求"""
+    """单邮箱成员请求"""
     email: str = Field(..., description="成员邮箱")
+
+
+class AddMembersRequest(BaseModel):
+    """批量添加成员请求"""
+    emails: List[str] = Field(..., description="成员邮箱列表")
 
 
 class CodeGenerateRequest(BaseModel):
@@ -739,12 +744,12 @@ async def team_members_list(
 @router.post("/teams/{team_id}/members/add")
 async def add_team_member(
     team_id: int,
-    member_data: AddMemberRequest,
+    member_data: AddMembersRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
     """
-    添加 Team 成员
+    批量添加 Team 成员
 
     Args:
         team_id: Team ID
@@ -756,15 +761,15 @@ async def add_team_member(
         添加结果
     """
     try:
-        logger.info(f"管理员添加成员到 Team {team_id}: {member_data.email}")
+        logger.info(f"管理员批量添加成员到 Team {team_id}: {member_data.emails}")
 
-        result = await team_service.add_team_member(
+        result = await team_service.add_team_members(
             team_id=team_id,
-            email=member_data.email,
+            emails=member_data.emails,
             db_session=db
         )
 
-        if not result["success"]:
+        if not result.get("processed") and not result["success"]:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content=result
@@ -772,7 +777,7 @@ async def add_team_member(
 
         return JSONResponse(content=result)
 
-    except Exception as e:
+    except Exception:
         logger.exception("添加成员失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
