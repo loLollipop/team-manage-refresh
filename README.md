@@ -1,12 +1,10 @@
 <div align="center">
-  <img src=".github/assets/readme/hero-cover.webp" alt="ChatGPT Team 运营工作台封面图" width="100%" />
-
   <h1>ChatGPT Team 运营工作台</h1>
   <p>围绕 <strong>账号导入 → 兑换分配 → 质保售后 → 自动补货</strong> 打造的一体化运营后台。</p>
 
   <p>
     <a href="#快速开始"><img alt="Docker" src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white"></a>
-    <a href="#界面预览"><img alt="UI" src="https://img.shields.io/badge/UI-Workspace-6366F1"></a>
+    <a href="#功能分区"><img alt="UI" src="https://img.shields.io/badge/UI-Workspace-6366F1"></a>
     <a href="integration_docs.md"><img alt="Webhook" src="https://img.shields.io/badge/Webhook-Integration-10B981"></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-success"></a>
   </p>
@@ -67,45 +65,20 @@
 库存预警 Webhook / 外部系统自动补货
 ```
 
-## 界面预览
+## 功能分区
 
 ### 用户兑换中心
-
-<img src=".github/assets/readme/redeem-center.webp" alt="用户兑换中心预览" width="100%" />
-
 - 自助上车与质保查询合并在一个入口
 - 兑换页展示常规车位与福利车位剩余数量
 - 支持公告弹窗，方便发布临时运营通知
 
 ### 工作台总览
+- **Team 工作台**：统一查看 Team 状态、席位、成员与高频运营动作
+- **兑换码工作台**：生成、筛选、导出与无效码清理集中在同一个工作区
+- **使用记录工作台**：适合售后追溯、质保定位与用户问题回溯
+- **系统中心**：集中管理代理、日志、库存预警、自动化任务与外部推送
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src=".github/assets/readme/team-workspace.webp" alt="Team 工作台预览" width="100%" />
-      <p><strong>Team 工作台</strong><br>统一查看 Team 状态、席位、成员与高频运营动作。</p>
-    </td>
-    <td width="50%">
-      <img src=".github/assets/readme/codes-workbench.webp" alt="兑换码工作台预览" width="100%" />
-      <p><strong>兑换码工作台</strong><br>生成、筛选、导出与无效码清理集中在同一个工作区。</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img src=".github/assets/readme/records-workbench.webp" alt="使用记录工作台预览" width="100%" />
-      <p><strong>使用记录工作台</strong><br>适合售后追溯、质保定位与用户问题回溯。</p>
-    </td>
-    <td width="50%">
-      <img src=".github/assets/readme/system-hub.webp" alt="系统中心预览" width="100%" />
-      <p><strong>系统中心</strong><br>集中管理代理、日志、库存预警、自动化任务与外部推送。</p>
-    </td>
-  </tr>
-</table>
-
-### 高感知操作入口
-
-<img src=".github/assets/readme/modal-showcase.webp" alt="导入与运营弹窗预览" width="100%" />
-
+### 高频操作入口
 - 导入 Team、OAuth 回调解析、批量导入等高频动作统一收纳在运营弹窗里
 - 适合高频执行账号导入、成员管理和后台维护任务
 
