@@ -366,6 +366,38 @@ class TeamService:
         normalized = str(email).strip().lower()
         return normalized or None
 
+    def _filter_pending_invites(
+        self,
+        invite_items: Optional[List[Dict[str, Any]]],
+        joined_emails: Optional[set[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """过滤仍占位的待加入邀请，并剔除与已加入成员重复的邮箱。"""
+        normalized_joined = {
+            email for email in (joined_emails or set()) if email
+        }
+        active_invite_statuses = {"pending", "invited", "sent", "open", "active"}
+        pending_items: List[Dict[str, Any]] = []
+
+        for invite in invite_items or []:
+            email = self._normalize_member_email(
+                invite.get("email_address") or invite.get("email")
+            )
+            if not email or email in normalized_joined:
+                continue
+
+            raw_status = str(
+                invite.get("status")
+                or invite.get("invite_status")
+                or invite.get("state")
+                or ""
+            ).strip().lower()
+            if raw_status and raw_status not in active_invite_statuses:
+                continue
+
+            pending_items.append({**invite, "email_address": email})
+
+        return pending_items
+
     async def _get_active_mapping_count(self, team_id: int, db_session: AsyncSession) -> int:
         """统计本地仍占位的成员/邀请数量，用作同步时的人数下限。"""
         result = await db_session.execute(
@@ -382,12 +414,11 @@ class TeamService:
         observed_member_count: int,
         db_session: AsyncSession,
     ) -> int:
-        """将远端同步人数、本地占位和当前人数合并，避免短暂同步延迟把人数回写变小。"""
+        """将远端同步人数与本地仍活跃占位合并，避免短暂同步延迟把人数回写变小。"""
         await db_session.flush()
         active_mapping_count = await self._get_active_mapping_count(team.id, db_session)
-        current_members = int(team.current_members or 0)
         observed_count = int(observed_member_count or 0)
-        effective_members = max(current_members, observed_count, active_mapping_count)
+        effective_members = max(observed_count, active_mapping_count)
         if team.max_members and team.max_members > 0:
             effective_members = min(effective_members, team.max_members)
 
@@ -1810,13 +1841,16 @@ class TeamService:
                 }
 
             if invites_result["success"]:
-                current_members += invites_result["total"]
-                for inv in invites_result.get("items", []):
-                    if inv.get("email_address"):
-                        normalized_email = self._normalize_member_email(inv["email_address"])
-                        if normalized_email:
-                            invited_member_emails.add(normalized_email)
-                            all_member_emails.add(normalized_email)
+                pending_invites = self._filter_pending_invites(
+                    invites_result.get("items", []),
+                    joined_emails=joined_member_emails,
+                )
+                current_members += len(pending_invites)
+                for inv in pending_invites:
+                    normalized_email = inv.get("email_address")
+                    if normalized_email:
+                        invited_member_emails.add(normalized_email)
+                        all_member_emails.add(normalized_email)
             else:
                 # 检查是否封号或 Token 失效
                 if await self._handle_api_error(invites_result, team, db_session):
@@ -2156,21 +2190,29 @@ class TeamService:
 
             # 5. 合并列表并统一格式
             all_members = []
-            
+            joined_emails: set[str] = set()
+
             # 处理已加入成员
             for m in members_result["members"]:
+                normalized_email = self._normalize_member_email(m.get("email"))
+                if normalized_email:
+                    joined_emails.add(normalized_email)
                 all_members.append({
                     "user_id": m.get("id"),
-                    "email": m.get("email"),
+                    "email": normalized_email or m.get("email"),
                     "name": m.get("name"),
                     "role": m.get("role"),
                     "added_at": m.get("created_time"),
                     "status": "joined"
                 })
-            
+
             # 处理待加入成员
             if invites_result["success"]:
-                for inv in invites_result["items"]:
+                pending_invites = self._filter_pending_invites(
+                    invites_result.get("items", []),
+                    joined_emails=joined_emails,
+                )
+                for inv in pending_invites:
                     all_members.append({
                         "user_id": None, # 邀请还没有 user_id
                         "email": inv.get("email_address"),
@@ -2183,7 +2225,6 @@ class TeamService:
             logger.info(f"获取 Team {team_id} 成员列表成功: 共 {len(all_members)} 个成员 (已加入: {members_result['total']})")
 
             # 6. 持久化最新人数，避免“查看成员/撤回时已拿到实时列表，但数据库人数仍旧值”
-            #    同时保留本地已预留/已邀请的人数下限，避免远端同步延迟把人数回写变小。
             live_member_count = len(all_members)
             team.last_sync = get_now()
             effective_members = await self._apply_member_count_floor(team, live_member_count, db_session)

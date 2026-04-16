@@ -1768,7 +1768,8 @@ async function deleteMember(teamId, userId, email, inModal = false) {
     try {
         showToast('正在删除...', 'info');
         const result = await apiCall(`/admin/teams/${teamId}/members/${userId}/delete`, {
-            method: 'POST'
+            method: 'POST',
+            body: JSON.stringify({ email })
         });
 
         if (result.success) {
@@ -1793,40 +1794,85 @@ if (typeof window !== 'undefined') {
     window.parseOAuthCallbackAndFill = parseOAuthCallbackAndFill;
     window.handleJsonFileImport = handleJsonFileImport;
     window.copyWelfareCode = copyWelfareCode;
+    window.updateWelfareCodeTeamHint = updateWelfareCodeTeamHint;
 }
 
 
+function updateWelfareCodeTeamHint() {
+    const select = document.getElementById('welfareCodeTeamSelect');
+    const hint = document.getElementById('welfareCodeTeamHint');
+    if (!select || !hint) return;
+
+    const option = select.options[select.selectedIndex];
+    if (!option || !option.value) {
+        hint.textContent = '请选择要作为号池的福利 Team。';
+        return;
+    }
+
+    const teamName = option.dataset.teamName || option.textContent || '';
+    const teamEmail = option.dataset.teamEmail || '';
+    const remaining = option.dataset.remaining || '0';
+    hint.textContent = `将为 ${teamName}${teamEmail ? `（${teamEmail}）` : ''} 生成兑换码，当前剩余可用次数 ${remaining}。`;
+}
+
 async function generateWelfareCode() {
+    const pageBtn = document.getElementById('generateWelfareCodeBtn');
+    const confirmBtn = document.getElementById('confirmGenerateWelfareCodeBtn');
+    const teamSelect = document.getElementById('welfareCodeTeamSelect');
+    const selectedTeamId = teamSelect ? Number(teamSelect.value || 0) : 0;
+
+    if (!selectedTeamId) {
+        showToast('请先选择一个福利 Team', 'error');
+        return;
+    }
+
     try {
-        const btn = document.getElementById('generateWelfareCodeBtn');
-        if (btn) { btn.disabled = true; }
-        const result = await apiCall('/admin/welfare/code/generate', { method: 'POST' });
+        if (pageBtn) pageBtn.disabled = true;
+        if (confirmBtn) confirmBtn.disabled = true;
+
+        const result = await apiCall('/admin/welfare/code/generate', {
+            method: 'POST',
+            body: JSON.stringify({ team_id: selectedTeamId })
+        });
         if (!result.success) throw new Error(result.error || '生成失败');
 
+        const payload = result.data || {};
+        const newCode = payload.code || '';
+        const used = typeof payload.used === 'number' ? payload.used : 0;
+        const limit = typeof payload.limit === 'number' ? payload.limit : 0;
+        const remaining = typeof payload.remaining === 'number' ? payload.remaining : Math.max(limit - used, 0);
+        const teamName = payload.team_name || '';
+        const teamEmail = payload.team_email || '';
+
         const codeValueEl = document.getElementById('welfareCommonCodeValue');
-        const newCode = result.code || '';
         if (codeValueEl) codeValueEl.value = newCode;
 
         const codeTextEl = document.getElementById('welfareCommonCodeText');
-        if (codeTextEl) { codeTextEl.textContent = newCode || '-'; codeTextEl.title = newCode || ''; }
+        if (codeTextEl) {
+            codeTextEl.textContent = newCode || '-';
+            codeTextEl.title = newCode || '';
+        }
 
         const usageTextEl = document.getElementById('welfareCodeUsageText');
         if (usageTextEl) {
-            const used = typeof result.used === 'number' ? result.used : 0;
-            const limit = typeof result.limit === 'number' ? result.limit : 0;
-            const remaining = typeof result.remaining === 'number' ? result.remaining : Math.max(limit - used, 0);
             usageTextEl.textContent = `剩余次数 ${remaining} / ${limit}`;
         }
 
-        const copyBtn = document.getElementById('copyWelfareCodeBtn');
-        if (copyBtn) copyBtn.disabled = !result.code;
+        const sourceTextEl = document.getElementById('welfareCodeSourceTeamText');
+        if (sourceTextEl) {
+            sourceTextEl.textContent = `来源 Team：${teamName || ('#' + selectedTeamId)}${teamEmail ? `（${teamEmail}）` : ''}`;
+        }
 
-        await copyToClipboard(result.code || '');
-        showToast(`通用兑换码已更新并复制，剩余次数 ${result.remaining}/${result.limit}`, 'success');
+        const copyBtn = document.getElementById('copyWelfareCodeBtn');
+        if (copyBtn) copyBtn.disabled = !newCode;
+
+        hideModal('welfareCodeTeamModal');
+        await copyToClipboard(newCode || '');
+        showToast(`通用兑换码已更新并复制，剩余次数 ${remaining}/${limit}`, 'success');
     } catch (error) {
         showToast(getFriendlyAdminErrorMessage(error.message || '生成通用兑换码失败', 0, 'common'), 'error');
     } finally {
-        const btn = document.getElementById('generateWelfareCodeBtn');
-        if (btn) btn.disabled = false;
+        if (pageBtn) pageBtn.disabled = false;
+        if (confirmBtn) confirmBtn.disabled = false;
     }
 }

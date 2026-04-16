@@ -357,6 +357,31 @@ class RedemptionService:
                 use_cache=False,
             ) or "").strip()
 
+        team_id_raw = await settings_service.get_setting(
+            db_session,
+            "welfare_common_code_team_id",
+            "",
+            use_cache=False,
+        )
+        source_team_id = self._safe_int(team_id_raw, 0)
+        source_team: Optional[Team] = None
+        if source_team_id > 0:
+            source_team = await db_session.get(Team, source_team_id)
+
+        if source_team is None and welfare_code and source_team_id <= 0:
+            fallback_team_result = await db_session.execute(
+                select(Team)
+                .join(RedemptionRecord, RedemptionRecord.team_id == Team.id)
+                .where(
+                    RedemptionRecord.code == welfare_code,
+                    Team.pool_type == "welfare",
+                )
+                .order_by(RedemptionRecord.redeemed_at.desc(), RedemptionRecord.id.desc())
+            )
+            source_team = fallback_team_result.scalars().first()
+            if source_team is not None:
+                source_team_id = int(source_team.id)
+
         used_setting_result = await db_session.execute(
             select(Setting).where(Setting.key == "welfare_common_code_used_count")
         )
@@ -378,14 +403,14 @@ class RedemptionService:
         limit_setting = limit_result.scalar_one_or_none()
         configured_limit = self._safe_int(limit_setting.value if limit_setting else None, 0)
 
-        live_capacity_result = await db_session.execute(
-            select(func.sum(Team.max_members - Team.current_members)).where(
-                Team.pool_type == "welfare",
-                Team.status == "active",
-                Team.current_members < Team.max_members
-            )
-        )
-        live_capacity = int(live_capacity_result.scalar() or 0)
+        live_capacity = 0
+        if (
+            source_team
+            and source_team.pool_type == "welfare"
+            and source_team.status == "active"
+            and int(source_team.current_members or 0) < int(source_team.max_members or 0)
+        ):
+            live_capacity = max(int(source_team.max_members or 0) - int(source_team.current_members or 0), 0)
 
         effective_limit = configured_limit if configured_limit > 0 else live_capacity
         remaining_by_limit = max(effective_limit - used_count, 0)
@@ -398,6 +423,9 @@ class RedemptionService:
             "usable_capacity": live_capacity,
             "remaining_count": remaining_count,
             "remaining_by_limit": remaining_by_limit,
+            "team_id": source_team.id if source_team else None,
+            "team_name": source_team.team_name if source_team else None,
+            "team_email": source_team.email if source_team else None,
         }
 
     async def _rebuild_code_usage_state(
@@ -663,6 +691,16 @@ class RedemptionService:
                 configured_limit = int(welfare_usage["configured_limit"] or 0)
                 remaining_count = int(welfare_usage["remaining_count"] or 0)
 
+                source_team_id = self._safe_int(welfare_usage.get("team_id"), 0)
+                if source_team_id <= 0:
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "福利通用兑换码未绑定有效 Team，请联系管理员重新生成",
+                        "redemption_code": None,
+                        "error": None
+                    }
+
                 if configured_limit <= 0 or remaining_count <= 0:
                     return {
                         "success": True,
@@ -690,6 +728,9 @@ class RedemptionService:
                         "limit": configured_limit,
                         "used_count": used_count,
                         "remaining": remaining_count,
+                        "team_id": source_team_id,
+                        "team_name": welfare_usage.get("team_name"),
+                        "team_email": welfare_usage.get("team_email"),
                     },
                     "error": None
                 }
@@ -706,6 +747,16 @@ class RedemptionService:
                     used_count = int(welfare_usage["used_count"] or 0)
                     configured_limit = int(welfare_usage["configured_limit"] or 0)
                     remaining_count = int(welfare_usage["remaining_count"] or 0)
+
+                    source_team_id = self._safe_int(welfare_usage.get("team_id"), 0)
+                    if source_team_id <= 0:
+                        return {
+                            "success": True,
+                            "valid": False,
+                            "reason": "福利通用兑换码未绑定有效 Team，请联系管理员重新生成",
+                            "redemption_code": None,
+                            "error": None
+                        }
 
                     if configured_limit <= 0 or remaining_count <= 0:
                         return {
@@ -734,6 +785,9 @@ class RedemptionService:
                             "limit": configured_limit,
                             "used_count": used_count,
                             "remaining": remaining_count,
+                            "team_id": source_team_id,
+                            "team_name": welfare_usage.get("team_name"),
+                            "team_email": welfare_usage.get("team_email"),
                         },
                         "error": None
                     }

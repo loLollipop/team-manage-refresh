@@ -85,24 +85,69 @@ class RedeemFlowService:
             # 2. 获取可用 Team 列表
             code_meta = validate_result.get("redemption_code") or {}
             pool_type = code_meta.get("pool_type", "normal")
-            teams_result = await self.team_service.get_available_teams(db_session, pool_type=pool_type)
+            teams: List[Dict[str, Any]] = []
+            if code_meta.get("virtual_welfare_code"):
+                bound_team_id = int(code_meta.get("team_id") or 0)
+                if bound_team_id <= 0:
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "福利通用兑换码未绑定有效 Team，请联系管理员重新生成",
+                        "teams": [],
+                        "error": None
+                    }
 
-            if not teams_result["success"]:
-                return {
-                    "success": False,
-                    "valid": True,
-                    "reason": "兑换码有效",
-                    "teams": [],
-                    "error": teams_result["error"]
-                }
+                team_result = await self.team_service.get_team_by_id(bound_team_id, db_session)
+                if not team_result.get("success"):
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "福利通用兑换码绑定的 Team 不存在，请联系管理员重新生成",
+                        "teams": [],
+                        "error": None
+                    }
 
-            logger.info(f"验证兑换码成功: {code}, 可用 Team 数量: {len(teams_result['teams'])}")
+                bound_team = team_result.get("team") or {}
+                if (
+                    bound_team.get("status") != "active"
+                    or int(bound_team.get("current_members") or 0) >= int(bound_team.get("max_members") or 0)
+                ):
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "福利通用兑换码绑定的 Team 当前不可用，请联系管理员重新生成",
+                        "teams": [],
+                        "error": None
+                    }
+
+                teams = [{
+                    "id": bound_team["id"],
+                    "team_name": bound_team.get("team_name"),
+                    "current_members": bound_team.get("current_members"),
+                    "max_members": bound_team.get("max_members"),
+                    "expires_at": bound_team.get("expires_at"),
+                    "subscription_plan": bound_team.get("subscription_plan"),
+                }]
+            else:
+                teams_result = await self.team_service.get_available_teams(db_session, pool_type=pool_type)
+
+                if not teams_result["success"]:
+                    return {
+                        "success": False,
+                        "valid": True,
+                        "reason": "兑换码有效",
+                        "teams": [],
+                        "error": teams_result["error"]
+                    }
+                teams = teams_result["teams"]
+
+            logger.info(f"验证兑换码成功: {code}, 可用 Team 数量: {len(teams)}")
 
             return {
                 "success": True,
                 "valid": True,
                 "reason": "兑换码有效",
-                "teams": teams_result["teams"],
+                "teams": teams,
                 "error": None
             }
 
@@ -218,6 +263,10 @@ class RedeemFlowService:
                     code_meta = validate_result.get("redemption_code") or {}
                     pool_type = code_meta.get("pool_type", "normal")
                     is_virtual_welfare_code = bool(code_meta.get("virtual_welfare_code"))
+                    bound_welfare_team_id = int(code_meta.get("team_id") or 0) if is_virtual_welfare_code else 0
+
+                    if is_virtual_welfare_code and bound_welfare_team_id <= 0:
+                        return {"success": False, "error": "福利通用兑换码未绑定有效 Team，请联系管理员重新生成"}
 
                     if selected_team_locked:
                         existing_team_ids = set(
@@ -237,18 +286,24 @@ class RedeemFlowService:
                             }
 
                     # 确定目标 Team (初选)
-                    team_id_final = current_target_team_id
-                    if not team_id_final:
-                        select_res = await self.select_team_auto(
-                            db_session,
-                            email=email,
-                            exclude_team_ids=sorted(excluded_team_ids) if excluded_team_ids else None,
-                            pool_type=pool_type
-                        )
-                        if not select_res["success"]:
-                            return {"success": False, "error": select_res["error"]}
-                        team_id_final = select_res["team_id"]
-                        current_target_team_id = team_id_final
+                    if is_virtual_welfare_code:
+                        if selected_team_locked and current_target_team_id != bound_welfare_team_id:
+                            return {"success": False, "error": "当前福利通用兑换码仅可兑换到其绑定的 Team"}
+                        team_id_final = bound_welfare_team_id
+                        current_target_team_id = bound_welfare_team_id
+                    else:
+                        team_id_final = current_target_team_id
+                        if not team_id_final:
+                            select_res = await self.select_team_auto(
+                                db_session,
+                                email=email,
+                                exclude_team_ids=sorted(excluded_team_ids) if excluded_team_ids else None,
+                                pool_type=pool_type
+                            )
+                            if not select_res["success"]:
+                                return {"success": False, "error": select_res["error"]}
+                            team_id_final = select_res["team_id"]
+                            current_target_team_id = team_id_final
 
                     # 使用 Team 锁序列化对该账户的操作，防止并发冲突
                     async with _team_locks[team_id_final]:
@@ -496,6 +551,19 @@ class RedeemFlowService:
                                 ) or "").strip()
                                 if not current_welfare_code or current_welfare_code != code:
                                     raise Exception("兑换码已失效，请刷新页面后使用最新福利通用兑换码")
+
+                                bound_team_id_raw = await settings_service.get_setting(
+                                    db_session,
+                                    "welfare_common_code_team_id",
+                                    "0",
+                                    use_cache=False,
+                                )
+                                try:
+                                    current_bound_team_id = int(str(bound_team_id_raw or "0").strip() or 0)
+                                except Exception:
+                                    current_bound_team_id = 0
+                                if current_bound_team_id <= 0 or current_bound_team_id != team_id_final:
+                                    raise Exception("当前福利通用兑换码仅可兑换到其绑定的 Team")
 
                                 configured_limit_raw = await settings_service.get_setting(
                                     db_session,

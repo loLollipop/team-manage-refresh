@@ -684,7 +684,7 @@
         </div>
         <div class="page-header-actions">
             {% if active_page == "welfare" %}
-            <button type="button" class="btn btn-secondary" onclick="generateWelfareCode()" id="generateWelfareCodeBtn">
+            <button type="button" class="btn btn-secondary" onclick="showModal('welfareCodeTeamModal')" id="generateWelfareCodeBtn">
                 <i data-lucide="ticket-plus" style="width: 16px; height: 16px;"></i> 生成通用兑换码
             </button>
             {% endif %}
@@ -723,6 +723,13 @@
                 <div class="stat-label">通用兑换码</div>
                 <div class="welfare-code-value" id="welfareCommonCodeText" title="{{ stats.welfare_code or '' }}">{{ stats.welfare_code or '-' }}</div>
                 <div class="stat-sub-label" id="welfareCodeUsageText">剩余次数 {{ stats.welfare_code_remaining }} / {{ stats.welfare_code_limit }}</div>
+                <div class="stat-sub-label" id="welfareCodeSourceTeamText">
+                    {% if stats.welfare_code_team_id %}
+                    来源 Team：{{ stats.welfare_code_team_name or ('#' ~ stats.welfare_code_team_id) }}{% if stats.welfare_code_team_email %}（{{ stats.welfare_code_team_email }}）{% endif %}
+                    {% else %}
+                    来源 Team：未绑定
+                    {% endif %}
+                </div>
                 <div class="welfare-code-row">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="copyWelfareCode()" {% if not stats.welfare_code %}disabled{% endif %} id="copyWelfareCodeBtn">
                         <i data-lucide="copy" style="width: 14px; height: 14px;"></i> 复制兑换码
@@ -1095,6 +1102,41 @@
     </div>
 </div>
 
+{% if active_page == "welfare" %}
+<div id="welfareCodeTeamModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>选择福利 Team 号池</h3>
+            <button class="modal-close" onclick="hideModal('welfareCodeTeamModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="welfareCodeTeamSelect">福利 Team</label>
+                <select id="welfareCodeTeamSelect" class="form-control" onchange="updateWelfareCodeTeamHint()">
+                    <option value="">请选择一个福利 Team</option>
+                    {% for team in teams %}
+                    {% set available_slots = team.max_members - team.current_members %}
+                    {% if team.status == 'active' and available_slots > 0 %}
+                    <option
+                        value="{{ team.id }}"
+                        data-team-name="{{ team.team_name or '' }}"
+                        data-team-email="{{ team.email }}"
+                        data-remaining="{{ available_slots }}"
+                    >{{ team.team_name or ('Team #' ~ team.id) }}（{{ team.email }}，剩余 {{ available_slots }}）</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+            <div id="welfareCodeTeamHint" class="text-muted small" style="margin-bottom: 1rem;">请选择要作为号池的福利 Team。</div>
+            <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('welfareCodeTeamModal')">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmGenerateWelfareCodeBtn" onclick="generateWelfareCode()">生成兑换码</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- 编辑 Team 模态框 -->
 <div id="editTeamModal" class="modal-overlay">
     <div class="modal">
@@ -1200,6 +1242,11 @@
         const editTeamModal = document.getElementById('editTeamModal');
         if (editTeamModal && editTeamModal.parentElement !== document.body) {
             document.body.appendChild(editTeamModal);
+        }
+
+        const welfareCodeTeamModal = document.getElementById('welfareCodeTeamModal');
+        if (welfareCodeTeamModal && welfareCodeTeamModal.parentElement !== document.body) {
+            document.body.appendChild(welfareCodeTeamModal);
         }
 
         // Ensure floating dropdowns are mounted to body for fixed positioning

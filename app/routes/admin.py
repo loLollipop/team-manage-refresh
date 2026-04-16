@@ -89,6 +89,11 @@ class AddMemberRequest(BaseModel):
     email: str = Field(..., description="成员邮箱")
 
 
+class DeleteMemberRequest(BaseModel):
+    """删除成员请求"""
+    email: Optional[str] = Field(None, description="成员邮箱")
+
+
 class AddMembersRequest(BaseModel):
     """批量添加成员请求"""
     emails: List[str] = Field(..., description="成员邮箱列表")
@@ -102,6 +107,11 @@ class CodeGenerateRequest(BaseModel):
     expires_days: Optional[int] = Field(None, description="有效期天数")
     has_warranty: bool = Field(False, description="是否为质保兑换码")
     warranty_days: int = Field(30, description="质保天数")
+
+
+class WelfareCodeGenerateRequest(BaseModel):
+    """福利通用兑换码生成请求"""
+    team_id: int = Field(..., description="福利 Team ID")
 
 
 class TeamUpdateRequest(BaseModel):
@@ -257,6 +267,9 @@ async def welfare_dashboard(
             "welfare_code_limit": configured_limit,
             "welfare_code_used": welfare_used,
             "welfare_code_remaining": remaining_count,
+            "welfare_code_team_id": welfare_usage.get("team_id"),
+            "welfare_code_team_name": welfare_usage.get("team_name"),
+            "welfare_code_team_email": welfare_usage.get("team_email"),
         }
 
         return templates.TemplateResponse(
@@ -286,23 +299,39 @@ async def welfare_dashboard(
 
 @router.post("/welfare/code/generate")
 async def generate_welfare_common_code(
+    payload: WelfareCodeGenerateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """生成/更新福利通用兑换码（不落库到 redemption_codes，仅存 settings）。"""
+    """为指定福利 Team 生成/更新当前唯一有效的通用兑换码。"""
     try:
-        seats_stmt = select(func.sum(Team.max_members - Team.current_members)).where(
-            Team.pool_type == "welfare",
-            Team.status == "active",
-            Team.current_members < Team.max_members
+        team_result = await db.execute(
+            select(Team).where(Team.id == payload.team_id)
         )
-        seats_result = await db.execute(seats_stmt)
-        total_seats = int(seats_result.scalar() or 0)
+        source_team = team_result.scalar_one_or_none()
+        if not source_team:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "指定的福利 Team 不存在"}
+            )
 
+        if source_team.pool_type != "welfare":
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "只能为福利 Team 生成通用兑换码"}
+            )
+
+        if source_team.status != "active" or source_team.current_members >= source_team.max_members:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "该福利 Team 当前没有可用席位，无法生成通用兑换码"}
+            )
+
+        total_seats = max(int(source_team.max_members or 0) - int(source_team.current_members or 0), 0)
         if total_seats <= 0:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content={"success": False, "error": "当前没有可用的福利车位，无法生成通用兑换码"}
+                content={"success": False, "error": "该福利 Team 当前没有可用席位，无法生成通用兑换码"}
             )
 
         current_welfare_code = (await settings_service.get_setting(db, "welfare_common_code", "", use_cache=False) or "").strip()
@@ -331,7 +360,6 @@ async def generate_welfare_common_code(
                 content={"success": False, "error": "生成福利通用兑换码失败，请重试"}
             )
 
-        # 兼容清理：历史版本可能把福利通用码写入 redemption_codes，这里统一失效处理
         await db.execute(
             update(RedemptionCode)
             .where(RedemptionCode.pool_type == "welfare", RedemptionCode.reusable_by_seat == True)
@@ -339,17 +367,32 @@ async def generate_welfare_common_code(
         )
         await db.commit()
 
-        # 每次生成新码都会立即替换旧码（旧码自动失效）
-        await settings_service.update_settings(db, {
+        updated = await settings_service.update_settings(db, {
             "welfare_common_code": code,
             "welfare_common_code_limit": str(total_seats),
             "welfare_common_code_used_count": "0",
-            "welfare_common_code_generated_at": get_now().isoformat()
+            "welfare_common_code_generated_at": get_now().isoformat(),
+            "welfare_common_code_team_id": str(source_team.id),
         })
+        if not updated:
+            await db.rollback()
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "写入福利通用兑换码配置失败，请稍后重试"}
+            )
         await redemption_service.ensure_virtual_welfare_shadow_code(db, code)
         await db.commit()
 
-        return JSONResponse(content={"success": True, "code": code, "limit": total_seats, "used": 0, "remaining": total_seats})
+        return JSONResponse(content={
+            "success": True,
+            "code": code,
+            "limit": total_seats,
+            "used": 0,
+            "remaining": total_seats,
+            "team_id": source_team.id,
+            "team_email": source_team.email,
+            "team_name": source_team.team_name,
+        })
     except Exception as e:
         logger.exception("生成福利通用兑换码失败")
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False, "error": "操作失败，请稍后重试"})
@@ -792,6 +835,7 @@ async def add_team_member(
 async def delete_team_member(
     team_id: int,
     user_id: str,
+    payload: DeleteMemberRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -813,7 +857,8 @@ async def delete_team_member(
         result = await team_service.delete_team_member(
             team_id=team_id,
             user_id=user_id,
-            db_session=db
+            db_session=db,
+            email=payload.email,
         )
 
         if not result["success"]:
