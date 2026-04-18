@@ -145,7 +145,29 @@ docker compose up -d
 - 管理后台：`http://localhost:8008/admin`
 - 福利车位页：`http://localhost:8008/admin/welfare`
 
-### 5. 常用命令
+### 5. Zeabur 部署（可选）
+
+项目可直接复用根目录 `Dockerfile` 部署到 Zeabur，无需额外构建前端，也不使用 `docker-compose.yml`。
+
+部署时建议：
+
+- 直接选择仓库根目录 `Dockerfile`
+- 在 Zeabur 后台配置环境变量，而不是依赖 `.env` 文件挂载
+- 至少配置以下变量：
+
+```env
+DATABASE_URL=sqlite+aiosqlite:////app/data/team_manage.db
+SECRET_KEY=replace-with-a-random-secret
+ADMIN_PASSWORD=replace-with-a-strong-password
+DEBUG=False
+```
+
+- 为 SQLite 数据挂载持久化目录：`/app/data`
+- 保持单实例运行，避免 SQLite 写冲突和定时任务重复执行
+- 部署完成后先检查启动日志，再验证 `/health` 与 `/login`
+- `/health` 仅表示进程存活，不能替代数据库初始化与迁移检查
+
+### 6. 常用命令
 
 ```bash
 # 查看日志
