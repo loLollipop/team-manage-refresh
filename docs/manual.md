@@ -129,6 +129,84 @@ docker compose up -d --build
 docker compose build --no-cache
 ```
 
+## Zeabur 部署
+
+### 部署方式
+
+Zeabur 部署时直接使用仓库根目录 `Dockerfile` 即可，不使用 `docker-compose.yml`。
+
+当前镜像会自动兼容平台注入的 `PORT`，同时保留本地 / Docker 环境使用 `APP_PORT` 的能力。
+
+### 必填环境变量
+
+至少配置以下变量：
+
+```env
+DATABASE_URL=sqlite+aiosqlite:////app/data/team_manage.db
+SECRET_KEY=replace-with-a-random-secret
+ADMIN_PASSWORD=replace-with-a-strong-password
+DEBUG=False
+LOG_LEVEL=INFO
+```
+
+说明：
+- `DATABASE_URL` 需要明确指向 `/app/data/team_manage.db`
+- `SECRET_KEY` 用于 Session 签名，必须替换为随机高强度字符串
+- `ADMIN_PASSWORD` 是首次启动后的管理员密码
+- `DEBUG` 生产环境建议关闭
+- `PORT` 通常由 Zeabur 自动注入，不需要手动填写 `APP_PORT`
+
+### 持久化卷
+
+如果继续使用 SQLite，必须为以下目录挂载持久化卷：
+
+```text
+/app/data
+```
+
+不挂载时，数据库文件仍可在容器内创建，但重启或重部署后数据会丢失。
+
+### 首次启动检查
+
+应用启动时会自动执行：
+- 创建数据库目录
+- 初始化数据库表
+- 执行自动迁移
+- 初始化管理员密码
+- 启动定时任务
+
+部署完成后建议按以下顺序检查：
+
+1. 查看启动日志，确认没有数据库初始化或迁移报错
+2. 访问 `/health`，确认进程已经正常启动
+3. 打开 `/login`，确认页面可以正常加载
+4. 重启服务后再次检查数据是否仍然存在
+
+`/health` 仅表示进程存活，不能替代数据库初始化、迁移和定时任务启动状态的检查。
+
+### 单实例要求
+
+Zeabur 上建议保持单实例运行。
+
+原因：
+- 当前项目默认使用 SQLite，不适合多实例并发写入
+- 应用启动时会注册 APScheduler 定时任务，多实例会导致重复执行
+
+### 常见问题
+
+1. 健康检查失败
+   - 先检查日志里是否有数据库初始化异常
+   - 再确认服务是否监听 Zeabur 注入的 `PORT`
+   - 即使 `/health` 正常，也仍需继续检查初始化日志和登录页
+
+2. 数据重部署后丢失
+   - 检查是否已经为 `/app/data` 挂载持久化卷
+   - 检查 `DATABASE_URL` 是否仍指向 `/app/data/team_manage.db`
+
+3. 页面可访问但功能异常
+   - 不要只看端口是否打开
+   - 还需要确认启动日志中的初始化流程已经完成
+
 ## 配置说明
 
 ### 安全配置
@@ -154,11 +232,13 @@ docker compose build --no-cache
 DATABASE_URL="sqlite+aiosqlite:///./team_manage.db"
 ```
 
-Docker 环境下会被容器内路径覆盖为：
+Docker Compose 环境下会被 `docker-compose.yml` 覆盖为：
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:////app/data/team_manage.db
 ```
+
+Zeabur 部署时也建议显式配置为同一路径，并将 `/app/data` 挂载为持久化卷。
 
 ### 代理配置
 
