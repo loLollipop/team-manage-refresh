@@ -15,6 +15,7 @@ from app.models import Team
 from app.services.encryption import encryption_service
 from app.services.settings import settings_service
 from app.utils.jwt_parser import JWTParser
+from app.utils.proxy import build_httpx_proxy
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,9 @@ class CliproxyapiService:
             return None
 
         proxy_config = await settings_service.get_proxy_config(db_session)
-        proxy_url = proxy_config["proxy"] if proxy_config.get("enabled") and proxy_config.get("proxy") else None
+        proxy_url = None
+        if proxy_config.get("enabled"):
+            proxy_url = build_httpx_proxy(proxy_config.get("proxy"))
 
         return CliproxyapiConfig(
             base_url=base_url,

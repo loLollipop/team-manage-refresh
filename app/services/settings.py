@@ -208,7 +208,7 @@ class SettingsService:
         Args:
             session: 数据库会话
             enabled: 是否启用代理
-            proxy: 代理地址 (格式: http://host:port 或 socks5://host:port)
+            proxy: 代理地址 (格式: http://host:port、https://host:port、socks5://host:port 或 socks5h://host:port)
 
         Returns:
             是否更新成功

@@ -14,6 +14,7 @@ from curl_cffi.requests import AsyncSession
 from app.services.settings import settings_service
 from sqlalchemy.ext.asyncio import AsyncSession as DBAsyncSession
 from app.utils.jwt_parser import JWTParser
+from app.utils.proxy import build_curl_cffi_proxies
 
 logger = logging.getLogger(__name__)
 
@@ -49,17 +50,9 @@ class ChatGPTService:
         """
         proxy = await self._get_proxy_config(db_session)
 
-        proxies = None
-        if proxy:
-            normalized_proxy = proxy.strip()
-            # curl_cffi/curl 对 socks5h 兼容性不稳定，统一转为 socks5
-            if normalized_proxy.startswith("socks5h://"):
-                normalized_proxy = "socks5://" + normalized_proxy[len("socks5h://"):]
-            proxies = {
-                "all": normalized_proxy,
-                "http": normalized_proxy,
-                "https": normalized_proxy,
-            }
+        proxies = build_curl_cffi_proxies(proxy)
+        if proxies:
+            normalized_proxy = proxies["all"]
 
             try:
                 parsed_proxy = urlparse(normalized_proxy)

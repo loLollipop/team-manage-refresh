@@ -58,15 +58,15 @@
                 <input type="checkbox" id="proxyEnabled" name="enabled" {% if proxy_enabled %}checked{% endif %}>
                 <span>启用代理</span>
             </label>
-            <p class="form-help">启用后,所有ChatGPT API请求将通过代理服务器</p>
+            <p class="form-help">启用后,系统服务端出站请求将通过代理服务器,包括 ChatGPT、CliproxyAPI 和 Webhook</p>
         </div>
 
         <div class="form-group">
             <label for="proxyUrl">代理地址</label>
             <input type="text" id="proxyUrl" name="proxy" value="{{ proxy or '' }}"
-                placeholder="http://127.0.0.1:7890, socks5://127.0.0.1:1080 或 socks5h://127.0.0.1:1080"
+                placeholder="http://127.0.0.1:7890, https://127.0.0.1:8443, socks5://127.0.0.1:1080 或 socks5h://127.0.0.1:1080"
                 class="form-control">
-            <p class="form-help">支持HTTP、SOCKS5和SOCKS5H (远程DNS解析) 代理</p>
+            <p class="form-help">支持 HTTP、HTTPS、SOCKS5 和 SOCKS5H (远程 DNS 解析) 代理</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存代理配置</button>

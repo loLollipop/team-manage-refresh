@@ -42,7 +42,7 @@ async def create_default_settings():
             Setting(
                 key="proxy",
                 value=settings.proxy,
-                description="代理地址 (支持 http:// 和 socks5://)"
+                description="代理地址 (支持 http://、https://、socks5:// 和 socks5h://)"
             ),
             Setting(
                 key="proxy_enabled",

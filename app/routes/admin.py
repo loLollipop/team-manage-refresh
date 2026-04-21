@@ -27,6 +27,7 @@ from app.services.settings import (
 from app.services.cliproxyapi import cliproxyapi_service
 from app.models import RedemptionCode, RedemptionRecord, Team
 from app.utils.time_utils import get_now
+from app.utils.proxy import mask_proxy_url, normalize_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -2366,17 +2367,32 @@ async def update_proxy_config(
     try:
         from app.services.settings import settings_service
 
-        logger.info(f"管理员更新代理配置: enabled={proxy_data.enabled}, proxy={proxy_data.proxy}")
+        masked_proxy = ""
+        if proxy_data.proxy:
+            try:
+                masked_proxy = mask_proxy_url(proxy_data.proxy)
+            except ValueError:
+                masked_proxy = "<invalid-proxy>"
+        logger.info(f"管理员更新代理配置: enabled={proxy_data.enabled}, proxy={masked_proxy}")
 
         # 验证代理地址格式
-        if proxy_data.enabled and proxy_data.proxy:
-            proxy = proxy_data.proxy.strip()
-            if not (proxy.startswith("http://") or proxy.startswith("https://") or proxy.startswith("socks5://") or proxy.startswith("socks5h://")):
+        if proxy_data.enabled:
+            if not str(proxy_data.proxy or "").strip():
                 return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     content={
                         "success": False,
-                        "error": "代理地址格式错误,应为 http://host:port, socks5://host:port 或 socks5h://host:port"
+                        "error": "启用代理时必须填写代理地址"
+                    }
+                )
+            try:
+                normalize_proxy_url(proxy_data.proxy)
+            except ValueError as exc:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "success": False,
+                        "error": str(exc)
                     }
                 )
 

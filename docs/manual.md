@@ -242,10 +242,11 @@ Zeabur 部署时也建议显式配置为同一路径，并将 `/app/data` 挂载
 
 ### 代理配置
 
-如果需要通过代理访问 ChatGPT 相关接口，可在系统设置中配置代理。
+如果需要通过代理访问系统服务端出站请求，可在系统设置中配置代理。该配置会同时作用于 ChatGPT、CliproxyAPI 和 Webhook 请求。
 
 支持格式：
 - HTTP：`http://proxy.example.com:8080`
+- HTTPS：`https://proxy.example.com:8443`
 - SOCKS5：`socks5://proxy.example.com:1080`
 - SOCKS5H：`socks5h://proxy.example.com:1080`
 

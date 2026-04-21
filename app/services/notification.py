@@ -7,6 +7,7 @@ from app.services.settings import settings_service
 from app.services.redemption import RedemptionService
 from app.services.team import team_service
 from app.database import AsyncSessionLocal
+from app.utils.proxy import build_httpx_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class NotificationService:
 
                 threshold_str = await settings_service.get_setting(db_session, "low_stock_threshold", "10")
                 api_key = await settings_service.get_setting(db_session, "api_key")
+                proxy_config = await settings_service.get_proxy_config(db_session)
 
                 try:
                     threshold = int(threshold_str)
@@ -44,7 +46,13 @@ class NotificationService:
                 # 仅根据可用车位触发补货
                 if available_seats <= threshold:
                     logger.info(f"检测到车位不足，触发补货预警! Webhook URL: {webhook_url}")
-                    return await self.send_webhook_notification(webhook_url, available_seats, threshold, api_key)
+                    return await self.send_webhook_notification(
+                        webhook_url,
+                        available_seats,
+                        threshold,
+                        api_key,
+                        proxy_config.get("proxy") if proxy_config.get("enabled") else None,
+                    )
                 
                 return False
 
@@ -52,7 +60,14 @@ class NotificationService:
                 logger.error(f"检查库存并通知过程发生错误: {e}")
                 return False
 
-    async def send_webhook_notification(self, url: str, available_seats: int, threshold: int, api_key: Optional[str] = None) -> bool:
+    async def send_webhook_notification(
+        self,
+        url: str,
+        available_seats: int,
+        threshold: int,
+        api_key: Optional[str] = None,
+        proxy: Optional[str] = None,
+    ) -> bool:
         """
         发送 Webhook 通知
         """
@@ -68,7 +83,10 @@ class NotificationService:
             if api_key:
                 headers["X-API-Key"] = api_key
                 
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                proxy=build_httpx_proxy(proxy),
+            ) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 logger.info(f"Webhook 通知发送成功: {url}")
