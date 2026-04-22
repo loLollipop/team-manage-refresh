@@ -2,6 +2,7 @@
 管理员路由
 处理管理员面板的所有页面和操作
 """
+import asyncio
 import json
 import logging
 import re
@@ -1268,54 +1269,86 @@ async def batch_refresh_teams(
         async def progress_generator():
             success_count = 0
             failed_count = 0
+            completed_count = 0
             total = len(team_ids)
+            concurrency = min(3, total) if total > 0 else 1
 
             yield json.dumps({
                 "type": "start",
                 "total": total,
                 "success_count": success_count,
                 "failed_count": failed_count,
+                "completed_count": completed_count,
+                "concurrency": concurrency,
             }, ensure_ascii=False) + "\n"
 
-            async with AsyncSessionLocal() as db_session:
-                for index, team_id in enumerate(team_ids, start=1):
-                    item_success = False
-                    item_error = None
-                    item_message = None
+            async def refresh_single_team(team_id: int) -> Dict[str, object]:
+                item_success = False
+                item_error = None
+                item_message = None
 
-                    try:
+                try:
+                    async with AsyncSessionLocal() as db_session:
                         result = await team_service.sync_team_info(team_id, db_session, force_refresh=True)
-                        item_success = bool(result.get("success"))
-                        item_message = result.get("message")
-                        item_error = result.get("error")
-                    except Exception as ex:
-                        logger.error(f"批量刷新 Team {team_id} 时出错: {ex}")
-                        item_error = str(ex)
+                    item_success = bool(result.get("success"))
+                    item_message = result.get("message")
+                    item_error = result.get("error")
+                except Exception as ex:
+                    logger.error(f"批量刷新 Team {team_id} 时出错: {ex}")
+                    item_error = str(ex)
 
-                    if item_success:
-                        success_count += 1
-                    else:
-                        failed_count += 1
+                return {
+                    "team_id": team_id,
+                    "success": item_success,
+                    "message": item_message,
+                    "error": item_error,
+                }
 
-                    yield json.dumps({
-                        "type": "progress",
-                        "current": index,
-                        "total": total,
-                        "success_count": success_count,
-                        "failed_count": failed_count,
-                        "team_id": team_id,
-                        "last_result": {
-                            "success": item_success,
-                            "message": item_message,
-                            "error": item_error,
-                        }
-                    }, ensure_ascii=False) + "\n"
+            for start_index in range(0, total, concurrency):
+                team_batch = team_ids[start_index:start_index + concurrency]
+                pending_tasks = {
+                    asyncio.create_task(refresh_single_team(team_id))
+                    for team_id in team_batch
+                }
+
+                while pending_tasks:
+                    done_tasks, pending_tasks = await asyncio.wait(
+                        pending_tasks,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    for done_task in done_tasks:
+                        item = await done_task
+                        completed_count += 1
+                        item_success = bool(item["success"])
+                        if item_success:
+                            success_count += 1
+                        else:
+                            failed_count += 1
+
+                        yield json.dumps({
+                            "type": "progress",
+                            "current": completed_count,
+                            "completed_count": completed_count,
+                            "total": total,
+                            "success_count": success_count,
+                            "failed_count": failed_count,
+                            "team_id": item["team_id"],
+                            "concurrency": concurrency,
+                            "last_result": {
+                                "success": item_success,
+                                "message": item["message"],
+                                "error": item["error"],
+                            }
+                        }, ensure_ascii=False) + "\n"
 
             yield json.dumps({
                 "type": "finish",
                 "total": total,
                 "success_count": success_count,
                 "failed_count": failed_count,
+                "completed_count": completed_count,
+                "concurrency": concurrency,
                 "message": f"批量刷新完成: 成功 {success_count}, 失败 {failed_count}"
             }, ensure_ascii=False) + "\n"
 
