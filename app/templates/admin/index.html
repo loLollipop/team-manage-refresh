@@ -1930,6 +1930,21 @@
         }
     }
 
+    function formatBatchRefreshStatusText({
+        actionLabel,
+        current,
+        total,
+        success,
+        failed,
+        waiting = false,
+    }) {
+        let text = `${actionLabel}，已完成：<strong>${current}</strong>/<strong>${total}</strong>，成功 ${success}，失败 ${failed}。`;
+        if (waiting) {
+            text += ' 请稍候…';
+        }
+        return text;
+    }
+
     function updateBatchRefreshProgress({ current, total, success, failed, text }) {
         const barNode = document.getElementById('batchRefreshProgressBar');
         const percentNode = document.getElementById('batchRefreshProgressPercent');
@@ -2028,6 +2043,7 @@
         emptyMessage,
         confirmMessage,
         progressVerb,
+        progressActionLabel,
         successVerb,
         failedMessage,
         interruptedMessage,
@@ -2045,12 +2061,21 @@
         showBatchRefreshProgress();
         setBatchRefreshProgressTitle(panelTitle);
         setBatchActionButtonsDisabled(true);
+        const actionLabel = progressActionLabel || progressVerb;
+
         updateBatchRefreshProgress({
             current: 0,
             total: totalCount,
             success: 0,
             failed: 0,
-            text: `${progressVerb}，当前进度：<strong>0</strong>/<strong>${totalCount}</strong>，请稍候…`
+            text: formatBatchRefreshStatusText({
+                actionLabel,
+                current: 0,
+                total: totalCount,
+                success: 0,
+                failed: 0,
+                waiting: true,
+            })
         });
         showToast(startMessage, 'info');
 
@@ -2094,19 +2119,32 @@
 
                     if (data.type === 'start') {
                         updateBatchRefreshProgress({
-                            current: 0,
+                            current: data.completed_count || 0,
                             total: data.total || totalCount,
                             success: data.success_count || 0,
                             failed: data.failed_count || 0,
-                            text: `${progressVerb}，当前进度：<strong>0</strong>/<strong>${data.total || totalCount}</strong>，请稍候…`
+                            text: formatBatchRefreshStatusText({
+                                actionLabel,
+                                current: data.completed_count || 0,
+                                total: data.total || totalCount,
+                                success: data.success_count || 0,
+                                failed: data.failed_count || 0,
+                                waiting: true,
+                            })
                         });
                     } else if (data.type === 'progress') {
                         updateBatchRefreshProgress({
-                            current: data.current || 0,
+                            current: data.completed_count || data.current || 0,
                             total: data.total || totalCount,
                             success: data.success_count || 0,
                             failed: data.failed_count || 0,
-                            text: `${progressVerb}，当前进度：<strong>${data.current || 0}</strong>/<strong>${data.total || totalCount}</strong>，成功 ${data.success_count || 0}，失败 ${data.failed_count || 0}。`
+                            text: formatBatchRefreshStatusText({
+                                actionLabel,
+                                current: data.completed_count || data.current || 0,
+                                total: data.total || totalCount,
+                                success: data.success_count || 0,
+                                failed: data.failed_count || 0,
+                            })
                         });
                     } else if (data.type === 'finish') {
                         finalResult = data;
@@ -2157,6 +2195,7 @@
             emptyMessage: '请选择要刷新的 Team',
             confirmMessage: `确定要批量刷新选中的 ${selectedIds.length} 个 Team 吗？`,
             progressVerb: '正在刷新中',
+            progressActionLabel: '正在批量刷新 Team',
             successVerb: '批量刷新完成',
             failedMessage: '批量刷新失败',
             interruptedMessage: '批量刷新连接已中断，未收到完成信号，请检查网络或稍后重试',
@@ -2173,6 +2212,7 @@
             emptyMessage: '当前池没有可检测的 Team',
             confirmMessage: `确定要检测${currentPoolLabel}全部 ${totalTeamsInCurrentPool} 个 Team 的存活情况吗？\n\n此操作会同步 Team 信息并更新状态，不受当前搜索、筛选和分页影响。`,
             progressVerb: '正在检测 Team 存活',
+            progressActionLabel: '正在检测 Team 存活',
             successVerb: '检测完成',
             failedMessage: '检测 Team 存活失败',
             interruptedMessage: '检测 Team 存活连接已中断，未收到完成信号，请检查网络或稍后重试',
