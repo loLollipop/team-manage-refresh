@@ -1380,9 +1380,9 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
                     "success": True,
                     "total": 3,
                     "items": [
-                        {"email_address": "joined@example.com", "role": "standard-user", "created_time": "2026-04-16T08:10:00", "status": "pending"},
-                        {"email_address": "pending@example.com", "role": "standard-user", "created_time": "2026-04-16T08:15:00", "status": "pending"},
-                        {"email_address": "accepted@example.com", "role": "standard-user", "created_time": "2026-04-16T08:20:00", "status": "accepted"},
+                        {"email_address": "joined@example.com", "role": "standard-user", "created_time": "2026-04-16T08:10:00", "status": 2, "state": "pending"},
+                        {"email_address": "pending@example.com", "role": "standard-user", "created_time": "2026-04-16T08:15:00", "status": 2, "state": "pending"},
+                        {"email_address": "accepted@example.com", "role": "standard-user", "created_time": "2026-04-16T08:20:00", "status": "accepted", "state": "accepted"},
                     ],
                 }
 
@@ -1397,6 +1397,38 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(emails.count("joined@example.com"), 1)
             self.assertIn("pending@example.com", emails)
             self.assertNotIn("accepted@example.com", emails)
+
+    async def test_filter_pending_invites_accepts_numeric_status_two(self):
+        team_service = TeamService()
+
+        pending_invites = team_service._filter_pending_invites(
+            [
+                {"email_address": "numeric@example.com", "status": 2},
+                {"email_address": "string@example.com", "status": "pending"},
+                {"email_address": "accepted@example.com", "status": "accepted"},
+            ],
+            joined_emails=set(),
+        )
+
+        emails = [item["email_address"] for item in pending_invites]
+        self.assertIn("numeric@example.com", emails)
+        self.assertIn("string@example.com", emails)
+        self.assertNotIn("accepted@example.com", emails)
+
+    async def test_filter_pending_invites_prefers_state_over_numeric_status(self):
+        team_service = TeamService()
+
+        pending_invites = team_service._filter_pending_invites(
+            [
+                {"email_address": "state-pending@example.com", "status": 2, "state": "pending"},
+                {"email_address": "state-accepted@example.com", "status": 2, "state": "accepted"},
+            ],
+            joined_emails=set(),
+        )
+
+        emails = [item["email_address"] for item in pending_invites]
+        self.assertIn("state-pending@example.com", emails)
+        self.assertNotIn("state-accepted@example.com", emails)
 
     async def test_generate_welfare_common_code_binds_selected_team(self):
         async with self.session_factory() as session:
