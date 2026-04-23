@@ -366,6 +366,26 @@ class TeamService:
         normalized = str(email).strip().lower()
         return normalized or None
 
+    @staticmethod
+    def _normalize_invite_status(invite: Dict[str, Any]) -> str:
+        """统一邀请状态字段，优先使用语义更明确的 state/invite_status。"""
+        for key in ("invite_status", "state"):
+            value = invite.get(key)
+            if value is None:
+                continue
+            normalized = str(value).strip().lower()
+            if normalized:
+                return normalized
+
+        raw_status = invite.get("status")
+        if raw_status is None:
+            return ""
+
+        normalized = str(raw_status).strip().lower()
+        if normalized == "2":
+            return "pending"
+        return normalized
+
     def _filter_pending_invites(
         self,
         invite_items: Optional[List[Dict[str, Any]]],
@@ -385,12 +405,7 @@ class TeamService:
             if not email or email in normalized_joined:
                 continue
 
-            raw_status = str(
-                invite.get("status")
-                or invite.get("invite_status")
-                or invite.get("state")
-                or ""
-            ).strip().lower()
+            raw_status = self._normalize_invite_status(invite)
             if raw_status and raw_status not in active_invite_statuses:
                 continue
 
