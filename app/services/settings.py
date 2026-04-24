@@ -2,7 +2,8 @@
 系统设置服务
 管理系统配置的读取、更新和缓存
 """
-from typing import Optional, Dict
+import time
+from typing import Optional, Dict, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Setting
@@ -27,11 +28,52 @@ VALID_UI_THEMES = {
 }
 
 
+class _CacheDict(dict):
+    """兼容旧写法的缓存容器。
+
+    `redeem_flow` 等历史代码直接用 `settings_service._cache[key] = value` 的
+    形式写缓存；保留 dict 协议的同时记录写入时间，便于 TTL 判定。
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._timestamps: Dict[str, float] = {}
+
+    def __setitem__(self, key: str, value: str) -> None:  # type: ignore[override]
+        super().__setitem__(key, value)
+        self._timestamps[key] = time.monotonic()
+
+    def __delitem__(self, key: str) -> None:  # type: ignore[override]
+        super().__delitem__(key)
+        self._timestamps.pop(key, None)
+
+    def update(self, *args, **kwargs):  # type: ignore[override]
+        super().update(*args, **kwargs)
+        now = time.monotonic()
+        for key in dict(*args, **kwargs).keys():
+            self._timestamps[key] = now
+
+    def clear(self):  # type: ignore[override]
+        super().clear()
+        self._timestamps.clear()
+
+    def age(self, key: str) -> Optional[float]:
+        ts = self._timestamps.get(key)
+        if ts is None:
+            return None
+        return time.monotonic() - ts
+
+
 class SettingsService:
     """系统设置服务类"""
 
+    # 进程内缓存 TTL（秒）。多 worker / 多实例部署下，该 TTL 决定单个 worker
+    # 最多会读到多旧的配置；设为 None 则视为永不过期（只能靠 update_* / clear_cache
+    # 显式失效）。
+    CACHE_TTL_SECONDS: Optional[float] = 30.0
+
     def __init__(self):
-        self._cache: Dict[str, str] = {}
+        self._cache: _CacheDict = _CacheDict()
 
     @staticmethod
     def normalize_warranty_expiration_mode(mode: Optional[str]) -> str:
@@ -68,9 +110,12 @@ class SettingsService:
         Returns:
             配置项值,如果不存在则返回默认值
         """
-        # 先从缓存获取
+        # 先从缓存获取（带 TTL 过滤）
         if use_cache and key in self._cache:
-            return self._cache[key]
+            ttl = self.CACHE_TTL_SECONDS
+            age = self._cache.age(key)
+            if ttl is None or (age is not None and age < ttl):
+                return self._cache[key]
 
         # 从数据库获取
         result = await session.execute(

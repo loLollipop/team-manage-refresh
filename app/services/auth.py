@@ -2,6 +2,8 @@
 认证服务
 处理管理员登录、密码验证和 Session 管理
 """
+import base64
+import hashlib
 import logging
 import bcrypt
 from typing import Optional, Dict, Any
@@ -21,6 +23,19 @@ class AuthService:
         """初始化认证服务"""
         pass
 
+    # bcrypt 会静默截断超过 72 字节的密码；为了行为可预测，
+    # 在哈希/校验入口用 SHA256 预先压缩成固定长度字节串，再交给 bcrypt。
+    # 这里选择 base64 编码而非原始 digest 以确保不含 NUL 字节（bcrypt 会在 NUL 处截断）。
+    _BCRYPT_MAX_INPUT_BYTES = 72
+
+    @staticmethod
+    def _prepare_for_bcrypt(password: str) -> bytes:
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) <= AuthService._BCRYPT_MAX_INPUT_BYTES:
+            return password_bytes
+        digest = hashlib.sha256(password_bytes).digest()
+        return base64.b64encode(digest)
+
     def hash_password(self, password: str) -> str:
         """
         哈希密码
@@ -31,7 +46,7 @@ class AuthService:
         Returns:
             哈希后的密码
         """
-        password_bytes = password.encode('utf-8')
+        password_bytes = self._prepare_for_bcrypt(password)
         salt = bcrypt.gensalt()
         hashed = bcrypt.hashpw(password_bytes, salt)
         return hashed.decode('utf-8')
@@ -48,7 +63,7 @@ class AuthService:
             是否匹配
         """
         try:
-            password_bytes = password.encode('utf-8')
+            password_bytes = self._prepare_for_bcrypt(password)
             hashed_bytes = hashed_password.encode('utf-8')
             return bcrypt.checkpw(password_bytes, hashed_bytes)
         except Exception as e:

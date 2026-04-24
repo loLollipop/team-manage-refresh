@@ -26,8 +26,9 @@ class EncryptionService:
         Returns:
             Fernet 实例
         """
-        # 使用 secret_key 生成 Fernet 密钥 (32 字节 base64 编码)
-        key_bytes = settings.secret_key.encode('utf-8')
+        # 优先使用 encryption_key（未配置时回退到 secret_key 以兼容老部署）。
+        # 轮换 session 密钥时不要同时动这把 key，否则历史 *_encrypted 字段会全部无法解密。
+        key_bytes = settings.effective_encryption_key.encode('utf-8')
         # 使用 SHA256 哈希生成固定长度的密钥
         hashed_key = hashlib.sha256(key_bytes).digest()
         # Base64 编码

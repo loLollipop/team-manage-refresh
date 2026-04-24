@@ -320,7 +320,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 # 配置 Session 中间件
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.secret_key,
+    secret_key=settings.effective_session_secret_key,
     session_cookie="session",
     max_age=14 * 24 * 60 * 60,  # 14 天
     same_site="lax",
