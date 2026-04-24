@@ -809,6 +809,20 @@
         if (!actionBar) return;
 
         if (count > 0) {
+            // 桌面版使用了 body/main-container 的 flex + overflow:hidden 布局，
+            // 导致 `position: fixed` 仍被祖先的 overflow/containing-block 约束，
+            // 悬浮条只在滚动到 main-content 底部时才可见。
+            // 把它临时挂到 body 下面，position: fixed 才能真正相对视口定位。
+            if (actionBar.parentElement !== document.body) {
+                actionBar.dataset.homeParent = actionBar.dataset.homeParent || 'bulk-action-home';
+                if (!document.getElementById(actionBar.dataset.homeParent)) {
+                    const placeholder = document.createElement('span');
+                    placeholder.id = actionBar.dataset.homeParent;
+                    placeholder.style.display = 'none';
+                    actionBar.parentElement.insertBefore(placeholder, actionBar);
+                }
+                document.body.appendChild(actionBar);
+            }
             actionBar.style.display = 'flex';
             actionBar.classList.add('viewport-floating');
             document.body.classList.add('bulk-action-visible');
