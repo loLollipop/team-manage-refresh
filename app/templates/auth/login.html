@@ -1,43 +1,211 @@
 {% extends "base.html" %}
 
-{% block title %}登录 - GPT Team 管理系统{% endblock %}
+{% block title %}管理员登录 - GPT Team 管理系统{% endblock %}
 
 {% block auth_content %}
-<div class="login-container">
-    <div class="login-box">
-        <h2>管理员登录</h2>
-        <form id="loginForm" onsubmit="handleLogin(event)">
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    class="form-control"
-                    placeholder="请输入管理员密码"
-                    required
-                    autocomplete="current-password"
-                >
+<div class="auth-shell">
+    <div class="auth-orbs" aria-hidden="true">
+        <span class="auth-orb auth-orb-1"></span>
+        <span class="auth-orb auth-orb-2"></span>
+        <span class="auth-orb auth-orb-3"></span>
+    </div>
+
+    <div class="auth-layout">
+        <section class="auth-hero" aria-hidden="true">
+            <div class="auth-hero-inner">
+                <a href="/" class="auth-brand">
+                    <span class="brand-badge">GT</span>
+                    <span class="auth-brand-copy">
+                        <span class="auth-eyebrow">Operations Workspace</span>
+                        <span class="auth-brand-name">GPT Team 管理系统</span>
+                    </span>
+                </a>
+
+                <div class="auth-hero-copy">
+                    <h2>集中运营 · 一站式管控</h2>
+                    <p>账号导入、兑换码发放、质保售后与自动化补位，核心流程在后台一次完成。</p>
+                </div>
+
+                <ul class="auth-feature-list">
+                    <li>
+                        <span class="auth-feature-icon"><i data-lucide="layout-dashboard"></i></span>
+                        <div>
+                            <strong>实时工作台</strong>
+                            <p>状态、席位与异动动态，一眼即览</p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="auth-feature-icon"><i data-lucide="ticket"></i></span>
+                        <div>
+                            <strong>批量兑换码</strong>
+                            <p>批量生成、校验、清理与分发</p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="auth-feature-icon"><i data-lucide="heart-handshake"></i></span>
+                        <div>
+                            <strong>福利车位</strong>
+                            <p>独立库存与异常运营策略</p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="auth-feature-icon"><i data-lucide="settings-2"></i></span>
+                        <div>
+                            <strong>自动化运营</strong>
+                            <p>Token 刷新、质保与外推联动</p>
+                        </div>
+                    </li>
+                </ul>
             </div>
-            <div id="errorMessage" class="error-message" style="display: none;"></div>
-            <button type="submit" class="btn btn-primary btn-block">登录</button>
-        </form>
+        </section>
+
+        <section class="auth-card-wrap">
+            <div class="auth-card">
+                <div class="auth-card-head">
+                    <a href="/" class="auth-brand auth-brand-compact">
+                        <span class="brand-badge">GT</span>
+                        <span class="auth-brand-copy">
+                            <span class="auth-eyebrow">Operations Workspace</span>
+                            <span class="auth-brand-name">GPT Team 管理系统</span>
+                        </span>
+                    </a>
+                    <button
+                        type="button"
+                        id="authThemeToggle"
+                        class="auth-theme-toggle"
+                        aria-label="切换主题"
+                    >
+                        <i data-lucide="palette"></i>
+                        <span class="auth-theme-label">冷调</span>
+                    </button>
+                </div>
+
+                <div class="auth-card-title">
+                    <h1>管理员登录</h1>
+                    <p>请使用管理员密码进入运营后台</p>
+                </div>
+
+                <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="password">管理员密码</label>
+                        <div class="auth-input-wrap">
+                            <span class="auth-input-icon"><i data-lucide="lock"></i></span>
+                            <input
+                                type="password"
+                                id="password"
+                                name="password"
+                                class="form-control auth-input"
+                                placeholder="请输入管理员密码"
+                                required
+                                autocomplete="current-password"
+                                autofocus
+                            >
+                            <button
+                                type="button"
+                                class="auth-password-toggle"
+                                id="togglePassword"
+                                aria-label="显示或隐藏密码"
+                            >
+                                <i data-lucide="eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="errorMessage" class="auth-error" role="alert" style="display: none;">
+                        <i data-lucide="alert-circle"></i>
+                        <span class="auth-error-text"></span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block auth-submit">
+                        <span class="auth-submit-label">登录</span>
+                        <i data-lucide="arrow-right" class="auth-submit-icon"></i>
+                    </button>
+                </form>
+
+                <div class="auth-card-foot">
+                    <span class="auth-divider"><span>安全登录</span></span>
+                    <p class="auth-hint">
+                        <i data-lucide="shield-check"></i>
+                        后台仅允许授权管理员访问，所有操作均记录日志
+                    </p>
+                </div>
+            </div>
+        </section>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+(function initAuthTheme() {
+    const toggle = document.getElementById('authThemeToggle');
+    if (!toggle) return;
+
+    const label = toggle.querySelector('.auth-theme-label');
+
+    function currentTheme() {
+        const t = document.body.dataset.uiTheme;
+        if (t === 'warm' || t === 'ocean') return t;
+        try {
+            const saved = localStorage.getItem('ui_theme');
+            if (saved === 'warm' || saved === 'ocean') return saved;
+        } catch (e) {}
+        return 'ocean';
+    }
+
+    function renderLabel(theme) {
+        if (!label) return;
+        label.textContent = theme === 'warm' ? '暖调' : '冷调';
+    }
+
+    function applyTheme(theme) {
+        const normalized = theme === 'warm' ? 'warm' : 'ocean';
+        document.body.classList.remove('theme-ocean', 'theme-warm');
+        document.body.classList.add('theme-' + normalized);
+        document.documentElement.classList.remove('theme-ocean', 'theme-warm');
+        document.documentElement.classList.add('theme-' + normalized);
+        document.body.dataset.uiTheme = normalized;
+        try { localStorage.setItem('ui_theme', normalized); } catch (e) {}
+        renderLabel(normalized);
+    }
+
+    renderLabel(currentTheme());
+
+    toggle.addEventListener('click', function () {
+        const next = currentTheme() === 'warm' ? 'ocean' : 'warm';
+        applyTheme(next);
+        if (window.lucide) lucide.createIcons();
+    });
+})();
+
+(function initPasswordToggle() {
+    const btn = document.getElementById('togglePassword');
+    const input = document.getElementById('password');
+    if (!btn || !input) return;
+
+    btn.addEventListener('click', function () {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        btn.innerHTML = isHidden
+            ? '<i data-lucide="eye-off"></i>'
+            : '<i data-lucide="eye"></i>';
+        if (window.lucide) lucide.createIcons();
+        input.focus();
+    });
+})();
+
 async function handleLogin(event) {
     event.preventDefault();
 
     const password = document.getElementById('password').value;
     const errorMessage = document.getElementById('errorMessage');
+    const errorText = errorMessage.querySelector('.auth-error-text');
     const submitButton = event.target.querySelector('button[type="submit"]');
+    const submitLabel = submitButton.querySelector('.auth-submit-label');
 
-    // 禁用提交按钮
     submitButton.disabled = true;
-    submitButton.textContent = '登录中...';
+    submitButton.classList.add('is-loading');
+    if (submitLabel) submitLabel.textContent = '登录中...';
     errorMessage.style.display = 'none';
 
     try {
@@ -52,20 +220,22 @@ async function handleLogin(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            // 登录成功,跳转到管理员面板
             window.location.href = '/admin';
         } else {
-            // 显示错误信息
-            errorMessage.textContent = data.error || '登录失败';
-            errorMessage.style.display = 'block';
+            if (errorText) errorText.textContent = data.error || '登录失败';
+            errorMessage.style.display = 'flex';
             submitButton.disabled = false;
-            submitButton.textContent = '登录';
+            submitButton.classList.remove('is-loading');
+            if (submitLabel) submitLabel.textContent = '登录';
+            if (window.lucide) lucide.createIcons();
         }
     } catch (error) {
-        errorMessage.textContent = '网络错误,请稍后重试';
-        errorMessage.style.display = 'block';
+        if (errorText) errorText.textContent = '网络错误，请稍后重试';
+        errorMessage.style.display = 'flex';
         submitButton.disabled = false;
-        submitButton.textContent = '登录';
+        submitButton.classList.remove('is-loading');
+        if (submitLabel) submitLabel.textContent = '登录';
+        if (window.lucide) lucide.createIcons();
     }
 }
 </script>

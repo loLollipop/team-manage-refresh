@@ -402,10 +402,19 @@ app.include_router(api.router)
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """登录页面"""
+    ui_theme = "ocean"
+    try:
+        from app.services.settings import settings_service, DEFAULT_UI_THEME
+        async with AsyncSessionLocal() as db:
+            ui_theme = settings_service.normalize_ui_theme(
+                await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)
+            )
+    except Exception:
+        ui_theme = "ocean"
     return templates.TemplateResponse(
         request,
         "auth/login.html",
-        {"request": request, "user": None}
+        {"request": request, "user": None, "ui_theme": ui_theme}
     )
 
 

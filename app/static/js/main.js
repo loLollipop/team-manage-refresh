@@ -263,9 +263,10 @@ function updateThemeToggleButton(theme) {
 
 async function initThemeSwitcher() {
     const isAdmin = !!document.body?.classList.contains('admin-theme');
+    const isAuthPage = !!document.body?.classList.contains('auth-page');
     applySystemTheme(getCurrentSystemTheme());
 
-    if (!isAdmin) return;
+    if (!isAdmin || isAuthPage) return;
 
     try {
         const response = await fetch('/admin/settings/ui-theme');

@@ -24,13 +24,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260413-workbench-refresh-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260424-login-redesign-1">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 text-slate-900{% if user %} admin-theme theme-{{ ui_theme|default('ocean') }}{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}">
+<body class="bg-gray-50 text-slate-900 admin-theme theme-{{ ui_theme|default('ocean') }}{% if not user %} auth-page{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}">
     {% if user %}
     {% set system_active = active_page in ['settings', 'announcement'] %}
     <nav class="navbar">
