@@ -271,14 +271,6 @@ docker compose up -d --build
 
 觉得这个项目有用的话，点个 ⭐ Star 是最大的鼓励。
 
-## 👥 Contributors
-
-感谢所有为本仓库提交代码的开发者：
-
-<a href="https://github.com/loLollipop/team-manage-refresh/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=loLollipop/team-manage-refresh" alt="Contributors" />
-</a>
-
 ## 📄 许可证
 
 本仓库采用 [MIT License](LICENSE)，版权声明保留给原始代码作者。在遵守 MIT 许可证的前提下可以自由使用、修改与分发。
