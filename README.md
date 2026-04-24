@@ -1,24 +1,81 @@
 <div align="center">
+
   <h1>ChatGPT Team 运营工作台</h1>
-  <p>围绕 <strong>账号导入 → 兑换分配 → 质保售后 → 自动补货</strong> 打造的一体化运营后台。</p>
+
+  <p><strong>账号导入 · 兑换分配 · 质保售后 · 自动补货</strong> 一体化后台 · 轻量单文件部署 · 用户前台自助化</p>
 
   <p>
-    <a href="#快速开始"><img alt="Docker" src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white"></a>
-    <a href="#功能分区"><img alt="UI" src="https://img.shields.io/badge/UI-Workspace-6366F1"></a>
-    <a href="integration_docs.md"><img alt="Webhook" src="https://img.shields.io/badge/Webhook-Integration-10B981"></a>
+    <a href="#-快速开始"><img alt="Docker" src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white"></a>
+    <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
+    <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white">
+    <img alt="SQLite" src="https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white">
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-success"></a>
+    <a href="https://github.com/loLollipop/team-manage-refresh/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/loLollipop/team-manage-refresh?style=social"></a>
   </p>
 
   <p>
-    <a href="#快速开始"><strong>快速开始</strong></a> ·
+    <a href="#-界面预览"><strong>界面预览</strong></a> ·
+    <a href="#-快速开始"><strong>快速开始</strong></a> ·
     <a href="docs/manual.md"><strong>部署与操作手册</strong></a> ·
     <a href="integration_docs.md"><strong>集成文档</strong></a>
   </p>
+
 </div>
 
 ---
 
-## 为什么值得用
+## ✨ 界面预览
+
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/redeem-ocean.png" alt="用户兑换中心 - 冷调" /><br/>
+      <sub><b>用户兑换中心 · 冷调</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/redeem-warm.png" alt="用户兑换中心 - 暖调" /><br/>
+      <sub><b>用户兑换中心 · 暖调</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/dashboard.png" alt="Team 工作台" /><br/>
+      <sub><b>Team 工作台 · 状态 / 席位 / 高频动作</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/codes.png" alt="兑换码工作台" /><br/>
+      <sub><b>兑换码工作台 · 批量生成 / 质保 / 清理</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/welfare.png" alt="福利车位工作台" /><br/>
+      <sub><b>福利车位 · 通用兑换码 / 独立库存</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/records.png" alt="使用记录工作台" /><br/>
+      <sub><b>使用记录 · 售后追溯 / 邀请撤回</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/settings.png" alt="系统中心" /><br/>
+      <sub><b>系统中心 · 代理 / 自动化 / 外部推送</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/login.png" alt="管理员登录" /><br/>
+      <sub><b>管理员登录</b></sub>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+> 冷调 / 暖调可在右上角 "主题" 按钮随时切换，管理后台与用户前台同步生效。
+
+## 🎯 为什么值得用
 
 <table>
   <tr>
@@ -51,7 +108,7 @@
   </tr>
 </table>
 
-## 业务闭环
+## 🔁 业务闭环
 
 ```text
 导入 Team 账号
@@ -65,7 +122,7 @@
 库存预警 Webhook / 外部系统自动补货
 ```
 
-## 功能分区
+## 🧭 功能分区
 
 ### 用户兑换中心
 - 自助上车与质保查询合并在一个入口
@@ -82,7 +139,7 @@
 - 导入 Team、OAuth 回调解析、批量导入等高频动作统一收纳在运营弹窗里
 - 适合高频执行账号导入、成员管理和后台维护任务
 
-## 核心能力
+## 🛠 核心能力
 
 ### 运营后台
 - 单个 / 批量导入 Team 账号（AT / RT / ST / Client ID）
@@ -107,7 +164,7 @@
 - 质保状态查询与重兑流程
 - 剩余席位展示与公告弹窗
 
-## 快速开始
+## 🚀 快速开始
 
 ### 1. 克隆仓库
 
@@ -126,11 +183,12 @@ cp .env.example .env
 
 ```env
 APP_PORT=8008
-SECRET_KEY=your-secret-key-here-change-in-production
+SESSION_SECRET_KEY=change-me-session-secret
+ENCRYPTION_KEY=change-me-encryption-secret
 ADMIN_PASSWORD=admin123
 ```
 
-> 首次登录后请立即修改管理员密码。
+> 首次登录后请立即修改管理员密码。`SESSION_SECRET_KEY` 与 `ENCRYPTION_KEY` 建议分开配置；若只提供老版本的 `SECRET_KEY`，系统会做一次回退以兼容已有部署。
 
 ### 3. 使用 Docker 启动
 
@@ -157,7 +215,8 @@ docker compose up -d
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:////app/data/team_manage.db
-SECRET_KEY=replace-with-a-random-secret
+SESSION_SECRET_KEY=replace-with-a-random-secret
+ENCRYPTION_KEY=replace-with-another-random-secret
 ADMIN_PASSWORD=replace-with-a-strong-password
 DEBUG=False
 ```
@@ -180,7 +239,7 @@ docker compose down
 docker compose up -d --build
 ```
 
-## 文档导航
+## 📚 文档导航
 
 - [部署与操作手册](docs/manual.md)
 - [库存预警 Webhook 与自动导入对接文档](integration_docs.md)
@@ -188,7 +247,7 @@ docker compose up -d --build
 - [Docker Compose 配置](docker-compose.yml)
 - [Dockerfile](Dockerfile)
 
-## 技术栈
+## 🧱 技术栈
 
 - FastAPI + Uvicorn
 - SQLite + SQLAlchemy 2.0 + aiosqlite
@@ -198,9 +257,31 @@ docker compose up -d --build
 - cryptography / PyJWT
 - 原生 HTML + CSS + JavaScript
 
-## 许可证
+## 📈 Star History
 
-本仓库采用 [MIT License](LICENSE)。
+<div align="center">
+  <a href="https://star-history.com/#loLollipop/team-manage-refresh&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date" />
+      <img alt="Star History" src="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date" />
+    </picture>
+  </a>
+</div>
+
+觉得这个项目有用的话，点个 ⭐ Star 是最大的鼓励。
+
+## 👥 Contributors
+
+感谢所有为本仓库提交代码的开发者：
+
+<a href="https://github.com/loLollipop/team-manage-refresh/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=loLollipop/team-manage-refresh" alt="Contributors" />
+</a>
+
+## 📄 许可证
+
+本仓库采用 [MIT License](LICENSE)，版权声明保留给原始代码作者。在遵守 MIT 许可证的前提下可以自由使用、修改与分发。
 
 ---
 
