@@ -942,6 +942,279 @@ body.redeem-page .btn-primary {
 }
 
 
+/* 冷调 (ocean) 在 redeem 页面走"白底 + 冷色调强调"的浅色风格，
+   与运营后台的 ocean 主题保持一致，避免用户端与管理端的视觉反差。 */
+body.redeem-page.theme-ocean {
+  --bg-0: #F6F8FC;
+  --bg-1: #EEF3FB;
+  --bg-2: #E6EEFA;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --border-base: #E2E8F0;
+  --surface: #FFFFFF;
+  --surface-soft: #F6F8FC;
+  --input-bg: #F8FAFC;
+  --primary-start: #4F8EF7;
+  --primary-end: #7B5EA7;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --focus-ring: rgba(79, 142, 247, 0.25);
+  --surface-elev-1: #FFFFFF;
+  --team-card-hover: #EEF4FF;
+  background: radial-gradient(120% 120% at 0% 0%, #F0F5FD 0%, #F6F8FC 52%, #EAF1FB 100%);
+}
+
+body.redeem-page.theme-ocean .orb {
+  opacity: 0.18;
+  filter: blur(110px);
+}
+
+body.redeem-page.theme-ocean .orb-1 {
+  background: radial-gradient(circle, rgba(79, 142, 247, 0.32), transparent 70%);
+}
+
+body.redeem-page.theme-ocean .orb-2 {
+  background: radial-gradient(circle, rgba(123, 94, 167, 0.3), transparent 70%);
+}
+
+body.redeem-page.theme-ocean .orb-3 {
+  background: radial-gradient(circle, rgba(56, 178, 172, 0.28), transparent 75%);
+}
+
+body.redeem-page.theme-ocean .grid-overlay {
+  background-image:
+    linear-gradient(rgba(79, 142, 247, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 142, 247, 0.08) 1px, transparent 1px);
+}
+
+body.redeem-page.theme-ocean .logo-badge {
+  border-color: rgba(79, 142, 247, 0.32);
+  background: #EEF4FF;
+  color: #2F5BC9;
+}
+
+body.redeem-page.theme-ocean .hero-header h1 {
+  background: linear-gradient(135deg, #1E3A8A 0%, #4F8EF7 50%, #7B5EA7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+body.redeem-page.theme-ocean .spots-badge {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: #E8F7EE;
+  color: #166534;
+}
+
+body.redeem-page.theme-ocean .welfare-spots-badge {
+  border-color: rgba(79, 142, 247, 0.32);
+  background: #E6EEFB;
+  color: #1E3A8A;
+}
+
+body.redeem-page.theme-ocean .top-nav-tabs,
+body.redeem-page.theme-ocean .tab-panel,
+body.redeem-page.theme-ocean .result-shell,
+body.redeem-page.theme-ocean .announcement-dialog {
+  background: #FFFFFF;
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.06);
+}
+
+body.redeem-page.theme-ocean .top-tab,
+body.redeem-page.theme-ocean .field-hint,
+body.redeem-page.theme-ocean .hero-subtitle {
+  color: var(--text-secondary);
+}
+
+body.redeem-page.theme-ocean .top-tab:hover {
+  color: #1E3A8A;
+}
+
+body.redeem-page.theme-ocean .top-tab.active,
+body.redeem-page.theme-ocean .tab-indicator {
+  background: linear-gradient(135deg, rgba(79, 142, 247, 0.18), rgba(123, 94, 167, 0.16));
+  box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.32);
+}
+
+body.redeem-page.theme-ocean .top-tab.active {
+  color: #1D4ED8;
+}
+
+body.redeem-page.theme-ocean .info-box {
+  border-color: rgba(79, 142, 247, 0.28);
+  background: #EEF4FF;
+  color: #1E3A8A;
+}
+
+body.redeem-page.theme-ocean .info-box .info-icon,
+body.redeem-page.theme-ocean .panel-meta-pill i {
+  color: #4F8EF7;
+}
+
+body.redeem-page.theme-ocean .warning-box {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: #FEF6E0;
+  color: #92400E;
+}
+
+body.redeem-page.theme-ocean .panel-meta-pill,
+body.redeem-page.theme-ocean .result-inline-note,
+body.redeem-page.theme-ocean .warranty-summary,
+body.redeem-page.theme-ocean .record-card,
+body.redeem-page.theme-ocean .empty-result,
+body.redeem-page.theme-ocean .inline-code-input {
+  background: #F8FAFC;
+  border-color: var(--border-base);
+  color: var(--text-primary);
+}
+
+body.redeem-page.theme-ocean .panel-head p,
+body.redeem-page.theme-ocean .warranty-desc,
+body.redeem-page.theme-ocean .result-message,
+body.redeem-page.theme-ocean .result-detail-label,
+body.redeem-page.theme-ocean .team-info,
+body.redeem-page.theme-ocean .field-hint,
+body.redeem-page.theme-ocean .form-group label,
+body.redeem-page.theme-ocean .announcement-close,
+body.redeem-page.theme-ocean .announcement-header h3,
+body.redeem-page.theme-ocean .summary-card-label,
+body.redeem-page.theme-ocean .record-meta-label {
+  color: var(--text-secondary);
+}
+
+body.redeem-page.theme-ocean .field-icon,
+body.redeem-page.theme-ocean .form-input::placeholder {
+  color: #94A3B8;
+}
+
+body.redeem-page.theme-ocean .form-input {
+  background: #F8FAFC !important;
+  box-shadow: inset 0 0 0 1px #E2E8F0 !important;
+  color: var(--text-primary) !important;
+}
+
+body.redeem-page.theme-ocean .form-input:focus {
+  background: #FFFFFF !important;
+  border-color: rgba(79, 142, 247, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.16), inset 0 0 0 1px rgba(79, 142, 247, 0.25) !important;
+}
+
+body.redeem-page.theme-ocean .btn-secondary {
+  color: #334155;
+  background: #F1F5F9;
+  box-shadow: inset 0 0 0 1px #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .btn-secondary:hover:not(:disabled) {
+  color: #0F172A;
+  background: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .result-icon {
+  background: #F1F5F9;
+}
+
+body.redeem-page.theme-ocean .result-icon.success {
+  color: #15803D;
+  background: #DCFCE7;
+}
+
+body.redeem-page.theme-ocean .result-icon.error {
+  color: #B91C1C;
+  background: #FEE2E2;
+}
+
+body.redeem-page.theme-ocean .result-icon.info {
+  color: #1D4ED8;
+  background: #DBEAFE;
+}
+
+body.redeem-page.theme-ocean .result-details {
+  background: #F8FAFC;
+  border-color: var(--border-base);
+}
+
+body.redeem-page.theme-ocean .result-detail-item {
+  border-bottom-color: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .badge-success {
+  color: #15803D;
+  background: #DCFCE7;
+}
+
+body.redeem-page.theme-ocean .badge-error {
+  color: #B91C1C;
+  background: #FEE2E2;
+}
+
+body.redeem-page.theme-ocean .badge-neutral {
+  color: #475569;
+  background: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .badge-warn {
+  color: #92400E;
+  background: #FEF3C7;
+}
+
+body.redeem-page.theme-ocean .record-card {
+  border-color: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .record-footer {
+  border-top-color: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .record-meta-value,
+body.redeem-page.theme-ocean .records-section-title,
+body.redeem-page.theme-ocean .summary-card-value,
+body.redeem-page.theme-ocean .result-inline-note strong,
+body.redeem-page.theme-ocean .result-title {
+  color: var(--text-primary);
+}
+
+body.redeem-page.theme-ocean .team-card,
+body.redeem-page.theme-ocean .result-details {
+  background: #F8FAFC;
+  border-color: #E2E8F0;
+}
+
+body.redeem-page.theme-ocean .team-card:hover,
+body.redeem-page.theme-ocean .team-card.selected {
+  border-color: rgba(79, 142, 247, 0.4);
+  background: #EEF4FF;
+}
+
+body.redeem-page.theme-ocean .toast {
+  background: #FFFFFF;
+  color: #0F172A;
+  border-color: #E2E8F0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+body.redeem-page.theme-ocean .announcement-backdrop {
+  background: rgba(15, 23, 42, 0.32);
+}
+
+body.redeem-page.theme-ocean .announcement-dialog {
+  border-color: #E2E8F0;
+  background: #FFFFFF;
+}
+
+body.redeem-page.theme-ocean .announcement-body,
+body.redeem-page.theme-ocean .announcement-body h1,
+body.redeem-page.theme-ocean .announcement-body h2,
+body.redeem-page.theme-ocean .announcement-body h3 {
+  color: #0F172A;
+}
+
+body.redeem-page.theme-ocean .announcement-body a {
+  color: #2563EB;
+}
+
+
 body.theme-warm {
   --bg-0: #FDF8F2;
   --bg-1: #FAF3EA;
