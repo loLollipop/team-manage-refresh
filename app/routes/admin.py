@@ -2408,7 +2408,7 @@ async def update_announcement(
 @router.get("/renewal-requests", response_class=HTMLResponse)
 async def renewal_requests_page(
     request: Request,
-    status_filter: Optional[str] = None,
+    status_filter: Optional[str] = "pending",
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):

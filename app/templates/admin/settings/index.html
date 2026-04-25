@@ -220,7 +220,8 @@
         <div class="form-group">
             <label for="warrantyRenewalReminderDays">续期提醒设置 (天)</label>
             <input type="number" id="warrantyRenewalReminderDays" name="renewal_reminder_days"
-                value="{{ warranty_renewal_reminder_days or '7' }}" min="1" max="30" class="form-control">
+                value="{{ warranty_renewal_reminder_days or '7' }}" min="1" max="30" class="form-control"
+                {% if (warranty_auto_kick_enabled or 'false')|lower not in ['1','true','yes','on'] %}disabled{% endif %}>
             <p class="form-help">仅在启用自动踢人后生效。当质保码剩余天数小于等于该值且用户准备换到新 Team 时，前台会弹出续期提醒。</p>
         </div>
 
@@ -609,6 +610,17 @@
             showToast('网络错误', 'error');
         }
     });
+
+    const warrantyAutoKickEnabledInput = document.getElementById('warrantyAutoKickEnabled');
+    const warrantyRenewalReminderDaysInput = document.getElementById('warrantyRenewalReminderDays');
+    const syncWarrantyRenewalReminderState = () => {
+        if (!warrantyAutoKickEnabledInput || !warrantyRenewalReminderDaysInput) return;
+        warrantyRenewalReminderDaysInput.disabled = !warrantyAutoKickEnabledInput.checked;
+    };
+    if (warrantyAutoKickEnabledInput) {
+        warrantyAutoKickEnabledInput.addEventListener('change', syncWarrantyRenewalReminderState);
+        syncWarrantyRenewalReminderState();
+    }
 
     // 自动踢人配置表单
     document.getElementById('warrantyAutoKickForm').addEventListener('submit', async (e) => {
