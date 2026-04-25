@@ -66,6 +66,10 @@
                         <i data-lucide="file-text"></i>
                         <span>使用记录</span>
                     </a>
+                    <a href="/admin/renewal-requests" class="desktop-nav-link {% if active_page == 'renewal_requests' %}active{% endif %}">
+                        <i data-lucide="list-todo"></i>
+                        <span>待处理任务</span>
+                    </a>
                     <a href="/admin/settings" class="desktop-nav-link {% if system_active %}active{% endif %}">
                         <i data-lucide="settings-2"></i>
                         <span>系统中心</span>
@@ -75,6 +79,13 @@
 
             <div class="navbar-menu">
                 <span class="navbar-user">运营后台</span>
+                <a href="/admin/renewal-requests" class="btn btn-secondary navbar-task-btn {% if active_page == 'renewal_requests' %}active{% endif %}">
+                    <i data-lucide="list-todo" style="width: 15px; height: 15px;"></i>
+                    <span>待处理任务</span>
+                    {% if pending_renewal_request_count %}
+                    <span class="navbar-task-badge">{{ pending_renewal_request_count }}</span>
+                    {% endif %}
+                </a>
                 <button type="button" class="btn btn-secondary" id="openThemeSwitcherBtn">
                     <i data-lucide="palette" style="width: 15px; height: 15px;"></i> 冷调
                 </button>
@@ -125,6 +136,12 @@
                     <a href="/admin/settings">
                         <span class="menu-icon" data-lucide="settings-2"></span>
                         <span class="menu-text">系统中心</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'renewal_requests' %}active{% endif %}">
+                    <a href="/admin/renewal-requests">
+                        <span class="menu-icon" data-lucide="list-todo"></span>
+                        <span class="menu-text">待处理任务{% if pending_renewal_request_count %} ({{ pending_renewal_request_count }}){% endif %}</span>
                     </a>
                 </li>
             </ul>

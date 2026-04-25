@@ -106,12 +106,14 @@ class RedemptionCode(Base):
     used_at = Column(DateTime, comment="使用时间")
     has_warranty = Column(Boolean, default=False, comment="是否为质保兑换码")
     warranty_days = Column(Integer, default=30, comment="质保时长(天)")
+    extension_days = Column(Integer, default=0, comment="人工续期累计天数")
     warranty_expires_at = Column(DateTime, comment="质保到期时间(首次使用后根据质保时长计算)")
     pool_type = Column(String(20), default="normal", comment="兑换池类型: normal/welfare")
     reusable_by_seat = Column(Boolean, default=False, comment="是否可按席位重复使用")
 
     # 关系
     redemption_records = relationship("RedemptionRecord", back_populates="redemption_code")
+    renewal_requests = relationship("RenewalRequest", back_populates="redemption_code")
 
     # 索引
     __table_args__ = (
@@ -138,6 +140,30 @@ class RedemptionRecord(Base):
     # 索引
     __table_args__ = (
         Index("idx_email", "email"),
+    )
+
+
+class RenewalRequest(Base):
+    """兑换码续期请求表"""
+    __tablename__ = "renewal_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, comment="申请续期的用户邮箱")
+    code = Column(String(32), ForeignKey("redemption_codes.code", ondelete="CASCADE"), nullable=False, comment="兑换码")
+    team_id = Column(Integer, ForeignKey("teams.id"), comment="申请时关联的 Team ID")
+    status = Column(String(20), default="pending", nullable=False, comment="状态: pending/extended/ignored")
+    requested_at = Column(DateTime, default=get_now, comment="申请时间")
+    handled_at = Column(DateTime, comment="处理时间")
+    extension_days = Column(Integer, comment="管理员批准的续期天数")
+    admin_note = Column(Text, comment="管理员备注")
+
+    # 关系
+    redemption_code = relationship("RedemptionCode", back_populates="renewal_requests")
+
+    __table_args__ = (
+        Index("idx_renewal_request_status", "status"),
+        Index("idx_renewal_request_email", "email"),
+        Index("idx_renewal_request_code", "code"),
     )
 
 

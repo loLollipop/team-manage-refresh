@@ -583,7 +583,8 @@ class RedeemFlowService:
                                 if (not rc.has_warranty) or should_refresh_warranty_window:
                                     rc.used_at = current_use_time
                                 if rc.has_warranty:
-                                    days = rc.warranty_days or 30
+                                    extension_days = max(int(getattr(rc, "extension_days", 0) or 0), 0)
+                                    days = (rc.warranty_days or 30) + extension_days
                                     if should_refresh_warranty_window:
                                         rc.warranty_expires_at = current_use_time + timedelta(days=days)
                                     elif not rc.warranty_expires_at:

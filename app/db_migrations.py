@@ -137,6 +137,11 @@ def run_auto_migration():
             cursor.execute("ALTER TABLE redemption_codes ADD COLUMN reusable_by_seat BOOLEAN DEFAULT 0")
             migrations_applied.append("redemption_codes.reusable_by_seat")
 
+        if not column_exists(cursor, "redemption_codes", "extension_days"):
+            logger.info("添加 redemption_codes.extension_days 字段")
+            cursor.execute("ALTER TABLE redemption_codes ADD COLUMN extension_days INTEGER DEFAULT 0")
+            migrations_applied.append("redemption_codes.extension_days")
+
         if not table_exists(cursor, "team_email_mappings"):
             logger.info("创建 team_email_mappings 表")
             cursor.execute("""
@@ -174,6 +179,38 @@ def run_auto_migration():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_team_email_status
             ON team_email_mappings (team_id, status)
+        """)
+
+        if not table_exists(cursor, "renewal_requests"):
+            logger.info("创建 renewal_requests 表")
+            cursor.execute("""
+                CREATE TABLE renewal_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL,
+                    code VARCHAR(32) NOT NULL,
+                    team_id INTEGER,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    requested_at DATETIME,
+                    handled_at DATETIME,
+                    extension_days INTEGER,
+                    admin_note TEXT,
+                    FOREIGN KEY(code) REFERENCES redemption_codes(code) ON DELETE CASCADE,
+                    FOREIGN KEY(team_id) REFERENCES teams(id)
+                )
+            """)
+            migrations_applied.append("renewal_requests")
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_renewal_request_status
+            ON renewal_requests (status)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_renewal_request_email
+            ON renewal_requests (email)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_renewal_request_code
+            ON renewal_requests (code)
         """)
 
         # 提交更改

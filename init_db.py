@@ -74,6 +74,11 @@ async def create_default_settings():
                 value="12",
                 description="质保过期自动踢人检查间隔（小时）"
             ),
+            Setting(
+                key="warranty_renewal_reminder_days",
+                value="7",
+                description="距离质保结束多少天内提醒用户联系管理员续期"
+            ),
         ]
 
         session.add_all(default_settings)

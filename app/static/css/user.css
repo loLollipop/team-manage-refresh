@@ -934,6 +934,23 @@ body.redeem-page .btn-primary {
   border-top: 1px solid var(--border-base);
 }
 
+.renewal-reminder-footer {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .renewal-reminder-footer {
+    flex-direction: column;
+  }
+
+  .renewal-reminder-footer .btn {
+    width: 100%;
+  }
+}
+
 @media (max-width: 760px) {
   .announcement-dialog {
     width: min(680px, calc(100vw - 16px));

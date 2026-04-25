@@ -37,6 +37,10 @@ class WarrantyCheckRecord(BaseModel):
     team_expires_at: Optional[str]
     email: Optional[str] = None
     device_code_auth_enabled: bool = False
+    remaining_warranty_days: Optional[int] = None
+    auto_kick_enabled: bool = False
+    renewal_reminder_days: Optional[int] = None
+    should_show_renewal_reminder: bool = False
 
 
 class WarrantyCheckResponse(BaseModel):
@@ -112,9 +116,45 @@ async def check_warranty(
         )
 
 
+class WarrantyRenewalRequest(BaseModel):
+    """用户提交续期请求"""
+    email: EmailStr
+    code: str
+    team_id: Optional[int] = None
+    source: Optional[str] = None
+
+
 class EnableDeviceAuthRequest(BaseModel):
     """开启设备身份验证请求"""
     team_id: int
+
+
+@router.post("/renewal-request")
+async def create_warranty_renewal_request(
+    request: WarrantyRenewalRequest,
+    db_session: AsyncSession = Depends(get_db)
+):
+    """提交质保续期请求。"""
+    try:
+        result = await warranty_service.create_renewal_request(
+            db_session,
+            email=request.email,
+            code=request.code,
+            team_id=request.team_id,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error") or "提交失败",
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="提交续期请求失败，请稍后重试"
+        )
 
 
 @router.post("/enable-device-auth")

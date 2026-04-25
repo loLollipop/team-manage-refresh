@@ -8,7 +8,7 @@ import logging
 import re
 import zipfile
 from io import BytesIO
-from typing import Optional, List, Dict, Literal
+from typing import Any, Optional, List, Dict, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response
 from sqlalchemy import select, func, update
@@ -26,7 +26,7 @@ from app.services.settings import (
     DEFAULT_UI_THEME,
 )
 from app.services.cliproxyapi import cliproxyapi_service
-from app.models import RedemptionCode, RedemptionRecord, Team
+from app.models import RedemptionCode, RedemptionRecord, RenewalRequest, Team
 from app.utils.time_utils import get_now
 from app.utils.proxy import mask_proxy_url, normalize_proxy_url
 
@@ -49,6 +49,29 @@ async def resolve_ui_theme(db: AsyncSession) -> str:
         await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)
     )
 
+
+async def get_pending_renewal_request_count(db: AsyncSession) -> int:
+    """获取待处理续期请求数量。"""
+    result = await db.execute(
+        select(func.count(RenewalRequest.id)).where(RenewalRequest.status == "pending")
+    )
+    return int(result.scalar() or 0)
+
+
+async def build_admin_base_context(
+    request: Request,
+    db: AsyncSession,
+    current_user: dict,
+    active_page: str,
+) -> Dict[str, Any]:
+    """构建后台页面通用模板上下文。"""
+    return {
+        "request": request,
+        "user": current_user,
+        "active_page": active_page,
+        "ui_theme": await resolve_ui_theme(db),
+        "pending_renewal_request_count": await get_pending_renewal_request_count(db),
+    }
 
 
 # 请求模型
@@ -209,25 +232,23 @@ async def admin_dashboard(
             "expired_teams": team_stats["expired"],
         }
 
+        context = await build_admin_base_context(request, db, current_user, "dashboard")
+        context.update({
+            "teams": teams_result.get("teams", []),
+            "stats": stats,
+            "search": search,
+            "status_filter": status_filter,
+            "pagination": {
+                "current_page": teams_result.get("current_page", page),
+                "total_pages": teams_result.get("total_pages", 1),
+                "total": teams_result.get("total", 0),
+                "per_page": per_page
+            }
+        })
         return templates.TemplateResponse(
             request,
             "admin/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "dashboard",
-                "ui_theme": await resolve_ui_theme(db),
-                "teams": teams_result.get("teams", []),
-                "stats": stats,
-                "search": search,
-                "status_filter": status_filter,
-                "pagination": {
-                    "current_page": teams_result.get("current_page", page),
-                    "total_pages": teams_result.get("total_pages", 1),
-                    "total": teams_result.get("total", 0),
-                    "per_page": per_page
-                }
-            }
+            context,
         )
     except Exception as e:
         logger.exception("加载管理员面板失败")
@@ -281,25 +302,23 @@ async def welfare_dashboard(
             "welfare_code_team_email": welfare_usage.get("team_email"),
         }
 
+        context = await build_admin_base_context(request, db, current_user, "welfare")
+        context.update({
+            "teams": teams_result.get("teams", []),
+            "stats": stats,
+            "search": search,
+            "status_filter": status_filter,
+            "pagination": {
+                "current_page": teams_result.get("current_page", page),
+                "total_pages": teams_result.get("total_pages", 1),
+                "total": teams_result.get("total", 0),
+                "per_page": per_page
+            }
+        })
         return templates.TemplateResponse(
             request,
             "admin/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "welfare",
-                "ui_theme": await resolve_ui_theme(db),
-                "teams": teams_result.get("teams", []),
-                "stats": stats,
-                "search": search,
-                "status_filter": status_filter,
-                "pagination": {
-                    "current_page": teams_result.get("current_page", page),
-                    "total_pages": teams_result.get("total_pages", 1),
-                    "total": teams_result.get("total", 0),
-                    "per_page": per_page
-                }
-            }
+            context,
         )
     except Exception as e:
         logger.exception("加载福利车位页面失败")
@@ -1551,25 +1570,23 @@ async def codes_list_page(
                 dt = datetime.fromisoformat(code["used_at"])
                 code["used_at"] = dt.strftime("%Y-%m-%d %H:%M")
 
+        context = await build_admin_base_context(request, db, current_user, "codes")
+        context.update({
+            "codes": codes,
+            "stats": stats,
+            "search": search,
+            "status_filter": status_filter,
+            "pagination": {
+                "current_page": current_page,
+                "total_pages": total_pages,
+                "total": total_codes,
+                "per_page": per_page
+            }
+        })
         return templates.TemplateResponse(
             request,
             "admin/codes/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "codes",
-                "ui_theme": await resolve_ui_theme(db),
-                "codes": codes,
-                "stats": stats,
-                "search": search,
-                "status_filter": status_filter,
-                "pagination": {
-                    "current_page": current_page,
-                    "total_pages": total_pages,
-                    "total": total_codes,
-                    "per_page": per_page
-                }
-            }
+            context,
         )
 
     except Exception as e:
@@ -2073,30 +2090,28 @@ async def records_page(
             except:
                 pass
 
+        context = await build_admin_base_context(request, db, current_user, "records")
+        context.update({
+            "records": paginated_records,
+            "stats": stats,
+            "filters": {
+                "email": email,
+                "code": code,
+                "team_id": team_id,
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "pagination": {
+                "current_page": page_int,
+                "total_pages": total_pages,
+                "total": total_records,
+                "per_page": per_page
+            }
+        })
         return templates.TemplateResponse(
             request,
             "admin/records/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "records",
-                "ui_theme": await resolve_ui_theme(db),
-                "records": paginated_records,
-                "stats": stats,
-                "filters": {
-                    "email": email,
-                    "code": code,
-                    "team_id": team_id,
-                    "start_date": start_date,
-                    "end_date": end_date
-                },
-                "pagination": {
-                    "current_page": page_int,
-                    "total_pages": total_pages,
-                    "total": total_records,
-                    "per_page": per_page
-                }
-            }
+            context,
         )
 
     except Exception as e:
@@ -2174,34 +2189,33 @@ async def settings_page(
         proxy_config = await settings_service.get_proxy_config(db)
         log_level = await settings_service.get_log_level(db)
 
+        context = await build_admin_base_context(request, db, current_user, "settings")
+        context.update({
+            "proxy_enabled": proxy_config["enabled"],
+            "proxy": proxy_config["proxy"],
+            "log_level": log_level,
+            "webhook_url": await settings_service.get_setting(db, "webhook_url", ""),
+            "low_stock_threshold": await settings_service.get_setting(db, "low_stock_threshold", "10"),
+            "api_key": await settings_service.get_setting(db, "api_key", ""),
+            "token_refresh_interval_minutes": await settings_service.get_setting(db, "token_refresh_interval_minutes", "30"),
+            "token_refresh_window_hours": await settings_service.get_setting(db, "token_refresh_window_hours", "2"),
+            "token_refresh_client_id": await settings_service.get_setting(db, "token_refresh_client_id", ""),
+            "periodic_team_sync_enabled": await settings_service.get_setting(db, "periodic_team_sync_enabled", "true"),
+            "periodic_team_sync_interval_hours": await settings_service.get_setting(db, "periodic_team_sync_interval_hours", "12"),
+            "periodic_team_sync_days": await settings_service.get_setting(db, "periodic_team_sync_days", "7"),
+            "warranty_auto_kick_enabled": await settings_service.get_setting(db, "warranty_auto_kick_enabled", "false"),
+            "warranty_auto_kick_interval_hours": await settings_service.get_setting(db, "warranty_auto_kick_interval_hours", "12"),
+            "warranty_renewal_reminder_days": await settings_service.get_setting(db, "warranty_renewal_reminder_days", "7"),
+            "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
+            "cliproxyapi_base_url": await settings_service.get_setting(db, "cliproxyapi_base_url", ""),
+            "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
+            "warranty_expiration_mode": await settings_service.get_warranty_expiration_mode(db),
+            "ui_theme": settings_service.normalize_ui_theme(await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)),
+        })
         return templates.TemplateResponse(
             request,
             "admin/settings/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "settings",
-                "ui_theme": await resolve_ui_theme(db),
-                "proxy_enabled": proxy_config["enabled"],
-                "proxy": proxy_config["proxy"],
-                "log_level": log_level,
-                "webhook_url": await settings_service.get_setting(db, "webhook_url", ""),
-                "low_stock_threshold": await settings_service.get_setting(db, "low_stock_threshold", "10"),
-                "api_key": await settings_service.get_setting(db, "api_key", ""),
-                "token_refresh_interval_minutes": await settings_service.get_setting(db, "token_refresh_interval_minutes", "30"),
-                "token_refresh_window_hours": await settings_service.get_setting(db, "token_refresh_window_hours", "2"),
-                "token_refresh_client_id": await settings_service.get_setting(db, "token_refresh_client_id", ""),
-                "periodic_team_sync_enabled": await settings_service.get_setting(db, "periodic_team_sync_enabled", "true"),
-                "periodic_team_sync_interval_hours": await settings_service.get_setting(db, "periodic_team_sync_interval_hours", "12"),
-                "periodic_team_sync_days": await settings_service.get_setting(db, "periodic_team_sync_days", "7"),
-                "warranty_auto_kick_enabled": await settings_service.get_setting(db, "warranty_auto_kick_enabled", "false"),
-                "warranty_auto_kick_interval_hours": await settings_service.get_setting(db, "warranty_auto_kick_interval_hours", "12"),
-                "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
-                "cliproxyapi_base_url": await settings_service.get_setting(db, "cliproxyapi_base_url", ""),
-                "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
-                "warranty_expiration_mode": await settings_service.get_warranty_expiration_mode(db),
-                "ui_theme": settings_service.normalize_ui_theme(await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)),
-            }
+            context,
         )
 
     except Exception as e:
@@ -2259,6 +2273,7 @@ class WarrantyAutoKickSettingsRequest(BaseModel):
     """质保过期自动踢人设置请求"""
     enabled: bool = Field(False, description="是否启用质保过期自动踢人")
     interval_hours: int = Field(12, ge=1, le=168, description="检查间隔（小时）")
+    renewal_reminder_days: int = Field(7, ge=1, le=30, description="距离质保结束多少天内提醒续期")
 
 
 class WarrantyExpirationSettingsRequest(BaseModel):
@@ -2280,6 +2295,10 @@ class AnnouncementUpdateRequest(BaseModel):
     markdown: str = Field("", description="公告 Markdown 内容")
 
 
+class RenewalRequestAction(BaseModel):
+    """续期请求处理请求"""
+    extension_days: Optional[int] = Field(None, ge=1, le=365, description="续期天数")
+    admin_note: str = Field("", description="管理员备注")
 
 
 @router.get("/settings/ui-theme")
@@ -2337,17 +2356,15 @@ async def announcement_page(
         announcement_enabled = str(enabled_raw).lower() in {"1", "true", "yes", "on"}
         announcement_markdown = await settings_service.get_setting(db, "announcement_markdown", "")
 
+        context = await build_admin_base_context(request, db, current_user, "announcement")
+        context.update({
+            "announcement_enabled": announcement_enabled,
+            "announcement_markdown": announcement_markdown,
+        })
         return templates.TemplateResponse(
             request,
             "admin/announcement/index.html",
-            {
-                "request": request,
-                "user": current_user,
-                "active_page": "announcement",
-                "ui_theme": await resolve_ui_theme(db),
-                "announcement_enabled": announcement_enabled,
-                "announcement_markdown": announcement_markdown,
-            }
+            context,
         )
     except Exception as e:
         logger.exception("获取公告设置失败")
@@ -2385,6 +2402,100 @@ async def update_announcement(
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": "保存失败，请稍后重试"}
+        )
+
+
+@router.get("/renewal-requests", response_class=HTMLResponse)
+async def renewal_requests_page(
+    request: Request,
+    status_filter: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """待处理续期任务页面。"""
+    try:
+        from app.main import templates
+
+        result = await warranty_service.get_renewal_requests(db, status_filter=status_filter)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error") or "获取续期请求失败",
+            )
+
+        context = await build_admin_base_context(request, db, current_user, "renewal_requests")
+        context.update({
+            "renewal_requests": result.get("requests", []),
+            "stats": {
+                "total": result.get("total", 0),
+                "pending": result.get("pending_count", 0),
+                "extended": sum(1 for item in result.get("requests", []) if item.get("status") == "extended"),
+                "ignored": sum(1 for item in result.get("requests", []) if item.get("status") == "ignored"),
+            },
+            "status_filter": status_filter,
+        })
+        return templates.TemplateResponse(
+            request,
+            "admin/renewal_requests/index.html",
+            context,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("获取续期任务页面失败")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取续期任务页面失败，请稍后重试",
+        )
+
+
+@router.post("/renewal-requests/{request_id}/extend")
+async def extend_renewal_request(
+    request_id: int,
+    payload: RenewalRequestAction,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """续期请求立即生效。"""
+    try:
+        extension_days = int(payload.extension_days or 0)
+        result = await warranty_service.extend_warranty_request(
+            db,
+            request_id=request_id,
+            extension_days=extension_days,
+            admin_note=payload.admin_note,
+        )
+        status_code = status.HTTP_200_OK if result.get("success") else status.HTTP_400_BAD_REQUEST
+        return JSONResponse(status_code=status_code, content=result)
+    except Exception:
+        logger.exception("处理续期请求失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "处理续期请求失败，请稍后重试"},
+        )
+
+
+@router.post("/renewal-requests/{request_id}/ignore")
+async def ignore_renewal_request(
+    request_id: int,
+    payload: RenewalRequestAction,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """忽略续期请求。"""
+    try:
+        result = await warranty_service.ignore_renewal_request(
+            db,
+            request_id=request_id,
+            admin_note=payload.admin_note,
+        )
+        status_code = status.HTTP_200_OK if result.get("success") else status.HTTP_400_BAD_REQUEST
+        return JSONResponse(status_code=status_code, content=result)
+    except Exception:
+        logger.exception("忽略续期请求失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "忽略续期请求失败，请稍后重试"},
         )
 
 
@@ -2706,9 +2817,10 @@ async def update_warranty_auto_kick_settings(
         from app.main import configure_warranty_auto_kick_job
 
         logger.info(
-            "管理员更新质保过期自动踢人配置: enabled=%s, interval_hours=%s",
+            "管理员更新质保过期自动踢人配置: enabled=%s, interval_hours=%s, reminder_days=%s",
             auto_kick_data.enabled,
             auto_kick_data.interval_hours,
+            auto_kick_data.renewal_reminder_days,
         )
 
         success = await settings_service.update_settings(
@@ -2716,6 +2828,7 @@ async def update_warranty_auto_kick_settings(
             {
                 "warranty_auto_kick_enabled": str(auto_kick_data.enabled).lower(),
                 "warranty_auto_kick_interval_hours": str(auto_kick_data.interval_hours),
+                "warranty_renewal_reminder_days": str(auto_kick_data.renewal_reminder_days),
             }
         )
         if not success:
@@ -2740,6 +2853,7 @@ async def update_warranty_auto_kick_settings(
                 "message": message,
                 "enabled": auto_kick_data.enabled,
                 "interval_hours": applied_interval,
+                "renewal_reminder_days": auto_kick_data.renewal_reminder_days,
             }
         )
     except Exception:

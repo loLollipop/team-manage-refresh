@@ -217,6 +217,13 @@
             <p class="form-help">建议 6~24 小时。该任务会按当前后台选择的质保计算方式重新判断历史质保码是否过保。</p>
         </div>
 
+        <div class="form-group">
+            <label for="warrantyRenewalReminderDays">续期提醒设置 (天)</label>
+            <input type="number" id="warrantyRenewalReminderDays" name="renewal_reminder_days"
+                value="{{ warranty_renewal_reminder_days or '7' }}" min="1" max="30" class="form-control">
+            <p class="form-help">仅在启用自动踢人后生效。当质保码剩余天数小于等于该值且用户准备换到新 Team 时，前台会弹出续期提醒。</p>
+        </div>
+
         <p class="form-help">该操作不可恢复，请确认售后流程允许系统自动清退成员并销毁兑换码后再开启。</p>
         <button type="submit" class="btn btn-primary">保存自动踢人配置</button>
     </form>
@@ -609,9 +616,15 @@
 
         const enabled = document.getElementById('warrantyAutoKickEnabled').checked;
         const interval_hours = parseInt(document.getElementById('warrantyAutoKickInterval').value);
+        const renewal_reminder_days = parseInt(document.getElementById('warrantyRenewalReminderDays').value);
 
         if (isNaN(interval_hours) || interval_hours < 1 || interval_hours > 168) {
             showToast('检查间隔必须在 1~168 小时之间', 'error');
+            return;
+        }
+
+        if (isNaN(renewal_reminder_days) || renewal_reminder_days < 1 || renewal_reminder_days > 30) {
+            showToast('续期提醒天数必须在 1~30 天之间', 'error');
             return;
         }
 
@@ -621,7 +634,7 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ enabled, interval_hours })
+                body: JSON.stringify({ enabled, interval_hours, renewal_reminder_days })
             });
 
             const data = await response.json();

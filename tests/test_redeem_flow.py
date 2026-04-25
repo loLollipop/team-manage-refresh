@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base
-from app.models import RedemptionCode, RedemptionRecord, Team, TeamEmailMapping, Setting
+from app.models import RedemptionCode, RedemptionRecord, RenewalRequest, Team, TeamEmailMapping, Setting
 from app.services.redeem_flow import RedeemFlowService
 from app.services.notification import notification_service
 from app.services.redemption import RedemptionService
@@ -286,6 +286,111 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
                 select(RedemptionRecord).where(RedemptionRecord.code == "WARRANTY-KICK-001")
             )
             self.assertEqual(list(remaining_records.scalars().all()), [])
+
+    async def test_extension_days_prevent_auto_kick_until_extended_expiry(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=202,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-auto-kick-keep",
+                team_name="Extended Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-EXTEND-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                extension_days=10,
+                used_by_email="extend@example.com",
+                used_team_id=202,
+                used_at=get_now() - timedelta(days=35),
+                warranty_expires_at=get_now() + timedelta(days=5),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+            result = await service.scan_expired_warranty_codes(session)
+            self.assertTrue(result["success"])
+            self.assertEqual(result["total"], 0)
+
+    async def test_create_and_extend_renewal_request_updates_expiry(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=301,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-renew-request",
+                team_name="Renew Request Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-REQUEST-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                extension_days=0,
+                used_by_email="request@example.com",
+                used_team_id=301,
+                used_at=get_now() - timedelta(days=27),
+                warranty_expires_at=get_now() + timedelta(days=3),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+            create_result = await service.create_renewal_request(
+                session,
+                email="request@example.com",
+                code="WARRANTY-REQUEST-001",
+                team_id=301,
+            )
+            self.assertTrue(create_result["success"])
+
+            list_result = await service.get_renewal_requests(session, status_filter="pending")
+            self.assertEqual(list_result["pending_count"], 1)
+            request_id = list_result["requests"][0]["id"]
+
+            extend_result = await service.extend_warranty_request(
+                session,
+                request_id=request_id,
+                extension_days=7,
+            )
+            self.assertTrue(extend_result["success"])
+            self.assertEqual(extend_result["remaining_warranty_days"], 10)
+
+            updated_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-REQUEST-001")
+            )
+            updated_code_obj = updated_code.scalar_one()
+            self.assertEqual(updated_code_obj.extension_days, 7)
+
+            updated_request = await session.execute(
+                select(RenewalRequest).where(RenewalRequest.id == request_id)
+            )
+            updated_request_obj = updated_request.scalar_one()
+            self.assertEqual(updated_request_obj.status, "extended")
+            self.assertEqual(updated_request_obj.extension_days, 7)
 
 
 class TeamServiceBulkInviteTests(unittest.IsolatedAsyncioTestCase):

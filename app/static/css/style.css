@@ -2407,6 +2407,24 @@ body.admin-theme .dropdown-menu {
     font-weight: 700;
 }
 
+.navbar-task-btn {
+    position: relative;
+}
+
+.navbar-task-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
 .main-container {
     width: 100%;
     max-width: none;

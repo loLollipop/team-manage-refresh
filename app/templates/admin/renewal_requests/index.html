@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}待处理任务 - GPT Team 管理系统{% endblock %}
+
+{% block content %}
+<div class="workspace-page records-workspace-page">
+    <div class="page-header">
+        <div class="page-header-copy">
+            <div class="page-header-kicker">
+                <i data-lucide="list-todo"></i>
+                <span>Pending Tasks</span>
+            </div>
+            <h2>待处理任务</h2>
+            <p>集中处理用户提交的质保续期请求，支持按单条输入续期天数后立即生效，或直接忽略。</p>
+            <div class="page-header-meta">
+                <span class="page-meta-pill"><i data-lucide="inbox"></i><span>{{ stats.total }} 条总任务</span></span>
+                <span class="page-meta-pill"><i data-lucide="clock-3"></i><span>待处理 {{ stats.pending }} 条</span></span>
+                <span class="page-meta-pill"><i data-lucide="badge-check"></i><span>已续期 {{ stats.extended }} 条</span></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-icon"><i data-lucide="inbox"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.total }}</div>
+                <div class="stat-label">总任务数</div>
+            </div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-icon"><i data-lucide="clock-3"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.pending }}</div>
+                <div class="stat-label">待处理</div>
+            </div>
+        </div>
+        <div class="stat-card stat-success">
+            <div class="stat-icon"><i data-lucide="badge-check"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.extended }}</div>
+                <div class="stat-label">已续期</div>
+            </div>
+        </div>
+        <div class="stat-card stat-info">
+            <div class="stat-icon"><i data-lucide="circle-off"></i></div>
+            <div class="stat-content">
+                <div class="stat-value">{{ stats.ignored }}</div>
+                <div class="stat-label">已忽略</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="workbench-panel">
+        <div class="content-section workbench-toolbar">
+            <div class="workbench-toolbar-row">
+                <div class="workbench-toolbar-copy">
+                    <h3>筛选条件</h3>
+                    <p>可按处理状态查看当前续期请求，待处理项会在顶部按钮和这里同步显示。</p>
+                </div>
+            </div>
+
+            <form method="get" action="/admin/renewal-requests" class="search-form-grid">
+                <div class="form-group">
+                    <label for="status_filter">处理状态</label>
+                    <select id="status_filter" name="status_filter" class="form-control">
+                        <option value="" {% if not status_filter %}selected{% endif %}>全部</option>
+                        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>待处理</option>
+                        <option value="extended" {% if status_filter == 'extended' %}selected{% endif %}>已续期</option>
+                        <option value="ignored" {% if status_filter == 'ignored' %}selected{% endif %}>已忽略</option>
+                    </select>
+                </div>
+                <div class="form-actions" style="display: flex; gap: 0.5rem; align-items: end;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        <i data-lucide="search"></i> 筛选
+                    </button>
+                    <a href="/admin/renewal-requests" class="btn btn-secondary">
+                        <i data-lucide="rotate-ccw"></i> 重置
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <div class="content-section workbench-table-card">
+            <div class="table-section-head">
+                <div class="table-section-copy">
+                    <h3>续期请求列表</h3>
+                    <p>输入续期天数后点击“续期”，会在当前剩余质保时间基础上直接增加对应天数并立即生效。</p>
+                </div>
+            </div>
+
+            {% if renewal_requests %}
+            <div class="table-container mobile-card-table-container">
+                <table class="data-table mobile-card-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>用户邮箱</th>
+                            <th>兑换码</th>
+                            <th>剩余天数</th>
+                            <th>质保到期</th>
+                            <th>状态</th>
+                            <th>申请时间</th>
+                            <th style="text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in renewal_requests %}
+                        <tr>
+                            <td data-label="ID"><span class="text-muted">{{ item.id }}</span></td>
+                            <td data-label="用户邮箱"><strong>{{ item.email }}</strong></td>
+                            <td data-label="兑换码"><code>{{ item.code }}</code></td>
+                            <td data-label="剩余天数">
+                                {% if item.remaining_warranty_days is not none %}
+                                <span class="badge badge-secondary">{{ item.remaining_warranty_days }} 天</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="质保到期">{{ item.warranty_expires_at|format_datetime if item.warranty_expires_at else '-' }}</td>
+                            <td data-label="状态">
+                                {% if item.status == 'pending' %}
+                                <span class="status-badge status-warning">待处理</span>
+                                {% elif item.status == 'extended' %}
+                                <span class="status-badge status-active">已续期</span>
+                                {% else %}
+                                <span class="status-badge status-expired">已忽略</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="申请时间">{{ item.requested_at|format_datetime if item.requested_at else '-' }}</td>
+                            <td class="table-actions-cell" data-label="操作" style="text-align: right;">
+                                {% if item.status == 'pending' %}
+                                <div class="action-buttons renewal-action-stack">
+                                    <input type="number" min="1" max="365" placeholder="续期天数" class="form-control renewal-days-input" id="renewalDays{{ item.id }}">
+                                    <div class="action-buttons" style="justify-content: flex-end;">
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="extendRenewalRequest({{ item.id }}, this)">
+                                            <i data-lucide="calendar-plus-2"></i> 续期
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="ignoreRenewalRequest({{ item.id }}, this)">
+                                            <i data-lucide="circle-off"></i> 忽略
+                                        </button>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted">已处理</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="workbench-empty-state">
+                <div class="empty-state">
+                    <i data-lucide="list-todo" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
+                    <p>当前没有符合条件的续期任务。</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .renewal-action-stack {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .renewal-days-input {
+        min-width: 120px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    async function extendRenewalRequest(requestId, btn) {
+        const daysInput = document.getElementById(`renewalDays${requestId}`);
+        const extension_days = parseInt(daysInput?.value || '0', 10);
+        if (!extension_days || extension_days < 1 || extension_days > 365) {
+            showToast('请输入 1~365 的续期天数', 'error');
+            return;
+        }
+
+        const originalContent = btn ? btn.innerHTML : '';
+        try {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+                lucide.createIcons();
+            }
+
+            const response = await fetch(`/admin/renewal-requests/${requestId}/extend`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ extension_days })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast(result.message || '续期成功', 'success');
+                setTimeout(() => location.reload(), 800);
+                return;
+            }
+            showToast(result.error || '续期失败', 'error');
+        } catch (error) {
+            console.error('续期失败:', error);
+            showToast('请求失败，请稍后重试', 'error');
+        } finally {
+            if (btn && document.body.contains(btn)) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+                lucide.createIcons();
+            }
+        }
+    }
+
+    async function ignoreRenewalRequest(requestId, btn) {
+        if (!confirm('确定忽略这条续期请求吗？')) {
+            return;
+        }
+
+        const originalContent = btn ? btn.innerHTML : '';
+        try {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+                lucide.createIcons();
+            }
+
+            const response = await fetch(`/admin/renewal-requests/${requestId}/ignore`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast(result.message || '已忽略', 'success');
+                setTimeout(() => location.reload(), 800);
+                return;
+            }
+            showToast(result.error || '忽略失败', 'error');
+        } catch (error) {
+            console.error('忽略续期请求失败:', error);
+            showToast('请求失败，请稍后重试', 'error');
+        } finally {
+            if (btn && document.body.contains(btn)) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+                lucide.createIcons();
+            }
+        }
+    }
+</script>
+{% endblock %}

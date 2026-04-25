@@ -165,6 +165,24 @@
         </div>
     </div>
 
+    <div id="renewalReminderModal" class="announcement-modal" aria-hidden="true">
+        <div class="announcement-backdrop" id="renewalReminderBackdrop"></div>
+        <div class="announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="renewalReminderTitle">
+            <div class="announcement-header">
+                <h3 id="renewalReminderTitle"><i data-lucide="calendar-clock"></i> 质保即将到期</h3>
+                <button type="button" class="announcement-close" id="renewalReminderCloseBtn" aria-label="关闭提醒">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="announcement-body" id="renewalReminderContent"></div>
+            <div class="announcement-footer renewal-reminder-footer">
+                <button type="button" class="btn btn-secondary" id="renewalReminderCancelBtn">取消</button>
+                <button type="button" class="btn btn-secondary" id="renewalReminderSkipBtn">暂不续期，继续加入</button>
+                <button type="button" class="btn btn-primary" id="renewalReminderContactBtn">联系管理员续期</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         window.REDEEM_ANNOUNCEMENT = {
             enabled: {{ announcement_enabled|tojson }},

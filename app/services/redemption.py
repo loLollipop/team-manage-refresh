@@ -74,6 +74,13 @@ class RedemptionService:
             return default
 
     @staticmethod
+    def _effective_warranty_days(redemption_code: RedemptionCode) -> int:
+        """获取兑换码当前总质保天数（基础时长 + 人工续期）。"""
+        base_days = int(redemption_code.warranty_days or 30)
+        extension_days = max(int(getattr(redemption_code, "extension_days", 0) or 0), 0)
+        return base_days + extension_days
+
+    @staticmethod
     def _sync_code_status_fields(redemption_code: RedemptionCode) -> bool:
         """按当前时间同步兑换码状态，避免状态被错误地长期停留在过期态。"""
         now = get_now()
@@ -550,7 +557,7 @@ class RedemptionService:
             )
             base_time = base_record.redeemed_at or get_now()
             redemption_code.used_at = base_time
-            days = redemption_code.warranty_days or 30
+            days = self._effective_warranty_days(redemption_code)
             redemption_code.warranty_expires_at = base_time + timedelta(days=days)
         else:
             redemption_code.used_at = latest_record.redeemed_at or get_now()
@@ -1116,6 +1123,7 @@ class RedemptionService:
                     "used_at": code.used_at.isoformat() if code.used_at else None,
                     "has_warranty": code.has_warranty,
                     "warranty_days": code.warranty_days,
+                    "extension_days": int(getattr(code, "extension_days", 0) or 0),
                     "warranty_expires_at": code.warranty_expires_at.isoformat() if code.warranty_expires_at else None,
                     "can_delete": record_counts.get(code.code, 0) == 0
                 })

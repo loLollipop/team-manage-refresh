@@ -10,7 +10,7 @@ from sqlalchemy import select, and_, or_, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import RedemptionCode, RedemptionRecord, Team
+from app.models import RedemptionCode, RedemptionRecord, RenewalRequest, Team
 from app.services.settings import (
     settings_service,
     WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
@@ -50,6 +50,13 @@ class WarrantyService:
         """初始化质保服务"""
         from app.services.team import TeamService
         self.team_service = TeamService()
+
+    @staticmethod
+    def _get_total_warranty_days(redemption_code: RedemptionCode) -> int:
+        """获取兑换码当前总质保天数（基础时长 + 人工续期）。"""
+        base_days = int(redemption_code.warranty_days or 30)
+        extension_days = max(int(getattr(redemption_code, "extension_days", 0) or 0), 0)
+        return base_days + extension_days
 
     async def _get_warranty_start_time(
         self,
@@ -96,7 +103,7 @@ class WarrantyService:
         if not start_time:
             return None
 
-        days = redemption_code.warranty_days or 30
+        days = self._get_total_warranty_days(redemption_code)
         return start_time + timedelta(days=days)
 
     @staticmethod
@@ -109,6 +116,217 @@ class WarrantyService:
             return True
 
         return False
+
+    @staticmethod
+    def _remaining_warranty_days(expiry_date: Optional[datetime]) -> Optional[int]:
+        """计算剩余质保天数，按自然日向上取整。"""
+        if not expiry_date:
+            return None
+        delta = expiry_date - get_now()
+        if delta.total_seconds() <= 0:
+            return 0
+        return max(int((delta.total_seconds() + 86399) // 86400), 0)
+
+    async def _get_renewal_reminder_days(self, db_session: AsyncSession) -> int:
+        """获取续期提醒阈值。"""
+        raw_value = await settings_service.get_setting(
+            db_session,
+            "warranty_renewal_reminder_days",
+            "7",
+        )
+        try:
+            reminder_days = int(str(raw_value or "7").strip())
+        except Exception:
+            reminder_days = 7
+        return max(1, min(30, reminder_days))
+
+    async def get_pending_renewal_request_count(self, db_session: AsyncSession) -> int:
+        """获取待处理续期请求数量。"""
+        result = await db_session.execute(
+            select(func.count(RenewalRequest.id)).where(RenewalRequest.status == "pending")
+        )
+        return int(result.scalar() or 0)
+
+    async def create_renewal_request(
+        self,
+        db_session: AsyncSession,
+        email: str,
+        code: str,
+        team_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """创建续期请求；若已存在 pending 请求则直接返回成功。"""
+        normalized_email = self.team_service._normalize_member_email(email)
+        normalized_code = str(code or "").strip()
+        if not normalized_email or not normalized_code:
+            return {"success": False, "error": "邮箱或兑换码不能为空"}
+
+        existing_result = await db_session.execute(
+            select(RenewalRequest).where(
+                RenewalRequest.email == normalized_email,
+                RenewalRequest.code == normalized_code,
+                RenewalRequest.status == "pending",
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing:
+            return {
+                "success": True,
+                "message": "续期请求已提交，请勿重复提交",
+                "request_id": existing.id,
+                "duplicated": True,
+            }
+
+        code_result = await db_session.execute(
+            select(RedemptionCode).where(RedemptionCode.code == normalized_code)
+        )
+        redemption_code = code_result.scalar_one_or_none()
+        if not redemption_code:
+            return {"success": False, "error": "兑换码不存在或已销毁"}
+
+        request = RenewalRequest(
+            email=normalized_email,
+            code=normalized_code,
+            team_id=team_id,
+            status="pending",
+        )
+        db_session.add(request)
+        await db_session.commit()
+
+        return {
+            "success": True,
+            "message": "已通知管理员处理续期请求",
+            "request_id": request.id,
+            "duplicated": False,
+        }
+
+    async def get_renewal_requests(
+        self,
+        db_session: AsyncSession,
+        status_filter: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """获取续期请求列表。"""
+        stmt = select(RenewalRequest).order_by(RenewalRequest.requested_at.desc(), RenewalRequest.id.desc())
+        if status_filter:
+            stmt = stmt.where(RenewalRequest.status == status_filter)
+
+        result = await db_session.execute(stmt)
+        requests = result.scalars().all()
+        items: List[Dict[str, Any]] = []
+        pending_count = 0
+
+        for request in requests:
+            code_result = await db_session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == request.code)
+            )
+            redemption_code = code_result.scalar_one_or_none()
+            remaining_days: Optional[int] = None
+            expiry_iso: Optional[str] = None
+            code_exists = redemption_code is not None
+            if redemption_code and redemption_code.has_warranty:
+                expiry_date = await self._resolve_warranty_expiry_date(
+                    db_session,
+                    redemption_code,
+                    force_recompute=True,
+                )
+                remaining_days = self._remaining_warranty_days(expiry_date)
+                expiry_iso = expiry_date.isoformat() if expiry_date else None
+
+            if request.status == "pending":
+                pending_count += 1
+
+            items.append({
+                "id": request.id,
+                "email": request.email,
+                "code": request.code,
+                "team_id": request.team_id,
+                "status": request.status,
+                "requested_at": request.requested_at.isoformat() if request.requested_at else None,
+                "handled_at": request.handled_at.isoformat() if request.handled_at else None,
+                "extension_days": request.extension_days,
+                "admin_note": request.admin_note,
+                "remaining_warranty_days": remaining_days,
+                "warranty_expires_at": expiry_iso,
+                "code_exists": code_exists,
+            })
+
+        return {
+            "success": True,
+            "requests": items,
+            "pending_count": pending_count,
+            "total": len(items),
+        }
+
+    async def extend_warranty_request(
+        self,
+        db_session: AsyncSession,
+        request_id: int,
+        extension_days: int,
+        admin_note: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """处理续期请求并立即生效。"""
+        if extension_days <= 0:
+            return {"success": False, "error": "续期天数必须大于 0"}
+
+        request_result = await db_session.execute(
+            select(RenewalRequest).where(RenewalRequest.id == request_id)
+        )
+        renewal_request = request_result.scalar_one_or_none()
+        if not renewal_request:
+            return {"success": False, "error": "续期请求不存在"}
+
+        code_result = await db_session.execute(
+            select(RedemptionCode).where(RedemptionCode.code == renewal_request.code)
+        )
+        redemption_code = code_result.scalar_one_or_none()
+        if not redemption_code:
+            renewal_request.status = "ignored"
+            renewal_request.handled_at = get_now()
+            renewal_request.admin_note = admin_note or "兑换码不存在或已销毁"
+            await db_session.commit()
+            return {"success": False, "error": "兑换码不存在或已销毁，无法续期"}
+
+        redemption_code.extension_days = int(getattr(redemption_code, "extension_days", 0) or 0) + extension_days
+        expiry_date = await self._resolve_warranty_expiry_date(
+            db_session,
+            redemption_code,
+            force_recompute=True,
+        )
+        redemption_code.warranty_expires_at = expiry_date
+        if expiry_date and expiry_date >= get_now() and redemption_code.used_at:
+            redemption_code.status = "used"
+
+        renewal_request.status = "extended"
+        renewal_request.handled_at = get_now()
+        renewal_request.extension_days = extension_days
+        renewal_request.admin_note = (admin_note or "").strip() or None
+        await db_session.commit()
+
+        return {
+            "success": True,
+            "message": f"已成功续期 {extension_days} 天",
+            "warranty_expires_at": expiry_date.isoformat() if expiry_date else None,
+            "remaining_warranty_days": self._remaining_warranty_days(expiry_date),
+        }
+
+    async def ignore_renewal_request(
+        self,
+        db_session: AsyncSession,
+        request_id: int,
+        admin_note: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """忽略续期请求。"""
+        request_result = await db_session.execute(
+            select(RenewalRequest).where(RenewalRequest.id == request_id)
+        )
+        renewal_request = request_result.scalar_one_or_none()
+        if not renewal_request:
+            return {"success": False, "error": "续期请求不存在"}
+
+        renewal_request.status = "ignored"
+        renewal_request.handled_at = get_now()
+        renewal_request.admin_note = (admin_note or "").strip() or None
+        await db_session.commit()
+        return {"success": True, "message": "已忽略该续期请求"}
 
     async def check_warranty_status(
         self,
@@ -148,6 +366,13 @@ class WarrantyService:
                 }
             _query_rate_limit[limit_key] = now
             warranty_expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+            auto_kick_enabled_raw = await settings_service.get_setting(
+                db_session,
+                "warranty_auto_kick_enabled",
+                "false",
+            )
+            auto_kick_enabled = str(auto_kick_enabled_raw).lower() in {"1", "true", "yes", "on"}
+            renewal_reminder_days = await self._get_renewal_reminder_days(db_session)
 
             # 1. 查找兑换记录和相关联的 Team, Code
             records_data = []
@@ -288,6 +513,7 @@ class WarrantyService:
                             "为避免误删售后证据，本次仅标记异常，不执行自动清理。"
                         )
                         suspected_inconsistent_count += 1
+                        remaining_days = self._remaining_warranty_days(expiry_date)
                         final_records.append({
                             "code": code_obj.code,
                             "has_warranty": code_obj.has_warranty,
@@ -300,7 +526,17 @@ class WarrantyService:
                             "team_status": "suspected_inconsistent",
                             "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
                             "email": record.email,
-                            "device_code_auth_enabled": team.device_code_auth_enabled
+                            "device_code_auth_enabled": team.device_code_auth_enabled,
+                            "remaining_warranty_days": remaining_days,
+                            "auto_kick_enabled": auto_kick_enabled,
+                            "renewal_reminder_days": renewal_reminder_days,
+                            "should_show_renewal_reminder": bool(
+                                code_obj.has_warranty
+                                and is_valid
+                                and auto_kick_enabled
+                                and remaining_days is not None
+                                and remaining_days <= renewal_reminder_days
+                            ),
                         })
                         continue
 
@@ -330,6 +566,7 @@ class WarrantyService:
                         "banned_at": team.last_sync.isoformat() if team.last_sync else None
                     })
 
+                remaining_days = self._remaining_warranty_days(expiry_date)
                 final_records.append({
                     "code": code_obj.code,
                     "has_warranty": code_obj.has_warranty,
@@ -342,7 +579,17 @@ class WarrantyService:
                     "team_status": team.status,
                     "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
                     "email": record.email,
-                    "device_code_auth_enabled": team.device_code_auth_enabled
+                    "device_code_auth_enabled": team.device_code_auth_enabled,
+                    "remaining_warranty_days": remaining_days,
+                    "auto_kick_enabled": auto_kick_enabled,
+                    "renewal_reminder_days": renewal_reminder_days,
+                    "should_show_renewal_reminder": bool(
+                        code_obj.has_warranty
+                        and is_valid
+                        and auto_kick_enabled
+                        and remaining_days is not None
+                        and remaining_days <= renewal_reminder_days
+                    ),
                 })
 
             # 3. 判断是否可以重复使用 (只要有有效的质保码且有被封的 Team)

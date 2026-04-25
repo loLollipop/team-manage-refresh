@@ -20,6 +20,8 @@ let currentTopTab = 'redeem';
 let isRedeeming = false;
 let isCheckingWarranty = false;
 let lastAnnouncementTrigger = null;
+let lastRenewalReminderTrigger = null;
+let pendingRenewalReminderResolver = null;
 
 // Toast提示函数
 function showToast(message, type = 'info') {
@@ -425,32 +427,8 @@ function getFriendlyDeviceAuthErrorMessage(rawMessage, statusCode = 0) {
     return message;
 }
 
-function initAnnouncementModal() {
-    const announcement = window.REDEEM_ANNOUNCEMENT || {};
-    if (!announcement.enabled || !announcement.markdown || !String(announcement.markdown).trim()) {
-        return;
-    }
-
-    const modal = document.getElementById('announcementModal');
-    const content = document.getElementById('announcementContent');
-    const closeBtn = document.getElementById('announcementCloseBtn');
-    const confirmBtn = document.getElementById('announcementConfirmBtn');
-    const backdrop = document.getElementById('announcementBackdrop');
-    const dialog = modal?.querySelector('.announcement-dialog');
-
-    if (!modal || !content || !dialog) return;
-
+function bindDialogFocusTrap(modal, dialog, onClose, getLastTrigger) {
     const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
-    const closeModal = () => {
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('modal-open');
-        document.removeEventListener('keydown', handleKeydown);
-        if (lastAnnouncementTrigger && typeof lastAnnouncementTrigger.focus === 'function') {
-            lastAnnouncementTrigger.focus();
-        }
-    };
 
     const trapFocus = (event) => {
         if (event.key !== 'Tab') return;
@@ -472,17 +450,13 @@ function initAnnouncementModal() {
     const handleKeydown = (event) => {
         if (event.key === 'Escape') {
             event.preventDefault();
-            closeModal();
+            onClose();
             return;
         }
         trapFocus(event);
     };
 
-    content.innerHTML = renderMarkdownSafe(String(announcement.markdown));
-    lastAnnouncementTrigger = document.activeElement;
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('modal-open');
+    modal._focusTrapHandler = handleKeydown;
     document.addEventListener('keydown', handleKeydown);
 
     const firstFocusable = dialog.querySelector(focusableSelector);
@@ -490,9 +464,93 @@ function initAnnouncementModal() {
         firstFocusable.focus();
     }
 
+    modal._restoreFocus = () => {
+        document.removeEventListener('keydown', handleKeydown);
+        const trigger = getLastTrigger();
+        if (trigger && typeof trigger.focus === 'function') {
+            trigger.focus();
+        }
+    };
+}
+
+function initAnnouncementModal() {
+    const announcement = window.REDEEM_ANNOUNCEMENT || {};
+    if (!announcement.enabled || !announcement.markdown || !String(announcement.markdown).trim()) {
+        return;
+    }
+
+    const modal = document.getElementById('announcementModal');
+    const content = document.getElementById('announcementContent');
+    const closeBtn = document.getElementById('announcementCloseBtn');
+    const confirmBtn = document.getElementById('announcementConfirmBtn');
+    const backdrop = document.getElementById('announcementBackdrop');
+    const dialog = modal?.querySelector('.announcement-dialog');
+
+    if (!modal || !content || !dialog) return;
+
+    const closeModal = () => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+        if (typeof modal._restoreFocus === 'function') {
+            modal._restoreFocus();
+        }
+    };
+
+    content.innerHTML = renderMarkdownSafe(String(announcement.markdown));
+    lastAnnouncementTrigger = document.activeElement;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    bindDialogFocusTrap(modal, dialog, closeModal, () => lastAnnouncementTrigger);
+
     if (closeBtn) closeBtn.addEventListener('click', closeModal);
     if (confirmBtn) confirmBtn.addEventListener('click', closeModal);
     if (backdrop) backdrop.addEventListener('click', closeModal);
+}
+
+function initRenewalReminderModal() {
+    const modal = document.getElementById('renewalReminderModal');
+    const closeBtn = document.getElementById('renewalReminderCloseBtn');
+    const cancelBtn = document.getElementById('renewalReminderCancelBtn');
+    const skipBtn = document.getElementById('renewalReminderSkipBtn');
+    const contactBtn = document.getElementById('renewalReminderContactBtn');
+    const backdrop = document.getElementById('renewalReminderBackdrop');
+    const dialog = modal?.querySelector('.announcement-dialog');
+    if (!modal || !dialog) return;
+
+    const resolveAndClose = (action) => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+        if (typeof modal._restoreFocus === 'function') {
+            modal._restoreFocus();
+        }
+        if (pendingRenewalReminderResolver) {
+            pendingRenewalReminderResolver(action);
+            pendingRenewalReminderResolver = null;
+        }
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', () => resolveAndClose('cancel'));
+    if (cancelBtn) cancelBtn.addEventListener('click', () => resolveAndClose('cancel'));
+    if (skipBtn) skipBtn.addEventListener('click', () => resolveAndClose('continue'));
+    if (contactBtn) contactBtn.addEventListener('click', () => resolveAndClose('contact'));
+    if (backdrop) backdrop.addEventListener('click', () => resolveAndClose('cancel'));
+
+    modal._open = (contentHtml) => {
+        const content = document.getElementById('renewalReminderContent');
+        if (!content) return Promise.resolve('continue');
+        content.innerHTML = contentHtml;
+        lastRenewalReminderTrigger = document.activeElement;
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+        bindDialogFocusTrap(modal, dialog, () => resolveAndClose('cancel'), () => lastRenewalReminderTrigger);
+        return new Promise((resolve) => {
+            pendingRenewalReminderResolver = resolve;
+        });
+    };
 }
 
 // 切换步骤
@@ -688,7 +746,14 @@ async function handleDynamicActionClick(event) {
             await oneClickReplace(
                 decodeActionValue(actionButton.dataset.code),
                 decodeActionValue(actionButton.dataset.email),
-                actionButton
+                actionButton,
+                {
+                    teamId: Number(actionButton.dataset.teamId || 0) || null,
+                    remainingWarrantyDays: actionButton.dataset.remainingWarrantyDays,
+                    autoKickEnabled: actionButton.dataset.autoKickEnabled === 'true',
+                    renewalReminderDays: actionButton.dataset.renewalReminderDays,
+                    shouldShowRenewalReminder: actionButton.dataset.showRenewalReminder === 'true',
+                }
             );
             break;
         case 'enable-device-auth':
@@ -754,6 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switchTopTab('redeem');
     setWarrantyResultVisible(false);
     initAnnouncementModal();
+    initRenewalReminderModal();
     window.addEventListener('resize', () => {
         const activeTab = document.querySelector('.top-tab.active');
         updateTabIndicator(activeTab);
@@ -1087,6 +1153,11 @@ function showWarrantyResult(data) {
                             data-action="one-click-replace"
                             data-code="${encodeActionValue(record.code || '')}"
                             data-email="${encodeActionValue(record.email || currentEmail || '')}"
+                            data-team-id="${Number(record.team_id || 0)}"
+                            data-remaining-warranty-days="${record.remaining_warranty_days ?? ''}"
+                            data-auto-kick-enabled="${record.auto_kick_enabled ? 'true' : 'false'}"
+                            data-renewal-reminder-days="${record.renewal_reminder_days ?? ''}"
+                            data-show-renewal-reminder="${record.should_show_renewal_reminder ? 'true' : 'false'}"
                         >
                             <i data-lucide="rotate-cw"></i> 一键换车
                         </button>
@@ -1162,8 +1233,71 @@ async function copyWarrantyCode(code) {
     }
 }
 
+async function submitRenewalRequest(email, code, teamId = null) {
+    const response = await fetch('/warranty/renewal-request', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            email,
+            code,
+            team_id: teamId,
+            source: 'one_click_replace'
+        })
+    });
+
+    const { text, data } = await parseJsonResponse(response);
+    if (response.ok && data?.success) {
+        return data;
+    }
+
+    const rawError = (data?.detail ?? data?.error ?? data?.message ?? data?.reason) || text;
+    throw new Error(rawError || '提交续期请求失败');
+}
+
+async function maybeHandleRenewalReminder(code, email, btn, options = {}) {
+    const shouldShow = Boolean(options.shouldShowRenewalReminder);
+    if (!shouldShow || !options.autoKickEnabled) {
+        return true;
+    }
+
+    const modal = document.getElementById('renewalReminderModal');
+    if (!modal || typeof modal._open !== 'function') {
+        return true;
+    }
+
+    const remainingDaysRaw = options.remainingWarrantyDays;
+    const remainingDays = Number.isFinite(Number(remainingDaysRaw)) ? Number(remainingDaysRaw) : null;
+    const reminderDaysRaw = options.renewalReminderDays;
+    const reminderDays = Number.isFinite(Number(reminderDaysRaw)) ? Number(reminderDaysRaw) : null;
+
+    const messageHtml = `
+        <p>当前兑换码剩余 <strong>${escapeHtml(remainingDays ?? '-')}</strong> 天到期。</p>
+        <p>如果现在加入新的 Team，质保到期后系统会自动将您移出。</p>
+        <p>如需延长质保时间，可先联系管理员申请续期；也可以暂不续期，继续加入新的 Team。${reminderDays ? `（当前提醒阈值：${escapeHtml(reminderDays)} 天）` : ''}</p>
+    `;
+
+    const action = await modal._open(messageHtml);
+    if (action === 'cancel') {
+        return false;
+    }
+
+    if (action === 'contact') {
+        try {
+            const result = await submitRenewalRequest(email, code, options.teamId || null);
+            showToast(result.message || '已通知管理员处理续期请求', 'success');
+        } catch (error) {
+            showToast(error?.message || '提交续期请求失败，请稍后重试', 'error');
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // 一键换车
-async function oneClickReplace(code, email, btn) {
+async function oneClickReplace(code, email, btn, options = {}) {
     if (!code || !email) {
         showToast('无法获取完整信息，请手动重试', 'error');
         return;
@@ -1184,9 +1318,13 @@ async function oneClickReplace(code, email, btn) {
         if (window.lucide) lucide.createIcons();
     }
 
-    showToast('正在为您尝试自动兑换...', 'info');
-
     try {
+        const canContinue = await maybeHandleRenewalReminder(code, email, btn, options);
+        if (!canContinue) {
+            return;
+        }
+
+        showToast('正在为您尝试自动兑换...', 'info');
         await confirmRedeem(null);
     } finally {
         if (btn && document.body.contains(btn)) {
