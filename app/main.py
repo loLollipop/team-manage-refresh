@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import init_db, close_db, AsyncSessionLocal
 from app.services.auth import auth_service
 from app.services.team import team_service
+from app.utils.time_utils import get_now
 
 # 获取项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -201,7 +202,11 @@ def configure_warranty_auto_kick_job(enabled: bool, interval_hours: int) -> int:
             id="warranty_auto_kick",
             replace_existing=True,
             max_instances=1,
-            next_run_time=datetime.now(),
+            # 使用 get_now() 而非 datetime.now()：APScheduler 把 naive datetime 当作
+            # 调度器 timezone（settings.timezone）下的本地时间。如果服务器系统时区
+            # 与配置时区不一致，datetime.now() 会被解读为另一个时间点，导致首次执行
+            # 被无意推迟。
+            next_run_time=get_now(),
         )
 
     if not scheduler.running:
