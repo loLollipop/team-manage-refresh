@@ -11,7 +11,7 @@ from sqlalchemy import select, update, delete, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import RedemptionCode, RedemptionRecord, Team, Setting
+from app.models import RedemptionCode, RedemptionRecord, RenewalRequest, Team, Setting
 from app.services.settings import (
     settings_service,
     WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM,
@@ -294,6 +294,19 @@ class RedemptionService:
         )
         deleted_records = int(record_count_result.scalar() or 0)
 
+        # 兑换码销毁后，相关续期请求已无意义，需要从待处理列表中清掉，
+        # 避免管理员审批已不存在的兑换码，也防止恶意用户先提交续期再卡定时任务。
+        pending_request_count_result = await db_session.execute(
+            select(func.count(RenewalRequest.id)).where(
+                RenewalRequest.code.in_(normalized_codes),
+                RenewalRequest.status == "pending",
+            )
+        )
+        dismissed_requests = int(pending_request_count_result.scalar() or 0)
+        await db_session.execute(
+            delete(RenewalRequest).where(RenewalRequest.code.in_(normalized_codes))
+        )
+
         await db_session.execute(
             delete(RedemptionRecord).where(RedemptionRecord.code.in_(normalized_codes))
         )
@@ -306,6 +319,7 @@ class RedemptionService:
             "success": True,
             "deleted_codes": normalized_codes,
             "deleted_records": deleted_records,
+            "dismissed_renewal_requests": dismissed_requests,
             "error": None,
         }
 
@@ -349,6 +363,7 @@ class RedemptionService:
                 "message": f"兑换码 {normalized_code} 已销毁",
                 "deleted_codes": destroy_result["deleted_codes"],
                 "deleted_records": destroy_result["deleted_records"],
+                "dismissed_renewal_requests": destroy_result.get("dismissed_renewal_requests", 0),
                 "error": None,
             }
         except Exception:

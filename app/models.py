@@ -149,7 +149,7 @@ class RenewalRequest(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), nullable=False, comment="申请续期的用户邮箱")
-    code = Column(String(32), ForeignKey("redemption_codes.code", ondelete="CASCADE"), nullable=False, comment="兑换码")
+    code = Column(String(32), ForeignKey("redemption_codes.code"), nullable=False, comment="兑换码")
     team_id = Column(Integer, ForeignKey("teams.id"), comment="申请时关联的 Team ID")
     status = Column(String(20), default="pending", nullable=False, comment="状态: pending/extended/ignored")
     requested_at = Column(DateTime, default=get_now, comment="申请时间")

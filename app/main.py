@@ -201,6 +201,7 @@ def configure_warranty_auto_kick_job(enabled: bool, interval_hours: int) -> int:
             id="warranty_auto_kick",
             replace_existing=True,
             max_instances=1,
+            next_run_time=datetime.now(),
         )
 
     if not scheduler.running:
@@ -292,23 +293,23 @@ async def scheduled_warranty_auto_kick():
             stats = await warranty_service.run_warranty_auto_kick(session)
             if stats.get("success"):
                 logger.info(
-                    "质保自动踢人完成: scanned=%s expired=%s processed=%s destroyed=%s skipped=%s failed=%s",
+                    "质保自动踢人完成: scanned=%s expired=%s destroyed=%s skipped=%s failed=%s dismissed_renewals=%s",
                     stats["scanned"],
                     stats["expired_candidates"],
-                    stats["processed"],
                     stats["destroyed"],
                     stats["skipped"],
                     stats["failed"],
+                    stats.get("dismissed_renewal_requests", 0),
                 )
             else:
                 logger.warning(
-                    "质保自动踢人任务部分失败: scanned=%s expired=%s processed=%s destroyed=%s skipped=%s failed=%s error=%s",
+                    "质保自动踢人任务部分失败: scanned=%s expired=%s destroyed=%s skipped=%s failed=%s dismissed_renewals=%s error=%s",
                     stats.get("scanned", 0),
                     stats.get("expired_candidates", 0),
-                    stats.get("processed", 0),
                     stats.get("destroyed", 0),
                     stats.get("skipped", 0),
                     stats.get("failed", 0),
+                    stats.get("dismissed_renewal_requests", 0),
                     stats.get("error"),
                 )
     except Exception as e:

@@ -392,6 +392,181 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(updated_request_obj.status, "extended")
             self.assertEqual(updated_request_obj.extension_days, 7)
 
+    async def test_auto_kick_dismisses_pending_renewal_request(self):
+        """用户提交续期请求但未被审批时，自动踢人仍然执行，并将该请求标记为 ignored。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=410,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-auto-kick-renewal",
+                team_name="Auto Kick Renewal Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-AK-RENEWAL-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="cheater@example.com",
+                used_team_id=410,
+                used_at=get_now() - timedelta(days=40),
+                warranty_expires_at=get_now() - timedelta(days=10),
+            )
+            renewal = RenewalRequest(
+                email="cheater@example.com",
+                code="WARRANTY-AK-RENEWAL-001",
+                team_id=410,
+                status="pending",
+            )
+            session.add_all([
+                code,
+                renewal,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+            renewal_id = renewal.id
+
+            service = WarrantyService()
+
+            async def stub_remove_invite_or_member(team_id, email, db_session):
+                self.assertEqual(team_id, 410)
+                self.assertEqual(email, "cheater@example.com")
+                return {"success": True, "message": "成员已删除", "error": None}
+
+            service.team_service.remove_invite_or_member = stub_remove_invite_or_member
+
+            result = await service.kick_and_destroy_expired_warranty_code(session, "WARRANTY-AK-RENEWAL-001")
+            self.assertTrue(result["success"])
+            self.assertEqual(result["category"], "destroyed")
+            self.assertEqual(result.get("dismissed_renewal_requests"), 1)
+
+            remaining_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-AK-RENEWAL-001")
+            )
+            self.assertIsNone(remaining_code.scalar_one_or_none())
+
+            updated_renewal = await session.execute(
+                select(RenewalRequest).where(RenewalRequest.id == renewal_id)
+            )
+            self.assertIsNone(updated_renewal.scalar_one_or_none())
+
+            # admin 待处理列表中不再出现该续期请求
+            list_result = await service.get_renewal_requests(session, status_filter="pending")
+            self.assertEqual(list_result["pending_count"], 0)
+
+    async def test_run_warranty_auto_kick_categorizes_results(self):
+        """整轮任务：destroyed / skipped / failed 按类别独立统计。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=420,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-run-auto-kick",
+                team_name="Run Auto Kick Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            expired_code = RedemptionCode(
+                code="WARRANTY-RUN-OK",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="ok@example.com",
+                used_team_id=420,
+                used_at=get_now() - timedelta(days=40),
+                warranty_expires_at=get_now() - timedelta(days=10),
+            )
+            session.add_all([
+                expired_code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+
+            async def stub_remove(team_id, email, db_session):
+                return {"success": True, "message": "成员已删除", "error": None}
+
+            service.team_service.remove_invite_or_member = stub_remove
+
+            stats = await service.run_warranty_auto_kick(session)
+            self.assertTrue(stats["success"])
+            self.assertEqual(stats["destroyed"], 1)
+            self.assertEqual(stats["skipped"], 0)
+            self.assertEqual(stats["failed"], 0)
+
+    async def test_kick_skips_when_team_missing_and_destroys_code(self):
+        """Team 已被管理员删除时不应当作 failed，应直接销毁兑换码。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=430,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-missing-team",
+                team_name="To Be Deleted",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-AK-MISSING-TEAM",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="ghost@example.com",
+                used_team_id=430,
+                used_at=get_now() - timedelta(days=40),
+                warranty_expires_at=get_now() - timedelta(days=10),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            # 模拟 Team 已被管理员手动删除（保持 used_team_id 指向已不存在的 ID），
+            # 暂时关闭 FK 约束以便构造这种历史脏数据。
+            sa = __import__("sqlalchemy")
+            await session.execute(sa.text("PRAGMA foreign_keys = OFF"))
+            await session.execute(sa.text("DELETE FROM teams WHERE id = 430"))
+            await session.commit()
+            await session.execute(sa.text("PRAGMA foreign_keys = ON"))
+
+            service = WarrantyService()
+
+            async def fail_remove(*args, **kwargs):
+                self.fail("Team 不存在时不应调用 remove_invite_or_member")
+
+            service.team_service.remove_invite_or_member = fail_remove
+
+            result = await service.kick_and_destroy_expired_warranty_code(
+                session, "WARRANTY-AK-MISSING-TEAM"
+            )
+            self.assertTrue(result["success"])
+            self.assertEqual(result["category"], "destroyed")
+            self.assertEqual(result["action"], "destroyed_after_team_missing")
+
+            remaining_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-AK-MISSING-TEAM")
+            )
+            self.assertIsNone(remaining_code.scalar_one_or_none())
+
 
 class TeamServiceBulkInviteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

@@ -194,7 +194,7 @@ def run_auto_migration():
                     handled_at DATETIME,
                     extension_days INTEGER,
                     admin_note TEXT,
-                    FOREIGN KEY(code) REFERENCES redemption_codes(code) ON DELETE CASCADE,
+                    FOREIGN KEY(code) REFERENCES redemption_codes(code),
                     FOREIGN KEY(team_id) REFERENCES teams(id)
                 )
             """)
