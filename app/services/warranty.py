@@ -77,13 +77,14 @@ class WarrantyService:
         db_session: AsyncSession,
         redemption_code: RedemptionCode,
         reference_record: Optional[RedemptionRecord] = None,
-        expiration_mode: Optional[str] = None
+        expiration_mode: Optional[str] = None,
+        force_recompute: bool = False,
     ) -> Optional[datetime]:
         """获取质保截止时间，必要时按当前模式动态回退计算。"""
         if not redemption_code.has_warranty:
             return None
 
-        if redemption_code.warranty_expires_at:
+        if redemption_code.warranty_expires_at and not force_recompute:
             return redemption_code.warranty_expires_at
 
         start_time = await self._get_warranty_start_time(
@@ -377,6 +378,239 @@ class WarrantyService:
                 "success": False,
                 "error": f"检查质保状态失败: {str(e)}"
             }
+
+    async def scan_expired_warranty_codes(
+        self,
+        db_session: AsyncSession,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """扫描按当前质保模式已过保、且仍绑定 Team/邮箱的质保码。"""
+        try:
+            expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+            stmt = select(RedemptionCode).where(
+                RedemptionCode.has_warranty.is_(True),
+                RedemptionCode.used_by_email.is_not(None),
+                RedemptionCode.used_team_id.is_not(None),
+                RedemptionCode.used_at.is_not(None),
+            ).order_by(RedemptionCode.used_at.asc(), RedemptionCode.id.asc())
+            if limit and limit > 0:
+                stmt = stmt.limit(limit)
+
+            result = await db_session.execute(stmt)
+            codes = result.scalars().all()
+
+            now = get_now()
+            candidates: List[Dict[str, Any]] = []
+            for redemption_code in codes:
+                expiry_date = await self._resolve_warranty_expiry_date(
+                    db_session,
+                    redemption_code,
+                    expiration_mode=expiration_mode,
+                    force_recompute=True,
+                )
+                if not expiry_date or expiry_date >= now:
+                    continue
+
+                normalized_email = self.team_service._normalize_member_email(redemption_code.used_by_email)
+                if not normalized_email:
+                    continue
+
+                record_count_result = await db_session.execute(
+                    select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code == redemption_code.code)
+                )
+                record_count = int(record_count_result.scalar() or 0)
+                candidates.append({
+                    "code": redemption_code.code,
+                    "email": normalized_email,
+                    "team_id": redemption_code.used_team_id,
+                    "used_at": redemption_code.used_at.isoformat() if redemption_code.used_at else None,
+                    "warranty_expires_at": expiry_date.isoformat(),
+                    "record_count": record_count,
+                    "expiration_mode": expiration_mode,
+                })
+
+            return {
+                "success": True,
+                "codes": candidates,
+                "total": len(candidates),
+                "error": None,
+            }
+        except Exception as e:
+            logger.error(f"扫描过保质保码失败: {e}")
+            return {
+                "success": False,
+                "codes": [],
+                "total": 0,
+                "error": f"扫描过保质保码失败: {str(e)}",
+            }
+
+    async def kick_and_destroy_expired_warranty_code(
+        self,
+        db_session: AsyncSession,
+        code: str,
+    ) -> Dict[str, Any]:
+        """对单个已过保质保码执行踢人与销毁。"""
+        try:
+            normalized_code = str(code or "").strip()
+            if not normalized_code:
+                return {"success": False, "code": code, "error": "兑换码不能为空"}
+
+            result = await db_session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == normalized_code)
+            )
+            redemption_code = result.scalar_one_or_none()
+            if not redemption_code:
+                return {
+                    "success": True,
+                    "code": normalized_code,
+                    "action": "already_destroyed",
+                    "message": "兑换码已不存在",
+                    "error": None,
+                }
+
+            if not redemption_code.has_warranty:
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "error": "该兑换码不是质保码",
+                }
+
+            expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+            expiry_date = await self._resolve_warranty_expiry_date(
+                db_session,
+                redemption_code,
+                expiration_mode=expiration_mode,
+                force_recompute=True,
+            )
+            if not expiry_date or expiry_date >= get_now():
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "error": "质保尚未过期",
+                }
+
+            team_id = redemption_code.used_team_id
+            email = self.team_service._normalize_member_email(redemption_code.used_by_email)
+            if not team_id:
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "error": "兑换码未绑定 Team，无法自动踢人",
+                }
+            if not email:
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "error": "兑换码未绑定邮箱，无法自动踢人",
+                }
+
+            team_result = await db_session.execute(select(Team).where(Team.id == team_id))
+            team = team_result.scalar_one_or_none()
+            if not team:
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "team_id": team_id,
+                    "email": email,
+                    "error": f"Team ID {team_id} 不存在",
+                }
+
+            removal_result = await self.team_service.remove_invite_or_member(team_id, email, db_session)
+            removal_message = str(removal_result.get("message") or "")
+            removal_error = str(removal_result.get("error") or "")
+            removal_success = bool(removal_result.get("success"))
+            already_absent = "成员已不存在" in removal_message
+
+            if not removal_success and not already_absent:
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "team_id": team_id,
+                    "email": email,
+                    "error": removal_error or removal_message or "移除成员失败",
+                }
+
+            from app.services.redemption import redemption_service
+
+            destroy_result = await redemption_service.destroy_code_with_records(normalized_code, db_session)
+            if not destroy_result.get("success"):
+                return {
+                    "success": False,
+                    "code": normalized_code,
+                    "team_id": team_id,
+                    "email": email,
+                    "error": destroy_result.get("error") or "销毁兑换码失败",
+                }
+
+            return {
+                "success": True,
+                "code": normalized_code,
+                "team_id": team_id,
+                "email": email,
+                "action": "destroyed_after_absent" if already_absent else "kicked_and_destroyed",
+                "message": destroy_result.get("message") or "自动踢人并销毁兑换码成功",
+                "destroyed_records": destroy_result.get("deleted_records", 0),
+                "warranty_expires_at": expiry_date.isoformat(),
+            }
+        except Exception as e:
+            logger.exception("执行自动踢人并销毁兑换码失败")
+            return {
+                "success": False,
+                "code": code,
+                "error": f"执行自动踢人并销毁兑换码失败: {str(e)}",
+            }
+
+    async def run_warranty_auto_kick(
+        self,
+        db_session: AsyncSession,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """扫描并执行整轮质保过期自动踢人任务。"""
+        scan_result = await self.scan_expired_warranty_codes(db_session, limit=limit)
+        if not scan_result.get("success"):
+            return {
+                "success": False,
+                "scanned": 0,
+                "expired_candidates": 0,
+                "processed": 0,
+                "destroyed": 0,
+                "skipped": 0,
+                "failed": 0,
+                "error": scan_result.get("error") or "扫描失败",
+                "results": [],
+            }
+
+        candidates = scan_result.get("codes", [])
+        results: List[Dict[str, Any]] = []
+        processed = 0
+        destroyed = 0
+        skipped = 0
+        failed = 0
+
+        for candidate in candidates:
+            item_result = await self.kick_and_destroy_expired_warranty_code(db_session, candidate.get("code", ""))
+            results.append(item_result)
+            if item_result.get("success"):
+                processed += 1
+                destroyed += 1
+                continue
+
+            if item_result.get("error") == "质保尚未过期":
+                skipped += 1
+            else:
+                failed += 1
+
+        return {
+            "success": failed == 0,
+            "scanned": scan_result.get("total", 0),
+            "expired_candidates": len(candidates),
+            "processed": processed,
+            "destroyed": destroyed,
+            "skipped": skipped,
+            "failed": failed,
+            "error": None if failed == 0 else "部分过保质保码处理失败",
+            "results": results,
+        }
 
     async def validate_warranty_reuse(
         self,

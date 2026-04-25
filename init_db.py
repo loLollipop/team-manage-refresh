@@ -64,6 +64,16 @@ async def create_default_settings():
                 value="first_use",
                 description="质保时长计算模式: first_use/refresh_on_redeem"
             ),
+            Setting(
+                key="warranty_auto_kick_enabled",
+                value="false",
+                description="是否启用质保过期自动踢人"
+            ),
+            Setting(
+                key="warranty_auto_kick_interval_hours",
+                value="12",
+                description="质保过期自动踢人检查间隔（小时）"
+            ),
         ]
 
         session.add_all(default_settings)

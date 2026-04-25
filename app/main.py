@@ -49,6 +49,10 @@ MIN_PERIODIC_TEAM_SYNC_INTERVAL_HOURS = 1
 MAX_PERIODIC_TEAM_SYNC_INTERVAL_HOURS = 24 * 7
 MIN_PERIODIC_TEAM_SYNC_DAYS = 1
 MAX_PERIODIC_TEAM_SYNC_DAYS = 30
+DEFAULT_WARRANTY_AUTO_KICK_ENABLED = False
+DEFAULT_WARRANTY_AUTO_KICK_INTERVAL_HOURS = 12
+MIN_WARRANTY_AUTO_KICK_INTERVAL_HOURS = 1
+MAX_WARRANTY_AUTO_KICK_INTERVAL_HOURS = 24 * 7
 
 
 def _safe_int(value, default):
@@ -74,6 +78,10 @@ def normalize_periodic_team_sync_interval_hours(interval_hours: int) -> int:
 
 def normalize_periodic_team_sync_days(refresh_interval_days: int) -> int:
     return max(MIN_PERIODIC_TEAM_SYNC_DAYS, min(MAX_PERIODIC_TEAM_SYNC_DAYS, refresh_interval_days))
+
+
+def normalize_warranty_auto_kick_interval_hours(interval_hours: int) -> int:
+    return max(MIN_WARRANTY_AUTO_KICK_INTERVAL_HOURS, min(MAX_WARRANTY_AUTO_KICK_INTERVAL_HOURS, interval_hours))
 
 
 def configure_periodic_team_sync_job(enabled: bool, interval_hours: int) -> int:
@@ -173,6 +181,58 @@ async def configure_proactive_refresh_job_from_settings() -> int:
     return configure_proactive_refresh_job(interval)
 
 
+def configure_warranty_auto_kick_job(enabled: bool, interval_hours: int) -> int:
+    """配置（或重配置）质保过期自动踢人任务。"""
+    normalized_interval = normalize_warranty_auto_kick_interval_hours(interval_hours)
+    existing_job = scheduler.get_job("warranty_auto_kick")
+
+    if not enabled:
+        if existing_job:
+            scheduler.remove_job("warranty_auto_kick")
+        return normalized_interval
+
+    trigger = IntervalTrigger(hours=normalized_interval)
+    if existing_job:
+        scheduler.reschedule_job("warranty_auto_kick", trigger=trigger)
+    else:
+        scheduler.add_job(
+            scheduled_warranty_auto_kick,
+            trigger=trigger,
+            id="warranty_auto_kick",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+    if not scheduler.running:
+        scheduler.start()
+
+    return normalized_interval
+
+
+async def configure_warranty_auto_kick_job_from_settings() -> tuple[bool, int]:
+    """从系统设置读取质保过期自动踢人配置并应用到定时任务。"""
+    from app.services.settings import settings_service
+
+    async with AsyncSessionLocal() as session:
+        enabled_raw = await settings_service.get_setting(
+            session,
+            "warranty_auto_kick_enabled",
+            str(DEFAULT_WARRANTY_AUTO_KICK_ENABLED).lower(),
+        )
+        interval_raw = await settings_service.get_setting(
+            session,
+            "warranty_auto_kick_interval_hours",
+            str(DEFAULT_WARRANTY_AUTO_KICK_INTERVAL_HOURS),
+        )
+
+    enabled = str(enabled_raw).lower() in {"1", "true", "yes", "on"}
+    interval_hours = normalize_warranty_auto_kick_interval_hours(
+        _safe_int(interval_raw, DEFAULT_WARRANTY_AUTO_KICK_INTERVAL_HOURS)
+    )
+    applied_interval = configure_warranty_auto_kick_job(enabled, interval_hours)
+    return enabled, applied_interval
+
+
 async def scheduled_proactive_refresh():
     """定时执行 Team Token 预刷新（间隔可配置）。"""
     from app.services.settings import settings_service
@@ -221,6 +281,38 @@ async def scheduled_periodic_team_status_sync():
             )
     except Exception as e:
         logger.error(f"Team 周期状态同步任务执行失败: {e}")
+
+
+async def scheduled_warranty_auto_kick():
+    """定时扫描已过保的质保兑换码并自动踢人、销毁兑换码。"""
+    from app.services.warranty import warranty_service
+
+    try:
+        async with AsyncSessionLocal() as session:
+            stats = await warranty_service.run_warranty_auto_kick(session)
+            if stats.get("success"):
+                logger.info(
+                    "质保自动踢人完成: scanned=%s expired=%s processed=%s destroyed=%s skipped=%s failed=%s",
+                    stats["scanned"],
+                    stats["expired_candidates"],
+                    stats["processed"],
+                    stats["destroyed"],
+                    stats["skipped"],
+                    stats["failed"],
+                )
+            else:
+                logger.warning(
+                    "质保自动踢人任务部分失败: scanned=%s expired=%s processed=%s destroyed=%s skipped=%s failed=%s error=%s",
+                    stats.get("scanned", 0),
+                    stats.get("expired_candidates", 0),
+                    stats.get("processed", 0),
+                    stats.get("destroyed", 0),
+                    stats.get("skipped", 0),
+                    stats.get("failed", 0),
+                    stats.get("error"),
+                )
+    except Exception as e:
+        logger.error(f"质保自动踢人任务执行失败: {e}")
 
 
 @asynccontextmanager
@@ -277,6 +369,15 @@ async def lifespan(app: FastAPI):
             )
         else:
             logger.info("Team 周期状态同步任务已禁用")
+
+        warranty_auto_kick_enabled, warranty_auto_kick_interval = await configure_warranty_auto_kick_job_from_settings()
+        if warranty_auto_kick_enabled:
+            logger.info(
+                "定时任务已启动: 每 %s 小时检查一次质保过期自动踢人",
+                warranty_auto_kick_interval,
+            )
+        else:
+            logger.info("质保过期自动踢人任务已禁用")
 
         logger.info("数据库初始化完成")
     except Exception as e:

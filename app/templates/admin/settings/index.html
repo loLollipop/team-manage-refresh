@@ -31,6 +31,7 @@
             <div class="settings-nav-group-title">自动化</div>
             <a href="#settings-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-refresh">Token 预刷新</a>
             <a href="#settings-team-auto-refresh" class="settings-nav-pill settings-nav-link" data-target="settings-team-auto-refresh">Team 自动刷新</a>
+            <a href="#settings-warranty-auto-kick" class="settings-nav-pill settings-nav-link" data-target="settings-warranty-auto-kick">自动踢人</a>
         </div>
         <div class="settings-nav-group">
             <div class="settings-nav-group-title">业务规则</div>
@@ -190,6 +191,34 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 自动刷新配置</button>
+    </form>
+</div>
+
+
+<!-- 自动踢人配置 -->
+<div class="content-section settings-panel" id="settings-warranty-auto-kick">
+    <div class="section-header">
+        <h3>自动踢人</h3>
+    </div>
+
+    <form id="warrantyAutoKickForm" class="settings-form">
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="warrantyAutoKickEnabled" name="enabled" {% if (warranty_auto_kick_enabled or 'false')|lower in ['1','true','yes','on'] %}checked{% endif %}>
+                <span>启用质保过期自动踢人</span>
+            </label>
+            <p class="form-help">开启后，系统会按当前质保计算方式扫描已过保的质保兑换码；命中后自动从对应 Team 删除成员或撤回邀请，并销毁该兑换码及全部历史兑换记录。</p>
+        </div>
+
+        <div class="form-group">
+            <label for="warrantyAutoKickInterval">检查间隔 (小时)</label>
+            <input type="number" id="warrantyAutoKickInterval" name="interval_hours"
+                value="{{ warranty_auto_kick_interval_hours or '12' }}" min="1" max="168" class="form-control">
+            <p class="form-help">建议 6~24 小时。该任务会按当前后台选择的质保计算方式重新判断历史质保码是否过保。</p>
+        </div>
+
+        <p class="form-help">该操作不可恢复，请确认售后流程允许系统自动清退成员并销毁兑换码后再开启。</p>
+        <button type="submit" class="btn btn-primary">保存自动踢人配置</button>
     </form>
 </div>
 
@@ -566,6 +595,39 @@
 
             if (response.ok && data.success) {
                 showToast(data.message || 'Team 自动刷新配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // 自动踢人配置表单
+    document.getElementById('warrantyAutoKickForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const enabled = document.getElementById('warrantyAutoKickEnabled').checked;
+        const interval_hours = parseInt(document.getElementById('warrantyAutoKickInterval').value);
+
+        if (isNaN(interval_hours) || interval_hours < 1 || interval_hours > 168) {
+            showToast('检查间隔必须在 1~168 小时之间', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/settings/warranty-auto-kick', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ enabled, interval_hours })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(data.message || '自动踢人配置已保存', 'success');
             } else {
                 showToast(data.error || '保存失败', 'error');
             }

@@ -2194,6 +2194,8 @@ async def settings_page(
                 "periodic_team_sync_enabled": await settings_service.get_setting(db, "periodic_team_sync_enabled", "true"),
                 "periodic_team_sync_interval_hours": await settings_service.get_setting(db, "periodic_team_sync_interval_hours", "12"),
                 "periodic_team_sync_days": await settings_service.get_setting(db, "periodic_team_sync_days", "7"),
+                "warranty_auto_kick_enabled": await settings_service.get_setting(db, "warranty_auto_kick_enabled", "false"),
+                "warranty_auto_kick_interval_hours": await settings_service.get_setting(db, "warranty_auto_kick_interval_hours", "12"),
                 "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
                 "cliproxyapi_base_url": await settings_service.get_setting(db, "cliproxyapi_base_url", ""),
                 "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
@@ -2251,6 +2253,12 @@ class TeamAutoRefreshSettingsRequest(BaseModel):
     enabled: bool = Field(True, description="是否启用 Team 周期状态自动刷新")
     interval_hours: int = Field(12, ge=1, le=168, description="检查间隔（小时）")
     refresh_interval_days: int = Field(7, ge=1, le=30, description="同步周期（天）")
+
+
+class WarrantyAutoKickSettingsRequest(BaseModel):
+    """质保过期自动踢人设置请求"""
+    enabled: bool = Field(False, description="是否启用质保过期自动踢人")
+    interval_hours: int = Field(12, ge=1, le=168, description="检查间隔（小时）")
 
 
 class WarrantyExpirationSettingsRequest(BaseModel):
@@ -2681,6 +2689,61 @@ async def update_warranty_settings(
         )
     except Exception as e:
         logger.exception("更新质保设置失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "更新失败，请稍后重试"}
+        )
+
+
+@router.post("/settings/warranty-auto-kick")
+async def update_warranty_auto_kick_settings(
+    auto_kick_data: WarrantyAutoKickSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新质保过期自动踢人设置。"""
+    try:
+        from app.main import configure_warranty_auto_kick_job
+
+        logger.info(
+            "管理员更新质保过期自动踢人配置: enabled=%s, interval_hours=%s",
+            auto_kick_data.enabled,
+            auto_kick_data.interval_hours,
+        )
+
+        success = await settings_service.update_settings(
+            db,
+            {
+                "warranty_auto_kick_enabled": str(auto_kick_data.enabled).lower(),
+                "warranty_auto_kick_interval_hours": str(auto_kick_data.interval_hours),
+            }
+        )
+        if not success:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "保存失败"}
+            )
+
+        applied_interval = configure_warranty_auto_kick_job(
+            auto_kick_data.enabled,
+            auto_kick_data.interval_hours,
+        )
+
+        message = (
+            f"自动踢人配置已保存（每 {applied_interval} 小时检查一次）"
+            if auto_kick_data.enabled
+            else "自动踢人已关闭"
+        )
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": message,
+                "enabled": auto_kick_data.enabled,
+                "interval_hours": applied_interval,
+            }
+        )
+    except Exception:
+        logger.exception("更新质保过期自动踢人设置失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": "更新失败，请稍后重试"}

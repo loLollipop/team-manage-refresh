@@ -148,6 +148,146 @@ class StubChatGPTService:
         return {"success": True, "data": {"account_invites": [{"email": email}]}}
 
 
+class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        settings_service.clear_cache()
+        self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(__import__("sqlalchemy").text("PRAGMA foreign_keys=ON"))
+
+    async def asyncTearDown(self):
+        settings_service.clear_cache()
+        await self.engine.dispose()
+
+    async def test_scan_expired_warranty_codes_recomputes_history_using_current_mode(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=201,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-auto-kick",
+                team_name="Warranty Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-RECALC-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="user@example.com",
+                used_team_id=201,
+                used_at=get_now() - timedelta(days=1),
+                warranty_expires_at=get_now() + timedelta(days=20),
+            )
+            first_record = RedemptionRecord(
+                email="user@example.com",
+                code="WARRANTY-RECALC-001",
+                team_id=201,
+                account_id="acct-auto-kick",
+                redeemed_at=get_now() - timedelta(days=40),
+                is_warranty_redemption=True,
+            )
+            second_record = RedemptionRecord(
+                email="user@example.com",
+                code="WARRANTY-RECALC-001",
+                team_id=201,
+                account_id="acct-auto-kick",
+                redeemed_at=get_now() - timedelta(days=1),
+                is_warranty_redemption=True,
+            )
+            session.add_all([
+                code,
+                first_record,
+                second_record,
+                Setting(key="warranty_expiration_mode", value="first_use"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+            result = await service.scan_expired_warranty_codes(session)
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["codes"][0]["code"], "WARRANTY-RECALC-001")
+
+    async def test_kick_and_destroy_expired_warranty_code_removes_records_and_code(self):
+        async with self.session_factory() as session:
+            team = Team(
+                id=202,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-auto-kick-2",
+                team_name="Kick Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-KICK-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="member@example.com",
+                used_team_id=202,
+                used_at=get_now() - timedelta(days=35),
+                warranty_expires_at=get_now() - timedelta(days=5),
+            )
+            record = RedemptionRecord(
+                email="member@example.com",
+                code="WARRANTY-KICK-001",
+                team_id=202,
+                account_id="acct-auto-kick-2",
+                redeemed_at=get_now() - timedelta(days=35),
+                is_warranty_redemption=True,
+            )
+            session.add_all([
+                code,
+                record,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+
+            async def stub_remove_invite_or_member(team_id, email, db_session):
+                self.assertEqual(team_id, 202)
+                self.assertEqual(email, "member@example.com")
+                return {"success": True, "message": "成员已删除", "error": None}
+
+            service.team_service.remove_invite_or_member = stub_remove_invite_or_member
+
+            result = await service.kick_and_destroy_expired_warranty_code(session, "WARRANTY-KICK-001")
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["action"], "kicked_and_destroyed")
+
+            remaining_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-KICK-001")
+            )
+            self.assertIsNone(remaining_code.scalar_one_or_none())
+
+            remaining_records = await session.execute(
+                select(RedemptionRecord).where(RedemptionRecord.code == "WARRANTY-KICK-001")
+            )
+            self.assertEqual(list(remaining_records.scalars().all()), [])
+
+
 class TeamServiceBulkInviteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")

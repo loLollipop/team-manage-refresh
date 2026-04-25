@@ -259,6 +259,96 @@ class RedemptionService:
                 "error": "扫描无效兑换码失败，请稍后重试"
             }
 
+    async def _destroy_codes_with_records(
+        self,
+        codes: List[str],
+        db_session: AsyncSession,
+    ) -> Dict[str, Any]:
+        """物理删除兑换码及其全部兑换记录。"""
+        normalized_codes: List[str] = []
+        seen_codes: set[str] = set()
+        for raw_code in codes or []:
+            code = str(raw_code or "").strip()
+            if not code or code in seen_codes:
+                continue
+            seen_codes.add(code)
+            normalized_codes.append(code)
+
+        if not normalized_codes:
+            return {
+                "success": False,
+                "deleted_codes": [],
+                "deleted_records": 0,
+                "error": "请选择需要删除的兑换码",
+            }
+
+        record_count_result = await db_session.execute(
+            select(func.count(RedemptionRecord.id)).where(RedemptionRecord.code.in_(normalized_codes))
+        )
+        deleted_records = int(record_count_result.scalar() or 0)
+
+        await db_session.execute(
+            delete(RedemptionRecord).where(RedemptionRecord.code.in_(normalized_codes))
+        )
+        await db_session.execute(
+            delete(RedemptionCode).where(RedemptionCode.code.in_(normalized_codes))
+        )
+        await db_session.commit()
+
+        return {
+            "success": True,
+            "deleted_codes": normalized_codes,
+            "deleted_records": deleted_records,
+            "error": None,
+        }
+
+    async def destroy_code_with_records(
+        self,
+        code: str,
+        db_session: AsyncSession,
+    ) -> Dict[str, Any]:
+        """销毁单个兑换码及其全部兑换记录。"""
+        try:
+            normalized_code = str(code or "").strip()
+            if not normalized_code:
+                return {"success": False, "error": "兑换码不能为空"}
+
+            existing_result = await db_session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == normalized_code)
+            )
+            redemption_code = existing_result.scalar_one_or_none()
+            if not redemption_code:
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": f"兑换码 {normalized_code} 不存在",
+                }
+
+            destroy_result = await self._destroy_codes_with_records([normalized_code], db_session)
+            if not destroy_result["success"]:
+                return {
+                    "success": False,
+                    "message": None,
+                    "error": destroy_result.get("error") or "销毁兑换码失败",
+                }
+
+            logger.info(
+                "销毁兑换码成功: %s, 删除记录数: %s",
+                normalized_code,
+                destroy_result["deleted_records"],
+            )
+            return {
+                "success": True,
+                "message": f"兑换码 {normalized_code} 已销毁",
+                "deleted_codes": destroy_result["deleted_codes"],
+                "deleted_records": destroy_result["deleted_records"],
+                "error": None,
+            }
+        except Exception:
+            await db_session.rollback()
+            logger.exception("销毁兑换码失败")
+            return {"success": False, "message": None, "error": "销毁兑换码失败，请稍后重试"}
+
     async def cleanup_invalid_codes(
         self,
         codes: List[str],
@@ -281,13 +371,9 @@ class RedemptionService:
             if not requested_codes:
                 return {"success": False, "error": "所选兑换码不满足无效清理条件，已拒绝删除"}
 
-            await db_session.execute(
-                delete(RedemptionRecord).where(RedemptionRecord.code.in_(requested_codes))
-            )
-            await db_session.execute(
-                delete(RedemptionCode).where(RedemptionCode.code.in_(requested_codes))
-            )
-            await db_session.commit()
+            destroy_result = await self._destroy_codes_with_records(requested_codes, db_session)
+            if not destroy_result["success"]:
+                return {"success": False, "error": destroy_result.get("error") or "批量清理失败"}
 
             message = f"已清理 {len(requested_codes)} 个无效兑换码"
             if rejected_codes:
@@ -296,7 +382,8 @@ class RedemptionService:
             return {
                 "success": True,
                 "message": message,
-                "deleted_codes": requested_codes,
+                "deleted_codes": destroy_result["deleted_codes"],
+                "deleted_records": destroy_result["deleted_records"],
                 "skipped_codes": rejected_codes,
                 "error": None
             }
