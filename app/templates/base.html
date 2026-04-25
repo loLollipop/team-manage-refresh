@@ -66,10 +66,6 @@
                         <i data-lucide="file-text"></i>
                         <span>使用记录</span>
                     </a>
-                    <a href="/admin/renewal-requests" class="desktop-nav-link {% if active_page == 'renewal_requests' %}active{% endif %}">
-                        <i data-lucide="list-todo"></i>
-                        <span>待处理任务</span>
-                    </a>
                     <a href="/admin/settings" class="desktop-nav-link {% if system_active %}active{% endif %}">
                         <i data-lucide="settings-2"></i>
                         <span>系统中心</span>
@@ -79,13 +75,11 @@
 
             <div class="navbar-menu">
                 <span class="navbar-user">运营后台</span>
-                <a href="/admin/renewal-requests" class="btn btn-secondary navbar-task-btn {% if active_page == 'renewal_requests' %}active{% endif %}">
+                <button type="button" id="openRenewalRequestsBtn" class="btn btn-secondary navbar-task-btn" onclick="openRenewalRequestsModal()">
                     <i data-lucide="list-todo" style="width: 15px; height: 15px;"></i>
                     <span>待处理任务</span>
-                    {% if pending_renewal_request_count %}
-                    <span class="navbar-task-badge">{{ pending_renewal_request_count }}</span>
-                    {% endif %}
-                </a>
+                    <span class="navbar-task-badge" id="navbarTaskBadge" {% if not pending_renewal_request_count %}style="display: none;"{% endif %}>{{ pending_renewal_request_count or 0 }}</span>
+                </button>
                 <button type="button" class="btn btn-secondary" id="openThemeSwitcherBtn">
                     <i data-lucide="palette" style="width: 15px; height: 15px;"></i> 冷调
                 </button>
@@ -138,10 +132,10 @@
                         <span class="menu-text">系统中心</span>
                     </a>
                 </li>
-                <li class="menu-item {% if active_page == 'renewal_requests' %}active{% endif %}">
-                    <a href="/admin/renewal-requests">
+                <li class="menu-item">
+                    <a href="#" onclick="event.preventDefault(); toggleSidebar(); openRenewalRequestsModal();">
                         <span class="menu-icon" data-lucide="list-todo"></span>
-                        <span class="menu-text">待处理任务{% if pending_renewal_request_count %} ({{ pending_renewal_request_count }}){% endif %}</span>
+                        <span class="menu-text">待处理任务<span id="sidebarTaskCount" {% if not pending_renewal_request_count %}style="display: none;"{% endif %}> ({{ pending_renewal_request_count or 0 }})</span></span>
                     </a>
                 </li>
             </ul>
@@ -172,6 +166,287 @@
             if (overlay) overlay.classList.toggle('show');
         }
     </script>
+
+    {% if user %}
+    <!-- 待处理任务 模态框 -->
+    <div id="renewalRequestsModal" class="modal-overlay">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h3>
+                    <i data-lucide="list-todo" style="width: 18px; height: 18px;"></i>
+                    待处理任务
+                </h3>
+                <button class="modal-close" onclick="hideModal('renewalRequestsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="renewal-modal-tip">用户提交的质保续期申请会汇总在这里。处理完会自动从列表中移除并把对应兑换码的质保到期/剩余天数同步更新。</p>
+                <div id="renewalRequestsModalContent" class="renewal-modal-content">
+                    <div class="renewal-modal-loading">
+                        <i data-lucide="loader-2" class="spin" style="width: 18px; height: 18px;"></i>
+                        加载中…
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const RENEWAL_API_URL = '/admin/renewal-requests/api?status_filter=pending';
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatRenewalDateTime(value) {
+            if (!value) return '-';
+            try {
+                const d = new Date(value);
+                if (Number.isNaN(d.getTime())) return value;
+                const pad = (n) => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch (e) {
+                return value;
+            }
+        }
+
+        function syncRenewalBadge(count) {
+            const badge = document.getElementById('navbarTaskBadge');
+            if (badge) {
+                badge.textContent = count > 0 ? String(count) : '0';
+                badge.style.display = count > 0 ? '' : 'none';
+            }
+            const sidebarCount = document.getElementById('sidebarTaskCount');
+            if (sidebarCount) {
+                sidebarCount.textContent = count > 0 ? ` (${count})` : '';
+                sidebarCount.style.display = count > 0 ? '' : 'none';
+            }
+        }
+
+        function renderRenewalRequestsList(items) {
+            const container = document.getElementById('renewalRequestsModalContent');
+            if (!container) return;
+
+            if (!items || items.length === 0) {
+                container.innerHTML = `
+                    <div class="renewal-modal-empty">
+                        <i data-lucide="check-circle-2" style="width: 36px; height: 36px;"></i>
+                        <p>当前没有待处理的续期申请</p>
+                    </div>
+                `;
+                if (window.lucide) lucide.createIcons();
+                return;
+            }
+
+            const rows = items.map((item) => {
+                const remaining = item.remaining_warranty_days !== null && item.remaining_warranty_days !== undefined
+                    ? `${item.remaining_warranty_days} 天`
+                    : '-';
+                return `
+                <div class="renewal-task-card" data-request-id="${item.id}">
+                    <div class="renewal-task-meta">
+                        <div class="renewal-task-line">
+                            <span class="renewal-task-label">用户邮箱</span>
+                            <strong>${escapeHtml(item.email)}</strong>
+                        </div>
+                        <div class="renewal-task-line">
+                            <span class="renewal-task-label">兑换码</span>
+                            <code>${escapeHtml(item.code)}</code>
+                        </div>
+                        <div class="renewal-task-line">
+                            <span class="renewal-task-label">剩余</span>
+                            <span>${escapeHtml(remaining)}</span>
+                        </div>
+                        <div class="renewal-task-line">
+                            <span class="renewal-task-label">质保到期</span>
+                            <span>${escapeHtml(formatRenewalDateTime(item.warranty_expires_at))}</span>
+                        </div>
+                        <div class="renewal-task-line">
+                            <span class="renewal-task-label">申请时间</span>
+                            <span>${escapeHtml(formatRenewalDateTime(item.requested_at))}</span>
+                        </div>
+                    </div>
+                    <div class="renewal-task-actions">
+                        <input type="number" min="1" max="365" placeholder="续期天数"
+                               class="form-control renewal-days-input"
+                               id="renewalModalDays-${item.id}">
+                        <div class="renewal-task-buttons">
+                            <button type="button" class="btn btn-sm btn-primary"
+                                    onclick="handleRenewalExtend(${item.id}, this)">
+                                <i data-lucide="calendar-plus-2"></i> 续期
+                            </button>
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                    onclick="handleRenewalIgnore(${item.id}, this)">
+                                <i data-lucide="circle-off"></i> 忽略
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="renewal-task-list">${rows}</div>`;
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function refreshRenewalRequestsModal() {
+            const container = document.getElementById('renewalRequestsModalContent');
+            if (!container) return;
+
+            try {
+                const response = await fetch(RENEWAL_API_URL, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || '加载失败');
+                }
+                const items = data.requests || [];
+                renderRenewalRequestsList(items);
+                syncRenewalBadge(data.pending_count !== undefined ? data.pending_count : items.length);
+            } catch (err) {
+                console.error('加载续期任务失败', err);
+                container.innerHTML = `
+                    <div class="renewal-modal-empty">
+                        <i data-lucide="alert-triangle" style="width: 36px; height: 36px;"></i>
+                        <p>加载失败，请稍后重试</p>
+                    </div>
+                `;
+                if (window.lucide) lucide.createIcons();
+                if (typeof showToast === 'function') {
+                    showToast(err.message || '加载续期任务失败', 'error');
+                }
+            }
+        }
+
+        function openRenewalRequestsModal() {
+            if (typeof showModal !== 'function') {
+                window.location.href = '/admin/renewal-requests';
+                return;
+            }
+            showModal('renewalRequestsModal');
+            refreshRenewalRequestsModal();
+        }
+
+        function removeRenewalCard(requestId) {
+            const card = document.querySelector(`.renewal-task-card[data-request-id="${requestId}"]`);
+            if (card) {
+                card.remove();
+            }
+            const remaining = document.querySelectorAll('.renewal-task-card').length;
+            syncRenewalBadge(remaining);
+            if (remaining === 0) {
+                const container = document.getElementById('renewalRequestsModalContent');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="renewal-modal-empty">
+                            <i data-lucide="check-circle-2" style="width: 36px; height: 36px;"></i>
+                            <p>当前没有待处理的续期申请</p>
+                        </div>
+                    `;
+                    if (window.lucide) lucide.createIcons();
+                }
+            }
+        }
+
+        async function handleRenewalExtend(requestId, btn) {
+            const daysInput = document.getElementById(`renewalModalDays-${requestId}`);
+            const extension_days = parseInt(daysInput?.value || '0', 10);
+            if (!extension_days || extension_days < 1 || extension_days > 365) {
+                if (typeof showToast === 'function') {
+                    showToast('请输入 1~365 的续期天数', 'error');
+                }
+                return;
+            }
+
+            const original = btn ? btn.innerHTML : '';
+            try {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+                    if (window.lucide) lucide.createIcons();
+                }
+                const response = await fetch(`/admin/renewal-requests/${requestId}/extend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ extension_days }),
+                });
+                const result = await response.json();
+                if (result.success) {
+                    if (typeof showToast === 'function') {
+                        showToast(result.message || '续期成功', 'success');
+                    }
+                    removeRenewalCard(requestId);
+                    return;
+                }
+                if (typeof showToast === 'function') {
+                    showToast(result.error || '续期失败', 'error');
+                }
+            } catch (err) {
+                console.error('续期失败', err);
+                if (typeof showToast === 'function') {
+                    showToast('请求失败，请稍后重试', 'error');
+                }
+            } finally {
+                if (btn && document.body.contains(btn)) {
+                    btn.disabled = false;
+                    btn.innerHTML = original;
+                    if (window.lucide) lucide.createIcons();
+                }
+            }
+        }
+
+        async function handleRenewalIgnore(requestId, btn) {
+            if (!confirm('确定忽略这条续期请求吗？')) {
+                return;
+            }
+            const original = btn ? btn.innerHTML : '';
+            try {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width: 14px; height: 14px;"></i> 处理中...';
+                    if (window.lucide) lucide.createIcons();
+                }
+                const response = await fetch(`/admin/renewal-requests/${requestId}/ignore`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                const result = await response.json();
+                if (result.success) {
+                    if (typeof showToast === 'function') {
+                        showToast(result.message || '已忽略', 'success');
+                    }
+                    removeRenewalCard(requestId);
+                    return;
+                }
+                if (typeof showToast === 'function') {
+                    showToast(result.error || '忽略失败', 'error');
+                }
+            } catch (err) {
+                console.error('忽略续期请求失败', err);
+                if (typeof showToast === 'function') {
+                    showToast('请求失败，请稍后重试', 'error');
+                }
+            } finally {
+                if (btn && document.body.contains(btn)) {
+                    btn.disabled = false;
+                    btn.innerHTML = original;
+                    if (window.lucide) lucide.createIcons();
+                }
+            }
+        }
+    </script>
+    {% endif %}
 
         <!-- 导入 Team 模态框 -->
     <div id="importTeamModal" class="modal-overlay">
