@@ -19,6 +19,7 @@ from app.database import AsyncSessionLocal, get_db
 from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
+from app.services.warranty import warranty_service
 from app.services.chatgpt import chatgpt_service
 from app.services.settings import (
     settings_service,
@@ -2446,6 +2447,29 @@ async def renewal_requests_page(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取续期任务页面失败，请稍后重试",
+        )
+
+
+@router.get("/renewal-requests/api")
+async def renewal_requests_api(
+    status_filter: Optional[str] = "pending",
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """续期请求 JSON 列表，供右上角"待处理任务"弹窗实时拉取。"""
+    try:
+        result = await warranty_service.get_renewal_requests(db, status_filter=status_filter)
+        if not result.get("success"):
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": result.get("error") or "获取续期请求失败"},
+            )
+        return JSONResponse(status_code=status.HTTP_200_OK, content=result)
+    except Exception:
+        logger.exception("获取续期请求列表失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "获取续期请求列表失败，请稍后重试"},
         )
 
 
