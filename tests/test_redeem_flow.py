@@ -43,6 +43,12 @@ class StubTeamService:
         self.reserve_results = reserve_results or {}
         self.released_team_ids = []
 
+    @staticmethod
+    def _normalize_member_email(email):
+        if not email:
+            return ""
+        return str(email).strip().lower()
+
     async def sync_team_info(self, team_id, db_session):
         team_results = (self.sync_results or {}).get(team_id, [])
         if team_results:
@@ -355,6 +361,13 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
             session.add_all([
                 code,
                 Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+                RedemptionRecord(
+                    email="request@example.com",
+                    code="WARRANTY-REQUEST-001",
+                    team_id=301,
+                    account_id="acct-renew-request",
+                    is_warranty_redemption=True,
+                ),
             ])
             await session.commit()
 
@@ -506,6 +519,199 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stats["destroyed"], 1)
             self.assertEqual(stats["skipped"], 0)
             self.assertEqual(stats["failed"], 0)
+
+    async def test_create_renewal_request_rejects_without_redemption_record(self):
+        """没有 (email, code) 对应的兑换记录时不允许提交续期，避免任意人灌爆待办列表。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=601,
+                email="owner@example.com",
+                access_token_encrypted="token",
+                account_id="acct-real",
+                team_name="Real Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-OWN-CHECK-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="real@example.com",
+                used_team_id=601,
+                used_at=get_now() - timedelta(days=10),
+                warranty_expires_at=get_now() + timedelta(days=20),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+                RedemptionRecord(
+                    email="real@example.com",
+                    code="WARRANTY-OWN-CHECK-001",
+                    team_id=601,
+                    account_id="acct-real",
+                    is_warranty_redemption=True,
+                ),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+            attacker = await service.create_renewal_request(
+                session,
+                email="attacker@example.com",
+                code="WARRANTY-OWN-CHECK-001",
+            )
+            self.assertFalse(attacker["success"])
+            self.assertIn("未使用", attacker.get("error", ""))
+
+            owner = await service.create_renewal_request(
+                session,
+                email="REAL@example.com",  # 大小写差异不影响归属判定
+                code="WARRANTY-OWN-CHECK-001",
+            )
+            self.assertTrue(owner["success"])
+
+    async def test_create_renewal_request_rejects_non_warranty_code(self):
+        """普通码不参与续期，避免管理员误处理。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=602,
+                email="owner@example.com",
+                access_token_encrypted="token",
+                account_id="acct-normal",
+                team_name="Normal Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="NORMAL-001",
+                status="used",
+                has_warranty=False,
+                warranty_days=0,
+            )
+            session.add_all([
+                code,
+                RedemptionRecord(
+                    email="user@example.com",
+                    code="NORMAL-001",
+                    team_id=602,
+                    account_id="acct-normal",
+                    is_warranty_redemption=False,
+                ),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+            result = await service.create_renewal_request(
+                session,
+                email="user@example.com",
+                code="NORMAL-001",
+            )
+            self.assertFalse(result["success"])
+            self.assertIn("质保", result.get("error", ""))
+
+    async def test_extend_warranty_request_rejects_repeat_handling(self):
+        """同一管理员快速双击 / 多 worker 同时点 extend，不允许把已处理的请求再叠加一次扣减。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=603,
+                email="owner@example.com",
+                access_token_encrypted="token",
+                account_id="acct-idemp",
+                team_name="Idempotent Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-IDEMP-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                extension_days=0,
+                used_by_email="user@example.com",
+                used_team_id=603,
+                used_at=get_now() - timedelta(days=5),
+                warranty_expires_at=get_now() + timedelta(days=25),
+            )
+            renewal = RenewalRequest(
+                email="user@example.com",
+                code="WARRANTY-IDEMP-001",
+                team_id=603,
+                status="pending",
+            )
+            session.add_all([
+                code,
+                renewal,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+                RedemptionRecord(
+                    email="user@example.com",
+                    code="WARRANTY-IDEMP-001",
+                    team_id=603,
+                    account_id="acct-idemp",
+                    is_warranty_redemption=True,
+                ),
+            ])
+            await session.commit()
+            renewal_id = renewal.id
+
+            service = WarrantyService()
+            first = await service.extend_warranty_request(session, request_id=renewal_id, extension_days=10)
+            self.assertTrue(first["success"])
+
+            second = await service.extend_warranty_request(session, request_id=renewal_id, extension_days=10)
+            self.assertFalse(second["success"])
+
+            third = await service.ignore_renewal_request(session, request_id=renewal_id)
+            self.assertFalse(third["success"])
+
+            updated_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-IDEMP-001")
+            )
+            self.assertEqual(updated_code.scalar_one().extension_days, 10)
+
+    async def test_clear_code_usage_state_resets_extension_days(self):
+        """所有记录被撤回后 extension_days 必须清零，避免下一个用户白嫖剩余天数。"""
+        from app.services.redemption import RedemptionService
+        async with self.session_factory() as session:
+            code = RedemptionCode(
+                code="WARRANTY-EXTRESET-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                extension_days=15,
+                used_by_email="prev@example.com",
+                used_team_id=None,
+                used_at=get_now() - timedelta(days=3),
+                warranty_expires_at=get_now() + timedelta(days=42),
+            )
+            session.add(code)
+            await session.commit()
+
+            RedemptionService._clear_code_usage_state(code)
+            await session.commit()
+
+            refreshed = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-EXTRESET-001")
+            )
+            row = refreshed.scalar_one()
+            self.assertEqual(row.extension_days, 0)
+            self.assertIsNone(row.used_by_email)
+            self.assertEqual(row.status, "unused")
 
     async def test_admin_delete_code_cleans_up_pending_renewal_requests(self):
         """admin 直接删除无记录的兑换码时，需要先清掉关联的续期请求，避免 FK 失败/孤儿。"""

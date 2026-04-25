@@ -2,9 +2,12 @@
 质保相关路由
 处理用户质保查询请求
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+import time
+from collections import deque
+from typing import Deque, Dict, Optional, Tuple
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -15,6 +18,61 @@ router = APIRouter(
     prefix="/warranty",
     tags=["warranty"]
 )
+
+
+# 简易的进程内 IP 维度滑动窗口限流：仅用于 /warranty/check 和 /warranty/renewal-request
+# 这种"用户匿名访问 + 可枚举对象"的场景。比 service 层基于 (email, code) 的去重更早一层，
+# 防止攻击者用代理切邮箱/代理切 IP 之外，再用同一 IP 高频换邮箱探测。
+# 多 worker 部署仍需在网关层（nginx / waf）补一层，这里是最低保障。
+_IP_RATE_LIMITS: Dict[str, Deque[float]] = {}
+_IP_RATE_LIMIT_MAX_KEYS = 50_000
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # x-forwarded-for: client, proxy1, proxy2 → 取第一个
+        return forwarded.split(",", 1)[0].strip() or "unknown"
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip() or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_ip_rate_limit(
+    request: Request,
+    bucket: str,
+    max_calls: int,
+    window_seconds: int,
+) -> None:
+    """超过窗口内 max_calls 次直接抛 429。"""
+    if max_calls <= 0 or window_seconds <= 0:
+        return
+    ip = _client_ip(request)
+    if not ip or ip == "unknown":
+        return
+    key = f"{bucket}:{ip}"
+    now = time.monotonic()
+    window_start = now - window_seconds
+
+    # 控制 key 总量，防止恶意制造海量假 IP 把字典撑爆
+    if len(_IP_RATE_LIMITS) > _IP_RATE_LIMIT_MAX_KEYS:
+        # 简单粗暴：超额时清掉最早的一半
+        for stale_key in list(_IP_RATE_LIMITS.keys())[: len(_IP_RATE_LIMITS) // 2]:
+            _IP_RATE_LIMITS.pop(stale_key, None)
+
+    bucket_q = _IP_RATE_LIMITS.setdefault(key, deque())
+    while bucket_q and bucket_q[0] < window_start:
+        bucket_q.popleft()
+    if len(bucket_q) >= max_calls:
+        retry_after = max(1, int(bucket_q[0] + window_seconds - now))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"操作太频繁，请 {retry_after} 秒后再试",
+        )
+    bucket_q.append(now)
 
 
 class WarrantyCheckRequest(BaseModel):
@@ -60,6 +118,7 @@ class WarrantyCheckResponse(BaseModel):
 @router.post("/check", response_model=WarrantyCheckResponse)
 async def check_warranty(
     request: WarrantyCheckRequest,
+    http_request: Request,
     db_session: AsyncSession = Depends(get_db)
 ):
     """
@@ -74,6 +133,10 @@ async def check_warranty(
                 status_code=400,
                 detail="必须提供邮箱或兑换码"
             )
+
+        # 同一 IP 60 秒内最多 30 次（含探测、刷新、续期前置查询），
+        # 阻止攻击者用同一台机器随机切邮箱嗅探用户。
+        _enforce_ip_rate_limit(http_request, "warranty_check", max_calls=30, window_seconds=60)
         
         # 调用质保服务
         result = await warranty_service.check_warranty_status(
@@ -132,10 +195,15 @@ class EnableDeviceAuthRequest(BaseModel):
 @router.post("/renewal-request")
 async def create_warranty_renewal_request(
     request: WarrantyRenewalRequest,
+    http_request: Request,
     db_session: AsyncSession = Depends(get_db)
 ):
     """提交质保续期请求。"""
     try:
+        # 同一 IP 60 秒内最多 5 次提交。配合 service 层的归属校验，确保攻击者
+        # 即使猜中了 (email, code) 也无法在短时间内灌爆管理员待办列表。
+        _enforce_ip_rate_limit(http_request, "warranty_renewal", max_calls=5, window_seconds=60)
+
         result = await warranty_service.create_renewal_request(
             db_session,
             email=request.email,

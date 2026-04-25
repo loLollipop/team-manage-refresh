@@ -1096,7 +1096,10 @@ function showWarrantyResult(data) {
             : '<span class="badge badge-neutral">常规码</span>';
         const teamStatus = getTeamStatusMeta(record.team_status);
         const canReplace = record.has_warranty && record.warranty_valid && record.team_status === 'banned';
-        const canEnableDeviceAuth = !record.device_code_auth_enabled && record.team_status !== 'banned' && record.team_status !== 'expired' && record.team_status !== 'suspected_inconsistent' && record.team_id;
+        // /warranty/enable-device-auth 是 admin 专属接口（require_admin），
+        // 用户即使点了也只会拿 401/403。这里直接不渲染按钮，让用户走联系管理员流程，
+        // 避免出现"按钮明明亮着、点了却报错"的体验问题。
+        const canEnableDeviceAuth = false;
         const warrantyExpiryText = record.warranty_expires_at
             ? `${formatDate(record.warranty_expires_at)}${record.warranty_valid ? '（有效）' : '（已过期）'}`
             : '尚未开始计算';

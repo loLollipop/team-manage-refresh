@@ -294,6 +294,14 @@ class RedeemFlowService:
         """
         完整的兑换流程 (带事务和并发控制)
         """
+        # 入口处一次性归一化 email，确保 RedemptionRecord / used_by_email
+        # 与 TeamEmailMapping、validate_warranty_reuse 的判定基准一致，
+        # 避免大小写或前后空格差异导致同一用户的质保被错误吞掉。
+        normalized_email = self.team_service._normalize_member_email(email)
+        if not normalized_email:
+            return {"success": False, "error": "邮箱不能为空"}
+        email = normalized_email
+
         last_error = "未知错误"
         max_retries = 5
         current_target_team_id = team_id
@@ -587,6 +595,9 @@ class RedeemFlowService:
                                     days = (rc.warranty_days or 30) + extension_days
                                     if should_refresh_warranty_window:
                                         rc.warranty_expires_at = current_use_time + timedelta(days=days)
+                                        # 质保窗口已重置：admin 上一轮针对原使用者发放的人工续期天数
+                                        # 已经被本次重新计算消化掉，不应在新窗口里继续累加。
+                                        rc.extension_days = 0
                                     elif not rc.warranty_expires_at:
                                         base_time = previous_used_at or current_use_time
                                         first_use_result = await db_session.execute(

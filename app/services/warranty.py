@@ -6,7 +6,7 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from sqlalchemy import select, and_, or_, delete, func
+from sqlalchemy import select, and_, or_, delete, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -154,12 +154,42 @@ class WarrantyService:
         code: str,
         team_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """创建续期请求；若已存在 pending 请求则直接返回成功。"""
+        """创建续期请求；若已存在 pending 请求则直接返回成功。
+
+        强校验：
+        - 兑换码必须真实存在且 has_warranty=True，普通码不参与续期；
+        - 提交者必须真的用该邮箱兑换过该码（RedemptionRecord 命中），
+          防止任意人凭一个公开码 + 任意邮箱刷爆管理员待办列表。
+        """
         normalized_email = self.team_service._normalize_member_email(email)
         normalized_code = str(code or "").strip()
         if not normalized_email or not normalized_code:
             return {"success": False, "error": "邮箱或兑换码不能为空"}
 
+        # 1. 校验兑换码：必须存在且为质保码
+        code_result = await db_session.execute(
+            select(RedemptionCode).where(RedemptionCode.code == normalized_code)
+        )
+        redemption_code = code_result.scalar_one_or_none()
+        if not redemption_code:
+            return {"success": False, "error": "兑换码不存在或已销毁"}
+        if not redemption_code.has_warranty:
+            return {"success": False, "error": "该兑换码不是质保兑换码，无法申请续期"}
+
+        # 2. 校验归属：必须有 (email, code) 命中的兑换记录（大小写不敏感）
+        ownership_result = await db_session.execute(
+            select(func.count(RedemptionRecord.id)).where(
+                RedemptionRecord.code == normalized_code,
+                func.lower(RedemptionRecord.email) == normalized_email,
+            )
+        )
+        if int(ownership_result.scalar() or 0) == 0:
+            return {
+                "success": False,
+                "error": "该邮箱未使用该兑换码，无法申请续期",
+            }
+
+        # 3. 已有 pending 请求直接返回（幂等）
         existing_result = await db_session.execute(
             select(RenewalRequest).where(
                 RenewalRequest.email == normalized_email,
@@ -175,13 +205,6 @@ class WarrantyService:
                 "request_id": existing.id,
                 "duplicated": True,
             }
-
-        code_result = await db_session.execute(
-            select(RedemptionCode).where(RedemptionCode.code == normalized_code)
-        )
-        redemption_code = code_result.scalar_one_or_none()
-        if not redemption_code:
-            return {"success": False, "error": "兑换码不存在或已销毁"}
 
         request = RenewalRequest(
             email=normalized_email,
@@ -204,32 +227,68 @@ class WarrantyService:
         db_session: AsyncSession,
         status_filter: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """获取续期请求列表。"""
+        """获取续期请求列表。
+
+        避免 N+1：先一次性把所有相关 RedemptionCode 拉出来；first_use 模式下也用一个聚合
+        子查询拿到每个码的 first_redeemed_at，再在内存里按模式计算 expiry，避免每条 request
+        都跑一轮 _resolve_warranty_expiry_date。
+        """
         stmt = select(RenewalRequest).order_by(RenewalRequest.requested_at.desc(), RenewalRequest.id.desc())
         if status_filter:
             stmt = stmt.where(RenewalRequest.status == status_filter)
 
         result = await db_session.execute(stmt)
         requests = result.scalars().all()
+
+        related_codes: List[str] = sorted({req.code for req in requests if req.code})
+        codes_by_value: Dict[str, RedemptionCode] = {}
+        first_redeemed_by_code: Dict[str, datetime] = {}
+        expiration_mode: Optional[str] = None
+
+        if related_codes:
+            codes_result = await db_session.execute(
+                select(RedemptionCode).where(RedemptionCode.code.in_(related_codes))
+            )
+            codes_by_value = {row.code: row for row in codes_result.scalars().all()}
+
+            # 仅当确实存在 has_warranty 的码时才需要算 first_use 与读取 expiration_mode。
+            warranty_codes = [c for c in codes_by_value.values() if c.has_warranty]
+            if warranty_codes:
+                expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+                first_use_result = await db_session.execute(
+                    select(
+                        RedemptionRecord.code,
+                        func.min(RedemptionRecord.redeemed_at),
+                    )
+                    .where(RedemptionRecord.code.in_([c.code for c in warranty_codes]))
+                    .group_by(RedemptionRecord.code)
+                )
+                first_redeemed_by_code = {
+                    row[0]: row[1] for row in first_use_result.all() if row[1] is not None
+                }
+
+        def _expiry_for(code_obj: RedemptionCode) -> Optional[datetime]:
+            if not code_obj or not code_obj.has_warranty:
+                return None
+            if expiration_mode == WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM:
+                start = code_obj.used_at
+            else:
+                start = first_redeemed_by_code.get(code_obj.code) or code_obj.used_at
+            if not start:
+                return None
+            base_days = int(code_obj.warranty_days or 30)
+            extension_days = max(int(getattr(code_obj, "extension_days", 0) or 0), 0)
+            return start + timedelta(days=base_days + extension_days)
+
         items: List[Dict[str, Any]] = []
         pending_count = 0
 
         for request in requests:
-            code_result = await db_session.execute(
-                select(RedemptionCode).where(RedemptionCode.code == request.code)
-            )
-            redemption_code = code_result.scalar_one_or_none()
-            remaining_days: Optional[int] = None
-            expiry_iso: Optional[str] = None
+            redemption_code = codes_by_value.get(request.code)
             code_exists = redemption_code is not None
-            if redemption_code and redemption_code.has_warranty:
-                expiry_date = await self._resolve_warranty_expiry_date(
-                    db_session,
-                    redemption_code,
-                    force_recompute=True,
-                )
-                remaining_days = self._remaining_warranty_days(expiry_date)
-                expiry_iso = expiry_date.isoformat() if expiry_date else None
+            expiry_date = _expiry_for(redemption_code) if redemption_code else None
+            remaining_days = self._remaining_warranty_days(expiry_date) if expiry_date else None
+            expiry_iso = expiry_date.isoformat() if expiry_date else None
 
             if request.status == "pending":
                 pending_count += 1
@@ -263,7 +322,11 @@ class WarrantyService:
         extension_days: int,
         admin_note: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """处理续期请求并立即生效。"""
+        """处理续期请求并立即生效。
+
+        通过条件 UPDATE 把 pending → extended，保证只有一名管理员能成功扣减；
+        重复点击 / 多 worker 并发都不会重复叠加 extension_days。
+        """
         if extension_days <= 0:
             return {"success": False, "error": "续期天数必须大于 0"}
 
@@ -273,15 +336,45 @@ class WarrantyService:
         renewal_request = request_result.scalar_one_or_none()
         if not renewal_request:
             return {"success": False, "error": "续期请求不存在"}
+        if renewal_request.status != "pending":
+            return {
+                "success": False,
+                "error": f"该续期请求当前状态为 {renewal_request.status}，无法重复处理",
+            }
+
+        # 条件 update：仅当状态仍为 pending 时占位为 extended，避免并发双扣
+        claim_stmt = (
+            update(RenewalRequest)
+            .where(
+                RenewalRequest.id == request_id,
+                RenewalRequest.status == "pending",
+            )
+            .values(status="extended")
+        )
+        claim_result = await db_session.execute(claim_stmt)
+        if (claim_result.rowcount or 0) == 0:
+            await db_session.rollback()
+            return {
+                "success": False,
+                "error": "该续期请求已被其他操作处理，请刷新页面后再试",
+            }
 
         code_result = await db_session.execute(
             select(RedemptionCode).where(RedemptionCode.code == renewal_request.code)
         )
         redemption_code = code_result.scalar_one_or_none()
         if not redemption_code:
-            renewal_request.status = "ignored"
-            renewal_request.handled_at = get_now()
-            renewal_request.admin_note = admin_note or "兑换码不存在或已销毁"
+            # 占位回退成 ignored，记录"已销毁"原因
+            await db_session.execute(
+                update(RenewalRequest)
+                .where(RenewalRequest.id == request_id)
+                .values(
+                    status="ignored",
+                    handled_at=get_now(),
+                    admin_note=admin_note or "兑换码不存在或已销毁",
+                    extension_days=None,
+                )
+            )
             await db_session.commit()
             return {"success": False, "error": "兑换码不存在或已销毁，无法续期"}
 
@@ -295,10 +388,16 @@ class WarrantyService:
         if expiry_date and expiry_date >= get_now() and redemption_code.used_at:
             redemption_code.status = "used"
 
-        renewal_request.status = "extended"
-        renewal_request.handled_at = get_now()
-        renewal_request.extension_days = extension_days
-        renewal_request.admin_note = (admin_note or "").strip() or None
+        # 把已经占位的 request 行补上结果字段
+        await db_session.execute(
+            update(RenewalRequest)
+            .where(RenewalRequest.id == request_id)
+            .values(
+                handled_at=get_now(),
+                extension_days=extension_days,
+                admin_note=(admin_note or "").strip() or None,
+            )
+        )
         await db_session.commit()
 
         return {
@@ -314,17 +413,43 @@ class WarrantyService:
         request_id: int,
         admin_note: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """忽略续期请求。"""
+        """忽略续期请求。
+
+        与 extend 一样使用条件 UPDATE 守住 pending 状态，避免把已 extended/ignored
+        的请求覆盖回去。
+        """
         request_result = await db_session.execute(
             select(RenewalRequest).where(RenewalRequest.id == request_id)
         )
         renewal_request = request_result.scalar_one_or_none()
         if not renewal_request:
             return {"success": False, "error": "续期请求不存在"}
+        if renewal_request.status != "pending":
+            return {
+                "success": False,
+                "error": f"该续期请求当前状态为 {renewal_request.status}，无法重复处理",
+            }
 
-        renewal_request.status = "ignored"
-        renewal_request.handled_at = get_now()
-        renewal_request.admin_note = (admin_note or "").strip() or None
+        claim_stmt = (
+            update(RenewalRequest)
+            .where(
+                RenewalRequest.id == request_id,
+                RenewalRequest.status == "pending",
+            )
+            .values(
+                status="ignored",
+                handled_at=get_now(),
+                admin_note=(admin_note or "").strip() or None,
+            )
+        )
+        claim_result = await db_session.execute(claim_stmt)
+        if (claim_result.rowcount or 0) == 0:
+            await db_session.rollback()
+            return {
+                "success": False,
+                "error": "该续期请求已被其他操作处理，请刷新页面后再试",
+            }
+
         await db_session.commit()
         return {"success": True, "message": "已忽略该续期请求"}
 
@@ -352,6 +477,10 @@ class WarrantyService:
                     "success": False,
                     "error": "必须提供邮箱或兑换码"
                 }
+
+            # 入口归一化 email，限流和查询都按归一化后的值。
+            if email:
+                email = self.team_service._normalize_member_email(email) or email
 
             # 0. 频率限制 (每个邮箱或每个码 30 秒只能查一次)
             now = datetime.now()
@@ -441,13 +570,13 @@ class WarrantyService:
                     }
 
             elif email:
-                # 通过邮箱查找所有兑换记录
+                # 通过邮箱查找所有兑换记录（容忍历史数据里残留的大小写差异）
                 stmt = (
                     select(RedemptionRecord, RedemptionCode, Team)
                     .options(selectinload(RedemptionRecord.redemption_code), selectinload(RedemptionRecord.team))
                     .join(RedemptionCode, RedemptionRecord.code == RedemptionCode.code)
                     .join(Team, RedemptionRecord.team_id == Team.id)
-                    .where(RedemptionRecord.email == email)
+                    .where(func.lower(RedemptionRecord.email) == email)
                     .order_by(RedemptionRecord.redeemed_at.desc())
                 )
                 result = await db_session.execute(stmt)
@@ -730,9 +859,21 @@ class WarrantyService:
                     "error": "兑换码不能为空",
                 }
 
-            result = await db_session.execute(
-                select(RedemptionCode).where(RedemptionCode.code == normalized_code)
-            )
+            # 用 with_for_update 锁住该行：确保 admin 此时的 extend_warranty_request 排队
+            # 在我们之前/之后整体写入，避免我们读到旧的 extension_days 后仍然误判踢人。
+            try:
+                stmt = (
+                    select(RedemptionCode)
+                    .where(RedemptionCode.code == normalized_code)
+                    .with_for_update()
+                )
+                result = await db_session.execute(stmt)
+            except Exception:
+                # SQLite 不支持 SELECT ... FOR UPDATE，回退为普通查询；
+                # 真正的并发收敛在仍由"重读 + 重新计算 expiry"的逻辑保证。
+                result = await db_session.execute(
+                    select(RedemptionCode).where(RedemptionCode.code == normalized_code)
+                )
             redemption_code = result.scalar_one_or_none()
             if not redemption_code:
                 return {
@@ -744,6 +885,13 @@ class WarrantyService:
                     "message": "兑换码已不存在",
                     "error": None,
                 }
+
+            # 拿到行锁后强制刷新最新值，否则 ORM 可能仍命中 session 缓存里的旧对象，
+            # 拿不到 admin 在中间提交的 extension_days。
+            try:
+                await db_session.refresh(redemption_code)
+            except Exception:
+                pass
 
             if not redemption_code.has_warranty:
                 return {
@@ -929,6 +1077,19 @@ class WarrantyService:
             结果字典,包含 success, can_reuse, reason, error
         """
         try:
+            # 入口处归一化邮箱，与 redeem_and_join_team / TeamEmailMapping
+            # 的存储语义保持一致；同时所有针对 record.email 的对比都按 .lower()
+            # 容忍历史数据里残留的大小写/空白差异。
+            normalized_email = self.team_service._normalize_member_email(email)
+            if not normalized_email:
+                return {
+                    "success": True,
+                    "can_reuse": False,
+                    "reason": "邮箱不能为空",
+                    "error": None
+                }
+            email = normalized_email
+
             # 1. 查询兑换码
             stmt = select(RedemptionCode).where(RedemptionCode.code == code)
             result = await db_session.execute(stmt)
@@ -961,12 +1122,15 @@ class WarrantyService:
                     "error": None
                 }
 
+            def _record_email_matches(record: RedemptionRecord) -> bool:
+                return self.team_service._normalize_member_email(record.email) == email
+
             # 4. 检查该兑换码当前是否已有正在使用的活跃 Team (全局检查，不限邮箱)
             # 逻辑：如果该码名下有任何一个 Team 还是 active/full 状态且未过期，则不允许新的激活
             stmt = select(RedemptionRecord).where(RedemptionRecord.code == code)
             result = await db_session.execute(stmt)
             all_records_for_code = result.scalars().all()
-            had_matching_history = any(r.email == email for r in all_records_for_code)
+            had_matching_history = any(_record_email_matches(r) for r in all_records_for_code)
             cleaned_orphan_for_email = False
             
             for record in all_records_for_code:
@@ -986,7 +1150,7 @@ class WarrantyService:
                         if record.email.lower() not in member_emails:
                             logger.warning(f"自愈逻辑: 发现孤儿记录 (Email: {record.email}, Team: {team.id}), 但同步结果中不包含该成员。正在清理记录。")
                             # 删除该孤儿记录
-                            if record.email == email:
+                            if _record_email_matches(record):
                                 cleaned_orphan_for_email = True
                             await db_session.delete(record)
                             if not db_session.in_transaction():
@@ -996,7 +1160,7 @@ class WarrantyService:
                             continue # 继续检查下一个记录或结束循环
 
                         # 如果是同一个邮箱且确实在 Team 中，提示已在有效 Team 中
-                        if record.email == email:
+                        if _record_email_matches(record):
                             return {
                                 "success": True,
                                 "can_reuse": False,
@@ -1018,7 +1182,7 @@ class WarrantyService:
             all_records_for_code = result.scalars().all()
 
             # 6. 查找当前用户使用该兑换码的记录 (用于后续逻辑判断)
-            records = [r for r in all_records_for_code if r.email == email]
+            records = [r for r in all_records_for_code if _record_email_matches(r)]
             
             if not records:
                 if cleaned_orphan_for_email or had_matching_history:

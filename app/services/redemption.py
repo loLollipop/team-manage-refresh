@@ -58,12 +58,18 @@ class RedemptionService:
 
     @staticmethod
     def _clear_code_usage_state(redemption_code: RedemptionCode) -> None:
-        """清空兑换码的使用态字段。"""
+        """清空兑换码的使用态字段。
+
+        注意：admin 之前给某个具体用户的人工续期（extension_days）属于该次使用的特例补偿，
+        若所有兑换记录都被撤回 / 销毁回到 unused 态，剩下的 extension_days 不应再被
+        下一个兑换它的用户继承，必须一并清零。
+        """
         redemption_code.status = "unused"
         redemption_code.used_by_email = None
         redemption_code.used_team_id = None
         redemption_code.used_at = None
         redemption_code.warranty_expires_at = None
+        redemption_code.extension_days = 0
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
