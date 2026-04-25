@@ -2299,7 +2299,9 @@ class AnnouncementUpdateRequest(BaseModel):
 class RenewalRequestAction(BaseModel):
     """续期请求处理请求"""
     extension_days: Optional[int] = Field(None, ge=1, le=365, description="续期天数")
-    admin_note: str = Field("", description="管理员备注")
+    # admin_note 限长 500，避免 admin 误粘大段日志撑大数据库行；
+    # 同时 service 层会在销毁兑换码时往 admin_note 追加销毁标记，留余量。
+    admin_note: str = Field("", max_length=500, description="管理员备注")
 
 
 @router.get("/settings/ui-theme")
@@ -2409,7 +2411,7 @@ async def update_announcement(
 @router.get("/renewal-requests", response_class=HTMLResponse)
 async def renewal_requests_page(
     request: Request,
-    status_filter: Optional[str] = "pending",
+    status_filter: Optional[Literal["pending", "extended", "ignored"]] = "pending",
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -2450,9 +2452,29 @@ async def renewal_requests_page(
         )
 
 
+@router.get("/renewal-requests/pending-count")
+async def renewal_requests_pending_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """轻量级"待处理任务"计数：供前端定时同步顶栏 badge，避免多标签页错位。"""
+    try:
+        count = await get_pending_renewal_request_count(db)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, "pending_count": count},
+        )
+    except Exception:
+        logger.exception("获取待处理续期任务数量失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "获取待处理任务数量失败"},
+        )
+
+
 @router.get("/renewal-requests/api")
 async def renewal_requests_api(
-    status_filter: Optional[str] = "pending",
+    status_filter: Optional[Literal["pending", "extended", "ignored"]] = "pending",
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):

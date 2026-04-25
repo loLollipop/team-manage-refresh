@@ -300,8 +300,11 @@ class RedemptionService:
         )
         deleted_records = int(record_count_result.scalar() or 0)
 
-        # 兑换码销毁后，相关续期请求已无意义，需要从待处理列表中清掉，
-        # 避免管理员审批已不存在的兑换码，也防止恶意用户先提交续期再卡定时任务。
+        # 兑换码销毁后：
+        # - pending 续期请求已无审批意义，物理删除，避免管理员审批已不存在的兑换码，
+        #   也防止恶意用户先提交续期再卡定时任务。
+        # - extended / ignored 是审计证据（admin 的处理痕迹），不能 hard-delete；
+        #   保留行，只在 admin_note 上追加销毁标记，方便后续追溯。
         pending_request_count_result = await db_session.execute(
             select(func.count(RenewalRequest.id)).where(
                 RenewalRequest.code.in_(normalized_codes),
@@ -309,9 +312,33 @@ class RedemptionService:
             )
         )
         dismissed_requests = int(pending_request_count_result.scalar() or 0)
+
         await db_session.execute(
-            delete(RenewalRequest).where(RenewalRequest.code.in_(normalized_codes))
+            delete(RenewalRequest).where(
+                RenewalRequest.code.in_(normalized_codes),
+                RenewalRequest.status == "pending",
+            )
         )
+
+        # extended / ignored 是 admin 已经处理的审计证据，不能 hard-delete。
+        # FK 会随兑换码销毁而失效，所以把 code 置 NULL，并把原始码追加进 admin_note，
+        # 让管理员后续仍能追溯"当时是给哪个码续的期"。
+        timestamp = get_now().strftime('%Y-%m-%d %H:%M')
+        for stale_code in normalized_codes:
+            stale_marker = f"[兑换码 {stale_code} 已于 {timestamp} 销毁]"
+            stale_result = await db_session.execute(
+                select(RenewalRequest).where(
+                    RenewalRequest.code == stale_code,
+                    RenewalRequest.status.in_(("extended", "ignored")),
+                )
+            )
+            for stale_request in stale_result.scalars().all():
+                existing_note = (stale_request.admin_note or "").strip()
+                if stale_marker not in existing_note:
+                    stale_request.admin_note = (
+                        f"{existing_note}\n{stale_marker}" if existing_note else stale_marker
+                    )
+                stale_request.code = None
 
         await db_session.execute(
             delete(RedemptionRecord).where(RedemptionRecord.code.in_(normalized_codes))
@@ -1400,10 +1427,33 @@ class RedemptionService:
                     "error": f"兑换码 {code} 已有 {record_count} 条关联记录，无法直接删除"
                 }
 
-            # 在删除兑换码前先清掉关联的续期请求，避免 FK 约束失败或留下孤儿任务。
+            # 在删除兑换码前处理关联的续期请求：
+            # - pending：物理删除（避免审批已不存在的码）
+            # - extended/ignored：保留作为审计证据，仅在 admin_note 上追加销毁标记
             await db_session.execute(
-                delete(RenewalRequest).where(RenewalRequest.code == code)
+                delete(RenewalRequest).where(
+                    RenewalRequest.code == code,
+                    RenewalRequest.status == "pending",
+                )
             )
+            stale_result = await db_session.execute(
+                select(RenewalRequest).where(
+                    RenewalRequest.code == code,
+                    RenewalRequest.status.in_(("extended", "ignored")),
+                )
+            )
+            stale_marker = (
+                f"[兑换码 {code} 已于 {get_now().strftime('%Y-%m-%d %H:%M')} 销毁]"
+            )
+            for stale_request in stale_result.scalars().all():
+                existing_note = (stale_request.admin_note or "").strip()
+                if stale_marker not in existing_note:
+                    stale_request.admin_note = (
+                        f"{existing_note}\n{stale_marker}" if existing_note else stale_marker
+                    )
+                # 把 FK 解除掉，避免 SQLite FK ON 时父行删除失败。
+                stale_request.code = None
+            await db_session.flush()
 
             # 删除兑换码
             await db_session.delete(redemption_code)
@@ -1605,25 +1655,63 @@ class RedemptionService:
             if not codes:
                 return {"success": True, "message": "没有需要更新的兑换码"}
 
-            # 构建更新语句
-            values = {}
-            if has_warranty is not None:
-                values[RedemptionCode.has_warranty] = has_warranty
-            if warranty_days is not None:
-                values[RedemptionCode.warranty_days] = warranty_days
-
-            if not values:
+            # 检查需要更新的字段
+            need_warranty_update = has_warranty is not None
+            need_days_update = warranty_days is not None
+            if not need_warranty_update and not need_days_update:
                 return {"success": True, "message": "没有提供更新内容"}
 
-            stmt = update(RedemptionCode).where(RedemptionCode.code.in_(codes)).values(values)
-            await db_session.execute(stmt)
+            stmt = select(RedemptionCode).where(RedemptionCode.code.in_(codes))
+            result = await db_session.execute(stmt)
+            target_codes = result.scalars().all()
+
+            if not target_codes:
+                return {"success": True, "message": "没有匹配的兑换码"}
+
+            # 改 warranty_days 时如果有已使用的码，需要重算 warranty_expires_at；
+            # 否则 UI 上显示的"质保到期时间"会和定时任务实际踢人时间脱钩，
+            # 客服/用户都会摸不着头脑。改 has_warranty False→True 同理。
+            need_recompute = need_warranty_update or need_days_update
+            expiration_mode = (
+                await settings_service.get_warranty_expiration_mode(db_session)
+                if need_recompute
+                else None
+            )
+
+            for redemption_code in target_codes:
+                if need_warranty_update:
+                    redemption_code.has_warranty = has_warranty
+                if need_days_update:
+                    redemption_code.warranty_days = warranty_days
+
+                if not redemption_code.has_warranty:
+                    # 取消质保后，残留的到期时间会让 UI 仍显示"未到期"，要清掉。
+                    redemption_code.warranty_expires_at = None
+                elif redemption_code.used_at:
+                    # 重算质保到期时间：起算点严格按当前模式取（refresh_on_redeem
+                    # 用 used_at；first_use 用 min(redeemed_at) 作为起算点）。
+                    if expiration_mode == WARRANTY_EXPIRATION_MODE_REFRESH_ON_REDEEM:
+                        start_time = redemption_code.used_at
+                    else:
+                        first_use_result = await db_session.execute(
+                            select(func.min(RedemptionRecord.redeemed_at))
+                            .where(RedemptionRecord.code == redemption_code.code)
+                        )
+                        start_time = first_use_result.scalar() or redemption_code.used_at
+                    if start_time:
+                        days = self._effective_warranty_days(redemption_code)
+                        redemption_code.warranty_expires_at = start_time + timedelta(days=days)
+
+                # 同步 status：如果新到期时间已过，直接置为 expired，避免下一轮扫描漏掉。
+                self._sync_code_status_fields(redemption_code)
+
             await db_session.commit()
 
-            logger.info(f"成功批量更新 {len(codes)} 个兑换码")
+            logger.info(f"成功批量更新 {len(target_codes)} 个兑换码")
 
             return {
                 "success": True,
-                "message": f"成功批量更新 {len(codes)} 个兑换码",
+                "message": f"成功批量更新 {len(target_codes)} 个兑换码",
                 "error": None
             }
 

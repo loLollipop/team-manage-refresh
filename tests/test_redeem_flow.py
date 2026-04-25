@@ -748,6 +748,221 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(remaining_renewal.scalar_one_or_none())
 
+    async def test_auto_kick_preserves_extended_renewal_history(self):
+        """自动踢人销毁兑换码时也只清 pending 续期请求；extended/ignored 留下作为审计证据。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=440,
+                email="owner@example.com",
+                access_token_encrypted="token-1",
+                account_id="acct-auto-kick-audit",
+                team_name="Auto Kick Audit Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="WARRANTY-AK-AUDIT-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="user@example.com",
+                used_team_id=440,
+                used_at=get_now() - timedelta(days=40),
+                warranty_expires_at=get_now() - timedelta(days=10),
+            )
+            extended = RenewalRequest(
+                email="user@example.com",
+                code="WARRANTY-AK-AUDIT-001",
+                team_id=440,
+                status="extended",
+                extension_days=10,
+                admin_note="第一次投诉，续 10 天",
+            )
+            pending = RenewalRequest(
+                email="user@example.com",
+                code="WARRANTY-AK-AUDIT-001",
+                team_id=440,
+                status="pending",
+            )
+            session.add_all([
+                code, extended, pending,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+            extended_id = extended.id
+            pending_id = pending.id
+
+            service = WarrantyService()
+            async def _stub_remove(team_id, email, db_session):
+                return {"success": True, "message": "ok", "error": None}
+            service.team_service.remove_invite_or_member = _stub_remove
+
+            result = await service.kick_and_destroy_expired_warranty_code(
+                session, "WARRANTY-AK-AUDIT-001"
+            )
+            self.assertTrue(result["success"])
+            self.assertEqual(result["category"], "destroyed")
+
+            # pending 应被物理删除
+            self.assertIsNone(
+                (await session.execute(
+                    select(RenewalRequest).where(RenewalRequest.id == pending_id)
+                )).scalar_one_or_none()
+            )
+
+            # extended 必须保留，code 被置 NULL，admin_note 追加销毁标记
+            extended_after = (await session.execute(
+                select(RenewalRequest).where(RenewalRequest.id == extended_id)
+            )).scalar_one_or_none()
+            self.assertIsNotNone(extended_after)
+            self.assertIsNone(extended_after.code)
+            self.assertIn("WARRANTY-AK-AUDIT-001", extended_after.admin_note)
+            self.assertIn("销毁", extended_after.admin_note)
+            self.assertIn("第一次投诉", extended_after.admin_note)
+            self.assertEqual(extended_after.extension_days, 10)
+
+    async def test_destroy_preserves_extended_and_ignored_renewal_history(self):
+        """销毁兑换码时只删 pending 续期请求；extended/ignored 必须保留作为审计证据。"""
+        from app.services.redemption import RedemptionService
+
+        async with self.session_factory() as session:
+            code = RedemptionCode(
+                code="WARRANTY-AUDIT-001",
+                status="unused",
+                has_warranty=True,
+                warranty_days=30,
+            )
+            extended_renewal = RenewalRequest(
+                email="alice@example.com",
+                code="WARRANTY-AUDIT-001",
+                team_id=None,
+                status="extended",
+                extension_days=15,
+                admin_note="客户投诉，续 15 天",
+            )
+            ignored_renewal = RenewalRequest(
+                email="bob@example.com",
+                code="WARRANTY-AUDIT-001",
+                team_id=None,
+                status="ignored",
+                admin_note="频繁刷续期，忽略",
+            )
+            pending_renewal = RenewalRequest(
+                email="carol@example.com",
+                code="WARRANTY-AUDIT-001",
+                team_id=None,
+                status="pending",
+            )
+            session.add_all([code, extended_renewal, ignored_renewal, pending_renewal])
+            await session.commit()
+            extended_id = extended_renewal.id
+            ignored_id = ignored_renewal.id
+            pending_id = pending_renewal.id
+
+            redemption_service = RedemptionService()
+            result = await redemption_service.delete_code("WARRANTY-AUDIT-001", session)
+            self.assertTrue(result["success"])
+
+            # pending 应当被物理删除
+            self.assertIsNone(
+                (await session.execute(
+                    select(RenewalRequest).where(RenewalRequest.id == pending_id)
+                )).scalar_one_or_none()
+            )
+
+            # extended / ignored 必须保留
+            extended_after = (await session.execute(
+                select(RenewalRequest).where(RenewalRequest.id == extended_id)
+            )).scalar_one_or_none()
+            self.assertIsNotNone(extended_after)
+            self.assertIn("已于", extended_after.admin_note)
+            self.assertIn("销毁", extended_after.admin_note)
+            self.assertIn("客户投诉", extended_after.admin_note)
+            self.assertEqual(extended_after.extension_days, 15)
+
+            ignored_after = (await session.execute(
+                select(RenewalRequest).where(RenewalRequest.id == ignored_id)
+            )).scalar_one_or_none()
+            self.assertIsNotNone(ignored_after)
+            self.assertIn("频繁刷续期", ignored_after.admin_note)
+            self.assertIn("销毁", ignored_after.admin_note)
+
+    async def test_bulk_update_codes_recomputes_warranty_expiry(self):
+        """改 warranty_days 时已用码的 warranty_expires_at 必须同步重算，避免 UI 与定时踢人脱钩。"""
+        from app.services.redemption import RedemptionService
+
+        async with self.session_factory() as session:
+            used_at = get_now() - timedelta(days=10)
+            code = RedemptionCode(
+                code="WARRANTY-BULK-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="user@example.com",
+                used_team_id=None,
+                used_at=used_at,
+                warranty_expires_at=used_at + timedelta(days=30),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            redemption_service = RedemptionService()
+            result = await redemption_service.bulk_update_codes(
+                ["WARRANTY-BULK-001"], session, warranty_days=60
+            )
+            self.assertTrue(result["success"])
+
+            refreshed = (await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-BULK-001")
+            )).scalar_one()
+            self.assertEqual(refreshed.warranty_days, 60)
+            # used_at + 60 天，允许 1 秒抖动
+            expected = used_at + timedelta(days=60)
+            delta_seconds = abs((refreshed.warranty_expires_at - expected).total_seconds())
+            self.assertLess(delta_seconds, 5)
+
+    async def test_bulk_update_codes_clears_expiry_when_warranty_disabled(self):
+        """关掉 has_warranty 时，已用码的 warranty_expires_at 必须清掉，避免 UI 仍显示"未到期"。"""
+        from app.services.redemption import RedemptionService
+
+        async with self.session_factory() as session:
+            used_at = get_now() - timedelta(days=5)
+            code = RedemptionCode(
+                code="WARRANTY-BULK-OFF-001",
+                status="used",
+                has_warranty=True,
+                warranty_days=30,
+                used_by_email="user@example.com",
+                used_team_id=None,
+                used_at=used_at,
+                warranty_expires_at=used_at + timedelta(days=30),
+            )
+            session.add_all([
+                code,
+                Setting(key="warranty_expiration_mode", value="refresh_on_redeem"),
+            ])
+            await session.commit()
+
+            redemption_service = RedemptionService()
+            result = await redemption_service.bulk_update_codes(
+                ["WARRANTY-BULK-OFF-001"], session, has_warranty=False
+            )
+            self.assertTrue(result["success"])
+
+            refreshed = (await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-BULK-OFF-001")
+            )).scalar_one()
+            self.assertFalse(refreshed.has_warranty)
+            self.assertIsNone(refreshed.warranty_expires_at)
+
     async def test_kick_skips_when_team_missing_and_destroys_code(self):
         """Team 已被管理员删除时不应当作 failed，应直接销毁兑换码。"""
         async with self.session_factory() as session:

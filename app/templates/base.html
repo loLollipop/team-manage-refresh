@@ -192,6 +192,18 @@
 
     <script>
         const RENEWAL_API_URL = '/admin/renewal-requests/api?status_filter=pending';
+        const RENEWAL_BADGE_URL = '/admin/renewal-requests/pending-count';
+        // 多标签页同步：每 30s 轻量轮询 pending_count。Page 不可见时跳过，
+        // 避免后台 tab 持续抢请求。
+        const RENEWAL_BADGE_POLL_MS = 30000;
+
+        function describeRenewalHttpError(status) {
+            if (status === 401 || status === 403) return '登录已失效，请刷新页面后重试';
+            if (status === 429) return '操作过于频繁，请稍后再试';
+            if (status >= 500) return '服务异常，请稍后重试';
+            if (status === 404) return '记录不存在或已被处理';
+            return null;
+        }
 
         function escapeHtml(text) {
             if (text === null || text === undefined) return '';
@@ -328,6 +340,35 @@
             }
         }
 
+        async function syncRenewalBadgeFromServer() {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            try {
+                const response = await fetch(RENEWAL_BADGE_URL, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                if (data && data.success && typeof data.pending_count === 'number') {
+                    syncRenewalBadge(data.pending_count);
+                }
+            } catch (_) {
+                /* 静默失败：badge 不阻塞主流程 */
+            }
+        }
+
+        if (typeof window !== 'undefined') {
+            // 启动时若顶栏 badge 存在则定期与服务端对齐，多标签页处理后自然收敛。
+            window.addEventListener('DOMContentLoaded', () => {
+                if (document.getElementById('navbarTaskBadge')) {
+                    setInterval(syncRenewalBadgeFromServer, RENEWAL_BADGE_POLL_MS);
+                    document.addEventListener('visibilitychange', () => {
+                        if (!document.hidden) syncRenewalBadgeFromServer();
+                    });
+                }
+            });
+        }
+
         function openRenewalRequestsModal() {
             if (typeof showModal !== 'function') {
                 window.location.href = '/admin/renewal-requests';
@@ -380,21 +421,28 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ extension_days }),
                 });
-                const result = await response.json();
-                if (result.success) {
+                let result = null;
+                try { result = await response.json(); } catch (_) { result = null; }
+                if (response.ok && result && result.success) {
                     if (typeof showToast === 'function') {
                         showToast(result.message || '续期成功', 'success');
                     }
                     removeRenewalCard(requestId);
                     return;
                 }
+                const httpHint = describeRenewalHttpError(response.status);
+                const serverError = result && (result.error || result.detail || result.message);
                 if (typeof showToast === 'function') {
-                    showToast(result.error || '续期失败', 'error');
+                    showToast(serverError || httpHint || '续期失败', 'error');
+                }
+                if (response.status === 400 || response.status === 404 || response.status === 409) {
+                    // 该请求已被其他标签页/管理员处理掉，本地也同步移除以免误导。
+                    removeRenewalCard(requestId);
                 }
             } catch (err) {
                 console.error('续期失败', err);
                 if (typeof showToast === 'function') {
-                    showToast('请求失败，请稍后重试', 'error');
+                    showToast('网络异常，请稍后重试', 'error');
                 }
             } finally {
                 if (btn && document.body.contains(btn)) {
@@ -421,21 +469,27 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({}),
                 });
-                const result = await response.json();
-                if (result.success) {
+                let result = null;
+                try { result = await response.json(); } catch (_) { result = null; }
+                if (response.ok && result && result.success) {
                     if (typeof showToast === 'function') {
                         showToast(result.message || '已忽略', 'success');
                     }
                     removeRenewalCard(requestId);
                     return;
                 }
+                const httpHint = describeRenewalHttpError(response.status);
+                const serverError = result && (result.error || result.detail || result.message);
                 if (typeof showToast === 'function') {
-                    showToast(result.error || '忽略失败', 'error');
+                    showToast(serverError || httpHint || '忽略失败', 'error');
+                }
+                if (response.status === 400 || response.status === 404 || response.status === 409) {
+                    removeRenewalCard(requestId);
                 }
             } catch (err) {
                 console.error('忽略续期请求失败', err);
                 if (typeof showToast === 'function') {
-                    showToast('请求失败，请稍后重试', 'error');
+                    showToast('网络异常，请稍后重试', 'error');
                 }
             } finally {
                 if (btn && document.body.contains(btn)) {

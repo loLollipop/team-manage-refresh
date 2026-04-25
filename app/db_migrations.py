@@ -213,6 +213,53 @@ def run_auto_migration():
             ON renewal_requests (code)
         """)
 
+        # 把 renewal_requests.code 从 NOT NULL 改为允许 NULL：
+        # 兑换码销毁后 extended/ignored 历史保留作为审计证据，需要 code 可空。
+        # SQLite 不支持 ALTER COLUMN，必须重建表。
+        cursor.execute("PRAGMA table_info(renewal_requests)")
+        rr_cols = {row[1]: row for row in cursor.fetchall()}  # name -> full row
+        if rr_cols and rr_cols.get("code") and rr_cols["code"][3] == 1:
+            # 第四列 (notnull) == 1 表示当前 NOT NULL，需要重建
+            logger.info("renewal_requests.code 改为允许 NULL，重建表")
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            cursor.execute("""
+                CREATE TABLE renewal_requests_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL,
+                    code VARCHAR(32),
+                    team_id INTEGER,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    requested_at DATETIME,
+                    handled_at DATETIME,
+                    extension_days INTEGER,
+                    admin_note TEXT,
+                    FOREIGN KEY(code) REFERENCES redemption_codes(code),
+                    FOREIGN KEY(team_id) REFERENCES teams(id)
+                )
+            """)
+            cursor.execute("""
+                INSERT INTO renewal_requests_new
+                (id, email, code, team_id, status, requested_at, handled_at, extension_days, admin_note)
+                SELECT id, email, code, team_id, status, requested_at, handled_at, extension_days, admin_note
+                FROM renewal_requests
+            """)
+            cursor.execute("DROP TABLE renewal_requests")
+            cursor.execute("ALTER TABLE renewal_requests_new RENAME TO renewal_requests")
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_renewal_request_status
+                ON renewal_requests (status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_renewal_request_email
+                ON renewal_requests (email)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_renewal_request_code
+                ON renewal_requests (code)
+            """)
+            cursor.execute("PRAGMA foreign_keys=ON")
+            migrations_applied.append("renewal_requests.code -> NULLABLE")
+
         # 提交更改
         conn.commit()
         

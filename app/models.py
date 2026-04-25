@@ -149,7 +149,10 @@ class RenewalRequest(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), nullable=False, comment="申请续期的用户邮箱")
-    code = Column(String(32), ForeignKey("redemption_codes.code"), nullable=False, comment="兑换码")
+    # code 允许为空：当兑换码被销毁时，extended/ignored 历史记录保留作为审计证据，
+    # 此时 FK 指向已不存在的码会失败，因此销毁兑换码会把这些行的 code 置 NULL，
+    # 原始码值会同步追加到 admin_note 中保证可追溯。
+    code = Column(String(32), ForeignKey("redemption_codes.code"), nullable=True, comment="兑换码")
     team_id = Column(Integer, ForeignKey("teams.id"), comment="申请时关联的 Team ID")
     status = Column(String(20), default="pending", nullable=False, comment="状态: pending/extended/ignored")
     requested_at = Column(DateTime, default=get_now, comment="申请时间")
