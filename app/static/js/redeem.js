@@ -1260,7 +1260,7 @@ async function copyWarrantyCode(code) {
     }
 }
 
-async function submitRenewalRequest(email, code, teamId = null) {
+async function submitRenewalRequest(email, code, teamId = null, source = 'one_click_replace') {
     const response = await fetch('/warranty/renewal-request', {
         method: 'POST',
         headers: {
@@ -1270,7 +1270,7 @@ async function submitRenewalRequest(email, code, teamId = null) {
             email,
             code,
             team_id: teamId,
-            source: 'one_click_replace'
+            source
         })
     });
 
@@ -1302,7 +1302,7 @@ async function submitProactiveRenewal() {
     if (window.lucide) lucide.createIcons();
 
     try {
-        const data = await submitRenewalRequest(email, code, null);
+        const data = await submitRenewalRequest(email, code, null, 'proactive_renewal_tab');
         const isDup = Boolean(data?.duplicated);
         const message = isDup
             ? '该邮箱已提交过续期申请，请联系管理员处理'
