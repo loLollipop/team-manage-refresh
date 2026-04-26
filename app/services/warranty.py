@@ -17,6 +17,12 @@ from app.services.settings import (
 )
 from app.utils.time_utils import get_now
 
+# 自动踢人对无质保兑换码使用的默认使用期限（天）。
+# 与 init_db.py / admin 设置接口的默认值保持同步。
+DEFAULT_AUTO_KICK_USAGE_PERIOD_DAYS = 30
+MIN_AUTO_KICK_USAGE_PERIOD_DAYS = 1
+MAX_AUTO_KICK_USAGE_PERIOD_DAYS = 3650
+
 logger = logging.getLogger(__name__)
 
 # 全局频率限制字典: {(type, key): last_time}
@@ -56,6 +62,44 @@ class WarrantyService:
         """获取兑换码当前总质保天数（基础时长 + 人工续期）。"""
         base_days = int(redemption_code.warranty_days or 30)
         extension_days = max(int(getattr(redemption_code, "extension_days", 0) or 0), 0)
+        return base_days + extension_days
+
+    @staticmethod
+    def _normalize_auto_kick_usage_period_days(value: Any) -> int:
+        """规范化无质保兑换码的自动踢人使用期限（天）。"""
+        try:
+            days = int(str(value).strip())
+        except (TypeError, ValueError, AttributeError):
+            days = DEFAULT_AUTO_KICK_USAGE_PERIOD_DAYS
+        return max(
+            MIN_AUTO_KICK_USAGE_PERIOD_DAYS,
+            min(MAX_AUTO_KICK_USAGE_PERIOD_DAYS, days),
+        )
+
+    async def _get_auto_kick_usage_period_days(self, db_session: AsyncSession) -> int:
+        """读取并规范化无质保兑换码的自动踢人使用期限。"""
+        raw_value = await settings_service.get_setting(
+            db_session,
+            "auto_kick_usage_period_days",
+            str(DEFAULT_AUTO_KICK_USAGE_PERIOD_DAYS),
+        )
+        return self._normalize_auto_kick_usage_period_days(raw_value)
+
+    def _get_total_usage_days_for_code(
+        self,
+        redemption_code: RedemptionCode,
+        usage_period_days: int,
+    ) -> int:
+        """获取兑换码用于自动踢人的总使用天数。
+
+        - 质保兑换码：仍使用 ``warranty_days``（基础质保时长）+ ``extension_days``。
+        - 无质保兑换码：使用全局配置的 ``usage_period_days`` + ``extension_days``。
+        """
+        extension_days = max(int(getattr(redemption_code, "extension_days", 0) or 0), 0)
+        if redemption_code.has_warranty:
+            base_days = int(redemption_code.warranty_days or 30)
+        else:
+            base_days = int(usage_period_days)
         return base_days + extension_days
 
     async def _get_warranty_start_time(
@@ -104,6 +148,36 @@ class WarrantyService:
             return None
 
         days = self._get_total_warranty_days(redemption_code)
+        return start_time + timedelta(days=days)
+
+    async def _resolve_auto_kick_expiry_date(
+        self,
+        db_session: AsyncSession,
+        redemption_code: RedemptionCode,
+        reference_record: Optional[RedemptionRecord] = None,
+        expiration_mode: Optional[str] = None,
+        usage_period_days: Optional[int] = None,
+    ) -> Optional[datetime]:
+        """计算兑换码用于自动踢人的过期时间。
+
+        - 起算时间统一沿用质保设置中选择的 ``warranty_expiration_mode``：
+          first_use 时取首次兑换时间，refresh_on_redeem 时取最近一次激活时间。
+        - 总使用天数：质保码=warranty_days+extension_days；
+          无质保码=auto_kick_usage_period_days+extension_days。
+        """
+        start_time = await self._get_warranty_start_time(
+            db_session,
+            redemption_code,
+            reference_record=reference_record,
+            expiration_mode=expiration_mode,
+        )
+        if not start_time:
+            return None
+
+        if usage_period_days is None:
+            usage_period_days = await self._get_auto_kick_usage_period_days(db_session)
+
+        days = self._get_total_usage_days_for_code(redemption_code, usage_period_days)
         return start_time + timedelta(days=days)
 
     @staticmethod
@@ -760,9 +834,16 @@ class WarrantyService:
         db_session: AsyncSession,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """扫描按当前质保模式已过保、且仍绑定 Team/邮箱的质保码。"""
+        """扫描按当前质保模式已过期、且仍绑定 Team/邮箱的兑换码。
+
+        覆盖范围：质保码 + 无质保码。
+        - 质保码：按 ``warranty_days + extension_days`` 计算到期。
+        - 无质保码：按全局设置 ``auto_kick_usage_period_days + extension_days`` 计算到期。
+        起算时间统一沿用 ``warranty_expiration_mode`` 的选择。
+        """
         try:
             expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
+            usage_period_days = await self._get_auto_kick_usage_period_days(db_session)
 
             # 单次聚合查询每个候选码的 first redeemed_at 和 record_count，避免 N+1。
             agg_subq = (
@@ -779,7 +860,6 @@ class WarrantyService:
                 select(RedemptionCode, agg_subq.c.first_redeemed_at, agg_subq.c.record_count)
                 .outerjoin(agg_subq, agg_subq.c.code == RedemptionCode.code)
                 .where(
-                    RedemptionCode.has_warranty.is_(True),
                     RedemptionCode.used_by_email.is_not(None),
                     RedemptionCode.used_team_id.is_not(None),
                     RedemptionCode.used_at.is_not(None),
@@ -802,7 +882,7 @@ class WarrantyService:
                 if not start_time:
                     continue
 
-                days = self._get_total_warranty_days(redemption_code)
+                days = self._get_total_usage_days_for_code(redemption_code, usage_period_days)
                 expiry_date = start_time + timedelta(days=days)
                 if expiry_date >= now:
                     continue
@@ -817,8 +897,11 @@ class WarrantyService:
                     "team_id": redemption_code.used_team_id,
                     "used_at": redemption_code.used_at.isoformat() if redemption_code.used_at else None,
                     "warranty_expires_at": expiry_date.isoformat(),
+                    "expires_at": expiry_date.isoformat(),
+                    "has_warranty": bool(redemption_code.has_warranty),
                     "record_count": int(record_count or 0),
                     "expiration_mode": expiration_mode,
+                    "usage_period_days": usage_period_days,
                 })
 
             return {
@@ -828,12 +911,12 @@ class WarrantyService:
                 "error": None,
             }
         except Exception as e:
-            logger.exception("扫描过保质保码失败")
+            logger.exception("扫描过期兑换码失败")
             return {
                 "success": False,
                 "codes": [],
                 "total": 0,
-                "error": f"扫描过保质保码失败: {str(e)}",
+                "error": f"扫描过期兑换码失败: {str(e)}",
             }
 
     async def kick_and_destroy_expired_warranty_code(
@@ -841,7 +924,11 @@ class WarrantyService:
         db_session: AsyncSession,
         code: str,
     ) -> Dict[str, Any]:
-        """对单个已过保质保码执行踢人与销毁。
+        """对单个已过期兑换码执行踢人与销毁。
+
+        覆盖范围：质保码 + 无质保码。
+        - 质保码：用 ``warranty_days + extension_days`` 判定是否过期。
+        - 无质保码：用全局 ``auto_kick_usage_period_days + extension_days`` 判定。
 
         返回值包含 ``category`` 字段：
         - ``destroyed``：成功踢人并销毁
@@ -893,21 +980,13 @@ class WarrantyService:
             except Exception:
                 pass
 
-            if not redemption_code.has_warranty:
-                return {
-                    "success": True,
-                    "code": normalized_code,
-                    "category": "skipped",
-                    "skip_reason": "not_warranty_code",
-                    "error": None,
-                }
-
             expiration_mode = await settings_service.get_warranty_expiration_mode(db_session)
-            expiry_date = await self._resolve_warranty_expiry_date(
+            usage_period_days = await self._get_auto_kick_usage_period_days(db_session)
+            expiry_date = await self._resolve_auto_kick_expiry_date(
                 db_session,
                 redemption_code,
                 expiration_mode=expiration_mode,
-                force_recompute=True,
+                usage_period_days=usage_period_days,
             )
             if not expiry_date or expiry_date >= get_now():
                 return {
@@ -1012,7 +1091,7 @@ class WarrantyService:
         db_session: AsyncSession,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """扫描并执行整轮质保过期自动踢人任务。"""
+        """扫描并执行整轮兑换码过期自动踢人任务（涵盖质保码与无质保码）。"""
         scan_result = await self.scan_expired_warranty_codes(db_session, limit=limit)
         if not scan_result.get("success"):
             return {
@@ -1055,7 +1134,7 @@ class WarrantyService:
             "skipped": skipped,
             "failed": failed,
             "dismissed_renewal_requests": dismissed_renewal_requests,
-            "error": None if failed == 0 else "部分过保质保码处理失败",
+            "error": None if failed == 0 else "部分过期兑换码处理失败",
             "results": results,
         }
 

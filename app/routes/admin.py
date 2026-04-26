@@ -2207,6 +2207,7 @@ async def settings_page(
             "warranty_auto_kick_enabled": await settings_service.get_setting(db, "warranty_auto_kick_enabled", "false"),
             "warranty_auto_kick_interval_hours": await settings_service.get_setting(db, "warranty_auto_kick_interval_hours", "12"),
             "warranty_renewal_reminder_days": await settings_service.get_setting(db, "warranty_renewal_reminder_days", "7"),
+            "auto_kick_usage_period_days": await settings_service.get_setting(db, "auto_kick_usage_period_days", "30"),
             "default_team_max_members": await settings_service.get_setting(db, "default_team_max_members", "6"),
             "cliproxyapi_base_url": await settings_service.get_setting(db, "cliproxyapi_base_url", ""),
             "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
@@ -2271,10 +2272,16 @@ class TeamAutoRefreshSettingsRequest(BaseModel):
 
 
 class WarrantyAutoKickSettingsRequest(BaseModel):
-    """质保过期自动踢人设置请求"""
-    enabled: bool = Field(False, description="是否启用质保过期自动踢人")
+    """兑换码过期自动踢人设置请求"""
+    enabled: bool = Field(False, description="是否启用兑换码过期自动踢人")
     interval_hours: int = Field(12, ge=1, le=168, description="检查间隔（小时）")
     renewal_reminder_days: int = Field(7, ge=1, le=30, description="距离质保结束多少天内提醒续期")
+    usage_period_days: int = Field(
+        30,
+        ge=1,
+        le=3650,
+        description="无质保兑换码的使用期限（天）；用于自动踢人判定，不影响质保码（质保码按 warranty_days 计算）",
+    )
 
 
 class WarrantyExpirationSettingsRequest(BaseModel):
@@ -2858,15 +2865,16 @@ async def update_warranty_auto_kick_settings(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """更新质保过期自动踢人设置。"""
+    """更新兑换码过期自动踢人设置。"""
     try:
         from app.main import configure_warranty_auto_kick_job
 
         logger.info(
-            "管理员更新质保过期自动踢人配置: enabled=%s, interval_hours=%s, reminder_days=%s",
+            "管理员更新自动踢人配置: enabled=%s, interval_hours=%s, reminder_days=%s, usage_period_days=%s",
             auto_kick_data.enabled,
             auto_kick_data.interval_hours,
             auto_kick_data.renewal_reminder_days,
+            auto_kick_data.usage_period_days,
         )
 
         success = await settings_service.update_settings(
@@ -2875,6 +2883,7 @@ async def update_warranty_auto_kick_settings(
                 "warranty_auto_kick_enabled": str(auto_kick_data.enabled).lower(),
                 "warranty_auto_kick_interval_hours": str(auto_kick_data.interval_hours),
                 "warranty_renewal_reminder_days": str(auto_kick_data.renewal_reminder_days),
+                "auto_kick_usage_period_days": str(auto_kick_data.usage_period_days),
             }
         )
         if not success:
@@ -2900,6 +2909,7 @@ async def update_warranty_auto_kick_settings(
                 "enabled": auto_kick_data.enabled,
                 "interval_hours": applied_interval,
                 "renewal_reminder_days": auto_kick_data.renewal_reminder_days,
+                "usage_period_days": auto_kick_data.usage_period_days,
             }
         )
     except Exception:

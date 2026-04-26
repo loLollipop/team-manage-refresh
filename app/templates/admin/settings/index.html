@@ -205,23 +205,30 @@
         <div class="form-group">
             <label class="checkbox-label">
                 <input type="checkbox" id="warrantyAutoKickEnabled" name="enabled" {% if (warranty_auto_kick_enabled or 'false')|lower in ['1','true','yes','on'] %}checked{% endif %}>
-                <span>启用质保过期自动踢人</span>
+                <span>启用兑换码过期自动踢人</span>
             </label>
-            <p class="form-help">开启后，系统会按当前质保计算方式扫描已过保的质保兑换码；命中后自动从对应 Team 删除成员或撤回邀请，并销毁该兑换码及全部历史兑换记录。</p>
+            <p class="form-help">开启后，系统会扫描所有已过期且仍绑定 Team 的兑换码（质保码与无质保码均生效）；命中后自动从对应 Team 删除成员或撤回邀请，并销毁该兑换码及全部历史兑换记录。质保码按"质保时长 + 已批准的续期天数"判定；无质保码按下方"兑换码使用期限"判定。</p>
         </div>
 
         <div class="form-group">
             <label for="warrantyAutoKickInterval">检查间隔 (小时)</label>
             <input type="number" id="warrantyAutoKickInterval" name="interval_hours"
                 value="{{ warranty_auto_kick_interval_hours or '12' }}" min="1" max="168" class="form-control">
-            <p class="form-help">建议 6~24 小时。该任务会按当前后台选择的质保计算方式重新判断历史质保码是否过保。</p>
+            <p class="form-help">建议 6~24 小时。该任务会按当前后台选择的质保时长计算方式重新判断历史兑换码是否到期。</p>
+        </div>
+
+        <div class="form-group">
+            <label for="autoKickUsagePeriodDays">兑换码使用期限 (天)</label>
+            <input type="number" id="autoKickUsagePeriodDays" name="usage_period_days"
+                value="{{ auto_kick_usage_period_days or '30' }}" min="1" max="3650" class="form-control">
+            <p class="form-help">仅作用于无质保兑换码：起算时间沿用质保设置中的"质保时长计算方式"，超过该期限后自动踢人。质保兑换码不受该值影响（按其自身的质保时长判定）。默认 30 天。</p>
         </div>
 
         <div class="form-group">
             <label for="warrantyRenewalReminderDays">续期提醒设置 (天)</label>
             <input type="number" id="warrantyRenewalReminderDays" name="renewal_reminder_days"
                 value="{{ warranty_renewal_reminder_days or '7' }}" min="1" max="30" class="form-control">
-            <p class="form-help">当质保码剩余天数小于等于该值且用户准备换到新 Team 时，前台会弹出续期提醒。该值随时可调整，但仅在启用自动踢人后实际触发弹窗。</p>
+            <p class="form-help">当质保码剩余天数小于等于该值且用户准备换到新 Team 时，前台会弹出续期提醒。该值随时可调整，但仅在启用自动踢人后实际触发弹窗。无质保码不参与续期，因此不会弹窗提醒。</p>
         </div>
 
         <p class="form-help">该操作不可恢复，请确认售后流程允许系统自动清退成员并销毁兑换码后再开启。</p>
@@ -620,6 +627,7 @@
         const enabled = document.getElementById('warrantyAutoKickEnabled').checked;
         const interval_hours = parseInt(document.getElementById('warrantyAutoKickInterval').value);
         const renewal_reminder_days = parseInt(document.getElementById('warrantyRenewalReminderDays').value);
+        const usage_period_days = parseInt(document.getElementById('autoKickUsagePeriodDays').value);
 
         if (isNaN(interval_hours) || interval_hours < 1 || interval_hours > 168) {
             showToast('检查间隔必须在 1~168 小时之间', 'error');
@@ -631,13 +639,18 @@
             return;
         }
 
+        if (isNaN(usage_period_days) || usage_period_days < 1 || usage_period_days > 3650) {
+            showToast('兑换码使用期限必须在 1~3650 天之间', 'error');
+            return;
+        }
+
         try {
             const response = await fetch('/admin/settings/warranty-auto-kick', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ enabled, interval_hours, renewal_reminder_days })
+                body: JSON.stringify({ enabled, interval_hours, renewal_reminder_days, usage_period_days })
             });
 
             const data = await response.json();

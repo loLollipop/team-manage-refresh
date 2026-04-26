@@ -79,6 +79,11 @@ async def create_default_settings():
                 value="7",
                 description="距离质保结束多少天内提醒用户联系管理员续期"
             ),
+            Setting(
+                key="auto_kick_usage_period_days",
+                value="30",
+                description="无质保兑换码的使用期限（天）；自动踢人按该期限判定无质保码是否到期"
+            ),
         ]
 
         session.add_all(default_settings)

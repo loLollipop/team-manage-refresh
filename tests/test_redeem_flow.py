@@ -293,6 +293,200 @@ class WarrantyAutoKickTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(list(remaining_records.scalars().all()), [])
 
+    async def test_auto_kick_destroys_expired_non_warranty_code(self):
+        """无质保兑换码到期后也应被自动踢人并销毁。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=210,
+                email="owner@example.com",
+                access_token_encrypted="token-nw",
+                account_id="acct-non-warranty",
+                team_name="Non-Warranty Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="NORMAL-KICK-001",
+                status="used",
+                has_warranty=False,
+                warranty_days=30,
+                used_by_email="user@example.com",
+                used_team_id=210,
+                used_at=get_now() - timedelta(days=40),
+            )
+            record = RedemptionRecord(
+                email="user@example.com",
+                code="NORMAL-KICK-001",
+                team_id=210,
+                account_id="acct-non-warranty",
+                redeemed_at=get_now() - timedelta(days=40),
+                is_warranty_redemption=False,
+            )
+            session.add_all([
+                code,
+                record,
+                Setting(key="warranty_expiration_mode", value="first_use"),
+                Setting(key="auto_kick_usage_period_days", value="30"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+
+            async def stub_remove(team_id, email, db_session):
+                self.assertEqual(team_id, 210)
+                self.assertEqual(email, "user@example.com")
+                return {"success": True, "message": "成员已删除", "error": None}
+
+            service.team_service.remove_invite_or_member = stub_remove
+
+            scan_result = await service.scan_expired_warranty_codes(session)
+            self.assertTrue(scan_result["success"])
+            codes = [c["code"] for c in scan_result["codes"]]
+            self.assertIn("NORMAL-KICK-001", codes)
+
+            result = await service.kick_and_destroy_expired_warranty_code(session, "NORMAL-KICK-001")
+            self.assertTrue(result["success"])
+            self.assertEqual(result["category"], "destroyed")
+            self.assertEqual(result["action"], "kicked_and_destroyed")
+
+            remaining_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "NORMAL-KICK-001")
+            )
+            self.assertIsNone(remaining_code.scalar_one_or_none())
+
+    async def test_auto_kick_skips_non_warranty_code_within_usage_period(self):
+        """无质保兑换码尚未达到使用期限时，自动踢人不应触发。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=211,
+                email="owner2@example.com",
+                access_token_encrypted="token-nw2",
+                account_id="acct-non-warranty-2",
+                team_name="Non-Warranty Active Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="NORMAL-ACTIVE-001",
+                status="used",
+                has_warranty=False,
+                warranty_days=30,
+                used_by_email="user2@example.com",
+                used_team_id=211,
+                used_at=get_now() - timedelta(days=10),
+            )
+            record = RedemptionRecord(
+                email="user2@example.com",
+                code="NORMAL-ACTIVE-001",
+                team_id=211,
+                account_id="acct-non-warranty-2",
+                redeemed_at=get_now() - timedelta(days=10),
+                is_warranty_redemption=False,
+            )
+            session.add_all([
+                code,
+                record,
+                Setting(key="warranty_expiration_mode", value="first_use"),
+                Setting(key="auto_kick_usage_period_days", value="30"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+
+            async def stub_remove(team_id, email, db_session):
+                raise AssertionError("未到期的无质保码不应触发踢人")
+
+            service.team_service.remove_invite_or_member = stub_remove
+
+            scan_result = await service.scan_expired_warranty_codes(session)
+            self.assertTrue(scan_result["success"])
+            self.assertEqual(scan_result["total"], 0)
+
+            result = await service.kick_and_destroy_expired_warranty_code(session, "NORMAL-ACTIVE-001")
+            self.assertTrue(result["success"])
+            self.assertEqual(result["category"], "skipped")
+            self.assertEqual(result["skip_reason"], "not_expired")
+
+            remaining_code = await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "NORMAL-ACTIVE-001")
+            )
+            self.assertIsNotNone(remaining_code.scalar_one_or_none())
+
+    async def test_auto_kick_usage_period_setting_drives_non_warranty_kick(self):
+        """调整 auto_kick_usage_period_days 会改变无质保码的判定结果。"""
+        async with self.session_factory() as session:
+            team = Team(
+                id=212,
+                email="owner3@example.com",
+                access_token_encrypted="token-nw3",
+                account_id="acct-non-warranty-3",
+                team_name="Non-Warranty Period Team",
+                current_members=1,
+                max_members=5,
+                status="active",
+                pool_type="normal",
+            )
+            session.add(team)
+            await session.commit()
+
+            code = RedemptionCode(
+                code="NORMAL-PERIOD-001",
+                status="used",
+                has_warranty=False,
+                warranty_days=30,
+                used_by_email="user3@example.com",
+                used_team_id=212,
+                used_at=get_now() - timedelta(days=20),
+            )
+            record = RedemptionRecord(
+                email="user3@example.com",
+                code="NORMAL-PERIOD-001",
+                team_id=212,
+                account_id="acct-non-warranty-3",
+                redeemed_at=get_now() - timedelta(days=20),
+                is_warranty_redemption=False,
+            )
+            session.add_all([
+                code,
+                record,
+                Setting(key="warranty_expiration_mode", value="first_use"),
+                # 期限默认 30 天，码使用 20 天，未到期。
+                Setting(key="auto_kick_usage_period_days", value="30"),
+            ])
+            await session.commit()
+
+            service = WarrantyService()
+
+            scan_default = await service.scan_expired_warranty_codes(session)
+            self.assertTrue(scan_default["success"])
+            self.assertEqual(scan_default["total"], 0)
+
+            # 改为 7 天，码使用 20 天，已过期。
+            settings_service.clear_cache()
+            await session.execute(
+                __import__("sqlalchemy").update(Setting)
+                .where(Setting.key == "auto_kick_usage_period_days")
+                .values(value="7")
+            )
+            await session.commit()
+
+            scan_short = await service.scan_expired_warranty_codes(session)
+            self.assertTrue(scan_short["success"])
+            codes = [c["code"] for c in scan_short["codes"]]
+            self.assertIn("NORMAL-PERIOD-001", codes)
+            self.assertEqual(scan_short["codes"][0]["usage_period_days"], 7)
+            self.assertFalse(scan_short["codes"][0]["has_warranty"])
+
     async def test_extension_days_prevent_auto_kick_until_extended_expiry(self):
         async with self.session_factory() as session:
             team = Team(
