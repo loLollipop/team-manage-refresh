@@ -49,6 +49,9 @@
                     <button type="button" id="tabWarranty" class="top-tab" data-tab="warranty" role="tab" aria-selected="false" aria-controls="warrantyPanel">
                         <i data-lucide="shield"></i> 质保查询
                     </button>
+                    <button type="button" id="tabRenewal" class="top-tab" data-tab="renewal" role="tab" aria-selected="false" aria-controls="renewalPanel">
+                        <i data-lucide="calendar-clock"></i> 续期申请
+                    </button>
                 </nav>
 
                 <div id="step1" class="step active">
@@ -130,6 +133,47 @@
                             <p>质保仅限账号封禁或 Team 异常，不包含主动退出 Team 的情况。</p>
                         </div>
                     </section>
+
+                    <section id="renewalPanel" class="tab-panel" role="tabpanel" aria-labelledby="tabRenewal">
+                        <div class="panel-head panel-head-with-meta">
+                            <div>
+                                <h2>续期申请</h2>
+                                <p>提前为质保兑换码申请续期，无需等到临近到期。</p>
+                            </div>
+                            <div class="panel-meta-row" aria-label="续期说明">
+                                <span class="panel-meta-pill"><i data-lucide="shield-check"></i><span>仅限质保兑换码</span></span>
+                                <span class="panel-meta-pill"><i data-lucide="user-check"></i><span>管理员审批</span></span>
+                            </div>
+                        </div>
+
+                        <form id="renewalForm" class="stack-form">
+                            <div class="form-group">
+                                <label for="renewalEmail">邮箱地址 <span class="required-star">*</span></label>
+                                <div class="field-wrap">
+                                    <i data-lucide="mail" class="field-icon"></i>
+                                    <input type="email" id="renewalEmail" name="email" required placeholder="your@email.com" class="form-input" autocomplete="email">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="renewalCode">兑换码 <span class="required-star">*</span></label>
+                                <div class="field-wrap">
+                                    <i data-lucide="key-round" class="field-icon"></i>
+                                    <input type="text" id="renewalCode" name="code" required placeholder="XXXX-XXXX-XXXX-XXXX" class="form-input" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                </div>
+                                <p class="field-hint">需为已使用过的质保兑换码，普通无质保码不支持续期。</p>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary" id="renewalSubmitBtn">
+                                <i data-lucide="send"></i> 提交续期申请
+                            </button>
+                        </form>
+
+                        <div class="warning-box">
+                            <i data-lucide="info"></i>
+                            <p>提交后请联系管理员尽快处理；管理员审批通过后会自动累加质保天数，您无需再次提交。</p>
+                        </div>
+                    </section>
                 </div>
 
                 <div id="step3" class="step" aria-live="polite" aria-atomic="true">
@@ -184,7 +228,7 @@
         };
     </script>
 
-    <script src="/static/js/redeem.js?v=20260414-redeem-refresh-1"></script>
+    <script src="/static/js/redeem.js?v=20260426-renewal-tab-1"></script>
     <script>
         if (window.lucide) lucide.createIcons();
     </script>

@@ -578,11 +578,14 @@ function switchTopTab(tabName) {
 
     const redeemPanel = document.getElementById('redeemPanel');
     const warrantyPanel = document.getElementById('warrantyPanel');
+    const renewalPanel = document.getElementById('renewalPanel');
     const tabRedeem = document.getElementById('tabRedeem');
     const tabWarranty = document.getElementById('tabWarranty');
+    const tabRenewal = document.getElementById('tabRenewal');
 
     if (redeemPanel) redeemPanel.classList.toggle('active', tabName === 'redeem');
     if (warrantyPanel) warrantyPanel.classList.toggle('active', tabName === 'warranty');
+    if (renewalPanel) renewalPanel.classList.toggle('active', tabName === 'renewal');
     if (tabRedeem) {
         tabRedeem.classList.toggle('active', tabName === 'redeem');
         tabRedeem.setAttribute('aria-selected', tabName === 'redeem' ? 'true' : 'false');
@@ -593,8 +596,16 @@ function switchTopTab(tabName) {
         tabWarranty.setAttribute('aria-selected', tabName === 'warranty' ? 'true' : 'false');
         tabWarranty.setAttribute('tabindex', tabName === 'warranty' ? '0' : '-1');
     }
+    if (tabRenewal) {
+        tabRenewal.classList.toggle('active', tabName === 'renewal');
+        tabRenewal.setAttribute('aria-selected', tabName === 'renewal' ? 'true' : 'false');
+        tabRenewal.setAttribute('tabindex', tabName === 'renewal' ? '0' : '-1');
+    }
 
-    updateTabIndicator(tabName === 'redeem' ? tabRedeem : tabWarranty);
+    let activeTabEl = tabRedeem;
+    if (tabName === 'warranty') activeTabEl = tabWarranty;
+    else if (tabName === 'renewal') activeTabEl = tabRenewal;
+    updateTabIndicator(activeTabEl);
 }
 
 function resetRedeemResult() {
@@ -772,7 +783,8 @@ async function handleDynamicActionClick(event) {
 function handleTopTabKeydown(event) {
     const tabs = [
         document.getElementById('tabRedeem'),
-        document.getElementById('tabWarranty')
+        document.getElementById('tabWarranty'),
+        document.getElementById('tabRenewal')
     ].filter(Boolean);
 
     const currentIndex = tabs.indexOf(event.currentTarget);
@@ -804,6 +816,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabWarranty) {
         tabWarranty.addEventListener('click', () => switchTopTab('warranty'));
         tabWarranty.addEventListener('keydown', handleTopTabKeydown);
+    }
+    const tabRenewal = document.getElementById('tabRenewal');
+    const renewalForm = document.getElementById('renewalForm');
+    if (tabRenewal) {
+        tabRenewal.addEventListener('click', () => switchTopTab('renewal'));
+        tabRenewal.addEventListener('keydown', handleTopTabKeydown);
+    }
+    if (renewalForm) {
+        renewalForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await submitProactiveRenewal();
+        });
     }
     if (warrantyForm) {
         warrantyForm.addEventListener('submit', async (event) => {
@@ -1257,6 +1281,44 @@ async function submitRenewalRequest(email, code, teamId = null) {
 
     const rawError = (data?.detail ?? data?.error ?? data?.message ?? data?.reason) || text;
     throw new Error(rawError || '提交续期请求失败');
+}
+
+async function submitProactiveRenewal() {
+    const emailInput = document.getElementById('renewalEmail');
+    const codeInput = document.getElementById('renewalCode');
+    const submitBtn = document.getElementById('renewalSubmitBtn');
+    if (!emailInput || !codeInput || !submitBtn) return;
+
+    const email = emailInput.value.trim();
+    const code = codeInput.value.trim();
+    if (!email || !code) {
+        showToast('请填写邮箱和兑换码', 'error');
+        return;
+    }
+
+    const originalHtml = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i data-lucide="loader-circle" class="spinning"></i> 提交中...';
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const data = await submitRenewalRequest(email, code, null);
+        const isDup = Boolean(data?.duplicated);
+        const message = isDup
+            ? '该邮箱已提交过续期申请，请联系管理员处理'
+            : '续期申请已提交，请联系管理员尽快处理';
+        showToast(message, 'success');
+        if (!isDup) {
+            codeInput.value = '';
+        }
+    } catch (err) {
+        const msg = err?.message || '提交续期申请失败，请稍后重试';
+        showToast(msg, 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHtml;
+        if (window.lucide) lucide.createIcons();
+    }
 }
 
 async function maybeHandleRenewalReminder(code, email, btn, options = {}) {
