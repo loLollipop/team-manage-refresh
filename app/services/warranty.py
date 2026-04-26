@@ -248,7 +248,7 @@ class WarrantyService:
         if not redemption_code:
             return {"success": False, "error": "兑换码不存在或已销毁"}
         if not redemption_code.has_warranty:
-            return {"success": False, "error": "该兑换码不是质保兑换码，无法申请续期"}
+            return {"success": False, "error": "非质保码不支持续期申请"}
 
         # 2. 校验归属：必须有 (email, code) 命中的兑换记录（大小写不敏感）
         ownership_result = await db_session.execute(
@@ -260,7 +260,7 @@ class WarrantyService:
         if int(ownership_result.scalar() or 0) == 0:
             return {
                 "success": False,
-                "error": "该邮箱未使用该兑换码，无法申请续期",
+                "error": "该邮箱未使用过此兑换码，无法申请续期",
             }
 
         # 3. 已有 pending 请求直接返回（幂等）
