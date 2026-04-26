@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from app/__init__.py
+        id: version
+        run: |
+          tag="${GITHUB_REF##*/}"
+          file_version=$(python3 -c "import re,pathlib;print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('app/__init__.py').read_text()).group(1))")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "file=$file_version" >> "$GITHUB_OUTPUT"
+          if [ "$tag" != "v$file_version" ]; then
+            echo "::error::Tag $tag does not match app/__init__.py version $file_version"
+            exit 1
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false

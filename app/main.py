@@ -20,6 +20,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from contextlib import asynccontextmanager
 # 导入路由
+from app import __version__
 from app.routes import redeem, auth, admin, api, user, warranty
 from app.config import settings
 from app.database import init_db, close_db, AsyncSessionLocal
@@ -430,7 +431,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="GPT Team 管理系统",
     description="ChatGPT Team 账号管理和兑换码自动邀请系统",
-    version="0.1.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -515,6 +516,9 @@ def escape_js(value):
 
 templates.env.filters["format_datetime"] = format_datetime
 templates.env.filters["escape_js"] = escape_js
+
+# 版本号在所有模板中可用，无需在每个 TemplateResponse 里手动传
+templates.env.globals["app_version"] = __version__
 
 # 配置日志
 logging.basicConfig(
