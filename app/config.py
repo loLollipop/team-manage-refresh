@@ -5,6 +5,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
+from app import __version__
+
 
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -15,7 +17,7 @@ class Settings(BaseSettings):
 
     # 应用配置
     app_name: str = "GPT Team 管理系统"
-    app_version: str = "0.1.0"
+    app_version: str = __version__
     app_host: str = "0.0.0.0"
     app_port: int = 8008
     debug: bool = False
