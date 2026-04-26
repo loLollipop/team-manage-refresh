@@ -59,7 +59,7 @@
                 <input type="checkbox" id="proxyEnabled" name="enabled" {% if proxy_enabled %}checked{% endif %}>
                 <span>启用代理</span>
             </label>
-            <p class="form-help">启用后,系统服务端出站请求将通过代理服务器,包括 ChatGPT、CliproxyAPI 和 Webhook</p>
+            <p class="form-help">出站请求将经代理转发，包括 ChatGPT / CliproxyAPI / Webhook。</p>
         </div>
 
         <div class="form-group">
@@ -67,7 +67,6 @@
             <input type="text" id="proxyUrl" name="proxy" value="{{ proxy or '' }}"
                 placeholder="http://127.0.0.1:7890, https://127.0.0.1:8443, socks5://127.0.0.1:1080 或 socks5h://127.0.0.1:1080"
                 class="form-control">
-            <p class="form-help">支持 HTTP、HTTPS、SOCKS5 和 SOCKS5H (远程 DNS 解析) 代理</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存代理配置</button>
@@ -100,7 +99,7 @@
         </div>
 
         <button type="submit" class="btn btn-primary">修改密码</button>
-        <p class="form-help">修改密码后需要重新登录</p>
+        <p class="form-help">修改后需要重新登录。</p>
     </form>
 </div>
 
@@ -120,7 +119,6 @@
                 <option value="ERROR" {% if log_level=='ERROR' %}selected{% endif %}>ERROR - 错误信息</option>
                 <option value="CRITICAL" {% if log_level=='CRITICAL' %}selected{% endif %}>CRITICAL - 严重错误</option>
             </select>
-            <p class="form-help">调整系统日志的详细程度,DEBUG级别会记录最详细的信息</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存日志级别</button>
@@ -140,21 +138,20 @@
             <label for="tokenRefreshInterval">刷新检查间隔 (分钟)</label>
             <input type="number" id="tokenRefreshInterval" name="interval_minutes"
                 value="{{ token_refresh_interval_minutes or '30' }}" min="5" max="1440" class="form-control">
-            <p class="form-help">定时任务执行频率，建议 30 分钟</p>
+            <p class="form-help">建议 30 分钟。</p>
         </div>
 
         <div class="form-group">
             <label for="tokenRefreshWindow">提前刷新窗口 (小时)</label>
             <input type="number" id="tokenRefreshWindow" name="window_hours"
                 value="{{ token_refresh_window_hours or '2' }}" min="1" max="24" class="form-control">
-            <p class="form-help">当 Access Token 距离过期小于此窗口时触发自动刷新</p>
+            <p class="form-help">AT 距过期小于该窗口时触发刷新。</p>
         </div>
 
         <div class="form-group">
             <label for="tokenRefreshClientId">默认 OAuth Client ID</label>
             <input type="text" id="tokenRefreshClientId" name="client_id" value="{{ token_refresh_client_id or '' }}"
-                placeholder="用于 refresh_token 换新 AT（导入时未填写 client_id 则使用此值）" class="form-control">
-            <p class="form-help">建议填写你当前使用的 OpenAI OAuth Client ID，便于 RT 刷新流程统一配置</p>
+                placeholder="用于 refresh_token 换新 AT（导入时未填写则使用此值）" class="form-control">
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Token 刷新配置</button>
@@ -173,21 +170,20 @@
                 <input type="checkbox" id="teamAutoRefreshEnabled" name="enabled" {% if (periodic_team_sync_enabled or 'true')|lower in ['1','true','yes','on'] %}checked{% endif %}>
                 <span>启用 Team 周期状态自动刷新</span>
             </label>
-            <p class="form-help">关闭后将不再自动检查 Team 状态，仅可手动刷新。</p>
         </div>
 
         <div class="form-group">
             <label for="teamAutoRefreshInterval">检查间隔 (小时)</label>
             <input type="number" id="teamAutoRefreshInterval" name="interval_hours"
                 value="{{ periodic_team_sync_interval_hours or '12' }}" min="1" max="168" class="form-control">
-            <p class="form-help">定时任务运行频率。建议 6~24 小时。</p>
+            <p class="form-help">建议 6~24 小时。</p>
         </div>
 
         <div class="form-group">
             <label for="teamAutoRefreshDays">触发刷新阈值 (天)</label>
             <input type="number" id="teamAutoRefreshDays" name="refresh_interval_days"
                 value="{{ periodic_team_sync_days or '7' }}" min="1" max="30" class="form-control">
-            <p class="form-help">当 Team 距上次同步达到该天数时，自动执行状态刷新。</p>
+            <p class="form-help">Team 距上次同步达到该天数时自动刷新状态。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 自动刷新配置</button>
@@ -207,28 +203,28 @@
                 <input type="checkbox" id="warrantyAutoKickEnabled" name="enabled" {% if (warranty_auto_kick_enabled or 'false')|lower in ['1','true','yes','on'] %}checked{% endif %}>
                 <span>启用兑换码过期自动踢人</span>
             </label>
-            <p class="form-help">开启后，系统会扫描所有已过期且仍绑定 Team 的兑换码（质保码与无质保码均生效）；命中后自动从对应 Team 删除成员或撤回邀请，并销毁该兑换码及全部历史兑换记录。质保码按"质保时长 + 已批准的续期天数"判定；无质保码按下方"兑换码使用期限"判定。</p>
+            <p class="form-help">开启后扫描所有过期且仍绑定 Team 的兑换码，自动踢人并销毁兑换码及全部历史记录。质保码按"质保时长 + 续期天数"判定，无质保码按下方"使用期限"判定。</p>
         </div>
 
         <div class="form-group">
             <label for="warrantyAutoKickInterval">检查间隔 (小时)</label>
             <input type="number" id="warrantyAutoKickInterval" name="interval_hours"
                 value="{{ warranty_auto_kick_interval_hours or '12' }}" min="1" max="168" class="form-control">
-            <p class="form-help">建议 6~24 小时。该任务会按当前后台选择的质保时长计算方式重新判断历史兑换码是否到期。</p>
+            <p class="form-help">建议 6~24 小时。任务会按当前质保计算方式重判历史兑换码。</p>
         </div>
 
         <div class="form-group">
             <label for="autoKickUsagePeriodDays">兑换码使用期限 (天)</label>
             <input type="number" id="autoKickUsagePeriodDays" name="usage_period_days"
                 value="{{ auto_kick_usage_period_days or '30' }}" min="1" max="3650" class="form-control">
-            <p class="form-help">仅作用于无质保兑换码：起算时间沿用质保设置中的"质保时长计算方式"，超过该期限后自动踢人。质保兑换码不受该值影响（按其自身的质保时长判定）。默认 30 天。</p>
+            <p class="form-help">仅作用于无质保兑换码，起算方式沿用"质保时长计算方式"。质保码按自身质保时长判定，不受此值影响。</p>
         </div>
 
         <div class="form-group">
             <label for="warrantyRenewalReminderDays">续期提醒设置 (天)</label>
             <input type="number" id="warrantyRenewalReminderDays" name="renewal_reminder_days"
                 value="{{ warranty_renewal_reminder_days or '7' }}" min="1" max="30" class="form-control">
-            <p class="form-help">当质保码剩余天数小于等于该值且用户准备换到新 Team 时，前台会弹出续期提醒。该值随时可调整，但仅在启用自动踢人后实际触发弹窗。无质保码不参与续期，因此不会弹窗提醒。</p>
+            <p class="form-help">质保码剩余 ≤ 该值且用户切换 Team 时弹出续期提醒（仅启用自动踢人后生效）。无质保码不参与续期。</p>
         </div>
 
         <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border-color, #e5e7eb);">
@@ -238,17 +234,13 @@
                 <input type="checkbox" id="autoKickUnauthorizedEnabled" name="unauthorized_enabled" {% if (auto_kick_unauthorized_enabled or 'false')|lower in ['1','true','yes','on'] %}checked{% endif %}>
                 <span>启用非授权成员清退（清除偷偷拉进来的人）</span>
             </label>
-            <p class="form-help">
-                开启后，自动踢人任务会同时扫描所有 Team 当前成员，把"<b>开关启用之后</b>"新加入、且**没有兑换码记录**、**不是后台手工邀请**、**不是 Team 自身管理员邮箱**的成员清退。<br>
-                <b>关键安全设计</b>：仅作用于本开关启用之后新加入的成员；本次更新前已经存在的所有成员永久豁免，避免误杀历史手工邀请的成员。<br>
-                后台手工邀请（"Team 成员管理 → 新增成员邮箱"）发出的邀请会自动加入白名单。
-            </p>
+            <p class="form-help">仅清退"开关启用之后"新加入、且无兑换码记录、非后台手工邀请、非 Team 管理员邮箱的成员。开关启用之前的成员永久豁免；后台手工邀请的邮箱自动加白名单。</p>
             {% if auto_kick_unauthorized_enabled_since %}
-            <p class="form-help" style="color: var(--accent-color, #2563eb);">当前生效起点：{{ auto_kick_unauthorized_enabled_since }}（仅清退该时间之后新加入的非授权成员）</p>
+            <p class="form-help" style="color: var(--accent-color, #2563eb);">生效起点：{{ auto_kick_unauthorized_enabled_since }}</p>
             {% endif %}
         </div>
 
-        <p class="form-help">该操作不可恢复，请确认售后流程允许系统自动清退成员并销毁兑换码后再开启。</p>
+        <p class="form-help">该操作不可恢复，开启前请确认售后流程允许自动清退成员并销毁兑换码。</p>
         <button type="submit" class="btn btn-primary">保存自动踢人配置</button>
     </form>
 </div>
@@ -271,7 +263,7 @@
                     每次质保重兑成功后刷新
                 </option>
             </select>
-            <p class="form-help">默认推荐“首次使用后开始计算”。开启刷新模式后，用户每次质保重兑成功都会重新获得完整质保时长。</p>
+            <p class="form-help">推荐"首次使用后开始计算"。刷新模式下每次重兑成功会重新获得完整质保时长。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存质保设置</button>
@@ -290,7 +282,7 @@
             <label for="defaultTeamMaxMembers">默认总席位</label>
             <input type="number" id="defaultTeamMaxMembers" name="default_team_max_members"
                 value="{{ default_team_max_members or '6' }}" min="1" max="100" class="form-control">
-            <p class="form-help">新导入 Team 时写入的默认总席位。默认值为 6，仅影响后续新导入的数据。</p>
+            <p class="form-help">新导入 Team 默认总席位，仅影响后续导入。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存 Team 导入配置</button>
@@ -308,14 +300,14 @@
             <label for="cliproxyapiBaseUrl">站点地址</label>
             <input type="text" id="cliproxyapiBaseUrl" name="base_url" value="{{ cliproxyapi_base_url or '' }}"
                 placeholder="https://cli-proxy-api.example.com" class="form-control">
-            <p class="form-help">填写 CliproxyAPI 站点根地址，保存时会自动去掉末尾斜杠。</p>
+            <p class="form-help">站点根地址，保存时自动去尾部斜杠。</p>
         </div>
 
         <div class="form-group">
             <label for="cliproxyapiApiKey">管理密钥</label>
             <input type="password" id="cliproxyapiApiKey" name="api_key" value="{{ cliproxyapi_api_key or '' }}"
                 placeholder="Bearer 管理密钥中的原始 token 值" class="form-control">
-            <p class="form-help">保存后，Team 列表中的单条/批量推送都会使用该密钥调用 `/v0/management/auth-files`。</p>
+            <p class="form-help">推送 Team 配置时调用 `/v0/management/auth-files` 所用密钥。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存 CliproxyAPI 配置</button>
@@ -347,7 +339,6 @@
                     </span>
                 </label>
             </div>
-            <p class="form-help">保存后控制台和兑换页会统一使用同一套配色。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存系统配色</button>
@@ -365,21 +356,21 @@
             <label for="webhookUrl">Webhook URL</label>
             <input type="text" id="webhookUrl" name="webhook_url" value="{{ webhook_url or '' }}"
                 placeholder="https://your-api.com/webhook" class="form-control">
-            <p class="form-help">当系统总剩余车位低于阈值时,系统将向此URL发送POST请求</p>
+            <p class="form-help">剩余车位低于阈值时向该 URL POST 通知。</p>
         </div>
 
         <div class="form-group">
             <label for="lowStockThreshold">车位预警阈值</label>
             <input type="number" id="lowStockThreshold" name="low_stock_threshold"
                 value="{{ low_stock_threshold or '10' }}" min="0" class="form-control">
-            <p class="form-help">全系统所有活跃 Team 的总剩余车位低于或等于此数值时触发补货通知</p>
+            <p class="form-help">所有活跃 Team 剩余车位之和 ≤ 该值时触发补货通知。</p>
         </div>
 
         <div class="form-group">
             <label for="apiKey">API Key (用于补货对接)</label>
             <input type="text" id="apiKey" name="api_key" value="{{ api_key or '' }}"
                 placeholder="用于外部程序调用的密钥 (X-API-Key)" class="form-control">
-            <p class="form-help">设置后,第三方程序可以通过 Header `X-API-Key` 认证管理员接口</p>
+            <p class="form-help">供第三方通过 Header `X-API-Key` 调用管理员接口。</p>
         </div>
 
         <button type="submit" class="btn btn-primary">保存配置</button>

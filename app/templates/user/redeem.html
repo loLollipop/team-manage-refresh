@@ -76,7 +76,6 @@
                                     <i data-lucide="mail" class="field-icon"></i>
                                     <input type="email" id="email" name="email" required placeholder="your@email.com" class="form-input" autocomplete="email">
                                 </div>
-                                <p class="field-hint">邀请邮件将发送到该地址，请确认可正常接收。</p>
                             </div>
 
                             <div class="form-group">
@@ -85,7 +84,7 @@
                                     <i data-lucide="key-round" class="field-icon"></i>
                                     <input type="text" id="code" name="code" required placeholder="XXXX-XXXX-XXXX-XXXX" class="form-input" autocomplete="off" autocapitalize="off" spellcheck="false">
                                 </div>
-                                <p class="field-hint">兑换码区分大小写，请复制粘贴避免输错。</p>
+                                <p class="field-hint">区分大小写，建议复制粘贴。</p>
                             </div>
 
                             <button type="submit" class="btn btn-primary" id="verifyBtn">
@@ -106,11 +105,6 @@
                             </div>
                         </div>
 
-                        <div class="info-box">
-                            <i data-lucide="clipboard-check" class="info-icon"></i>
-                            <p>质保期为 <strong>一个月</strong>，在有效期内可用原兑换码重新加入 Team。</p>
-                        </div>
-
                         <form id="warrantyForm" class="warranty-query-form">
                             <div class="warranty-query-row">
                                 <div class="form-group warranty-query-field">
@@ -124,7 +118,7 @@
                                     <i data-lucide="search-check"></i> 查询质保状态
                                 </button>
                             </div>
-                            <p id="warrantyHint" class="field-hint warranty-query-hint">优先支持邮箱查询，可同时查看该账号下的兑换记录与质保状态。</p>
+                            <p id="warrantyHint" class="field-hint warranty-query-hint">推荐用邮箱查询，可同时看兑换记录与质保状态。</p>
                         </form>
 
                         <div id="warrantyResultContainer" class="warranty-result-container" hidden>

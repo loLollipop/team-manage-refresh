@@ -333,7 +333,7 @@
             <div class="workbench-empty-state">
                 <div class="empty-state">
                     <i data-lucide="package-open" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
-                    <p>当前还没有兑换码数据，可以先生成一批新码或导入后再做筛选与批量维护。</p>
+                    <p>还没有兑换码，先生成一批吧。</p>
                     <button onclick="showModal('generateCodeModal')" class="btn btn-primary">立即生成</button>
                 </div>
             </div>
@@ -413,11 +413,8 @@
             <button class="modal-close" onclick="hideModal('invalidCodesModal')">&times;</button>
         </div>
         <div class="modal-body">
-            <div class="alert alert-info" style="margin-bottom: 1rem;">
-                扫描可安全清理的无效兑换码。
-            </div>
             <div id="invalidCodesEmptyState" class="empty-state" style="display: none; padding: 1rem 0;">
-                <p>当前没有扫描到可安全清理的无效兑换码。</p>
+                <p>没有需要清理的无效兑换码。</p>
             </div>
             <div id="invalidCodesTableWrapper" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
@@ -458,7 +455,7 @@
         </div>
         <div class="modal-body">
             <div class="alert alert-warning" style="margin-bottom: 1rem;">
-                所有兑换码都支持手动发起删除，但系统只会真正删除<strong>没有任何关联记录</strong>的兑换码。已使用或仍有关联记录的兑换码会被明确拦截，防止误删。
+                仅可删除无任何关联记录的兑换码；已使用或仍有关联记录的将被拦截。
             </div>
             <form id="deleteCodeForm" onsubmit="handleDeleteCode(event)">
                 <input type="hidden" id="delete-code-value">
@@ -471,7 +468,6 @@
                     <label>请输入完整兑换码确认删除</label>
                     <input type="text" id="delete-code-confirm" class="form-control"
                         placeholder="请输入上方完整兑换码" autocomplete="off" required>
-                    <small class="form-text">如果该兑换码存在任何关联记录，系统会直接拒绝删除；历史脏数据请使用上方“扫描无效兑换码”功能单独处理。</small>
                 </div>
                 <button type="submit" class="btn btn-danger" style="margin-top: 1rem;">确认删除</button>
             </form>
