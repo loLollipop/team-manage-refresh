@@ -65,7 +65,7 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--bg-main);
     color: var(--text-main);
     line-height: 1.5;
@@ -858,6 +858,29 @@ body.admin-theme .toast {
     border-bottom: none;
 }
 
+.data-table tbody tr {
+    position: relative;
+    transition: background-color 0.15s ease;
+}
+
+.data-table tbody tr::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--primary);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    border-radius: 0 2px 2px 0;
+    z-index: 1;
+}
+
+.data-table tbody tr:hover::before {
+    opacity: 1;
+}
+
 .data-table tbody tr:hover td {
     background-color: var(--table-row-hover);
 }
@@ -1232,8 +1255,10 @@ body.admin-theme .toast {
     width: 100%;
     max-width: 500px;
     box-shadow: var(--shadow-lg);
-    transform: scale(0.95);
-    transition: var(--transition-base);
+    transform: scale(0.96) translateY(12px);
+    opacity: 0.85;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     margin: auto;
     position: relative;
     max-height: calc(100vh - 4rem);
@@ -1242,7 +1267,8 @@ body.admin-theme .toast {
 }
 
 .modal-overlay.show .modal {
-    transform: scale(1);
+    transform: scale(1) translateY(0);
+    opacity: 1;
 }
 
 .modal-header {
@@ -1281,21 +1307,25 @@ body.admin-theme .toast {
     width: min(420px, calc(100vw - 2rem));
     min-height: 72px;
     padding: 0.95rem 1rem;
-    background: var(--bg-surface);
+    background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
     color: var(--text-main);
     border-radius: var(--radius-md);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28),
+                0 0 0 1px color-mix(in srgb, var(--border-base) 60%, transparent);
     display: flex;
     align-items: flex-start;
     gap: 0.85rem;
     --toast-offset: calc(100% + 20px);
     transform: translate3d(0, var(--toast-offset), 0);
     opacity: 0;
-    transition: transform var(--transition-base), opacity var(--transition-fast);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.3s ease;
     z-index: 10000;
     border: 1px solid var(--border-base);
     pointer-events: none;
     isolation: isolate;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .toast.toast-over-modal {
@@ -1414,48 +1444,83 @@ body.admin-theme .toast {
 }
 
 .stat-card {
-    background-color: var(--surface-elev-1);
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--bg-surface) 96%, var(--primary-soft) 4%),
+        color-mix(in srgb, var(--bg-surface) 98%, var(--primary) 2%));
     border: 1px solid var(--border-base);
     border-radius: var(--radius-lg);
     padding: 1.5rem;
     display: flex;
     align-items: center;
     gap: 1.25rem;
-    transition: var(--transition-base);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.25s ease;
     box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle at 100% 0%,
+        color-mix(in srgb, var(--primary-soft) 50%, transparent),
+        transparent 70%);
+    opacity: 0.6;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
 }
 
 .stat-card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+    border-color: color-mix(in srgb, var(--border-base) 70%, var(--primary) 30%);
+}
+
+.stat-card:hover::after {
+    opacity: 1;
 }
 
 .stat-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-md);
-    background-color: var(--primary-soft);
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--primary-soft) 80%, transparent),
+        color-mix(in srgb, var(--primary-soft) 40%, transparent));
     color: var(--primary);
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .stat-icon i {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
 }
 
 .stat-value {
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-weight: 800;
     color: var(--text-main);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
 }
 
 .stat-label {
     font-size: 0.8125rem;
     color: var(--text-muted);
     font-weight: 500;
+    margin-top: 0.2rem;
 }
 
 /* Auth Pages */
@@ -2729,12 +2794,46 @@ body.admin-theme .dropdown-menu {
 }
 
 .empty-state {
-    padding: 2.4rem 1rem;
-    border: 1px dashed var(--border-base);
-    border-radius: 18px;
+    padding: 3rem 1.5rem;
+    border: 1.5px dashed var(--border-base);
+    border-radius: 20px;
     text-align: center;
     color: var(--text-muted);
     background: color-mix(in srgb, var(--bg-surface) 56%, var(--bg-main) 44%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.empty-state .empty-icon {
+    width: 56px;
+    height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--primary-soft) 60%, var(--bg-surface) 40%);
+    color: var(--primary);
+    margin-bottom: 0.25rem;
+    opacity: 0.7;
+}
+
+.empty-state .empty-icon i {
+    width: 28px;
+    height: 28px;
+}
+
+.empty-state p {
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0;
+    max-width: 360px;
+    line-height: 1.5;
+}
+
+.empty-state .btn {
+    margin-top: 0.5rem;
 }
 
 .btn {

@@ -332,7 +332,7 @@
             {% else %}
             <div class="workbench-empty-state">
                 <div class="empty-state">
-                    <i data-lucide="package-open" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.2;"></i>
+                    <span class="empty-icon"><i data-lucide="package-open"></i></span>
                     <p>还没有兑换码，先生成一批吧。</p>
                     <button onclick="showModal('generateCodeModal')" class="btn btn-primary">立即生成</button>
                 </div>
@@ -413,7 +413,8 @@
             <button class="modal-close" onclick="hideModal('invalidCodesModal')">&times;</button>
         </div>
         <div class="modal-body">
-            <div id="invalidCodesEmptyState" class="empty-state" style="display: none; padding: 1rem 0;">
+            <div id="invalidCodesEmptyState" class="empty-state" style="display: none; padding: 2rem 0;">
+                <span class="empty-icon"><i data-lucide="check-circle-2"></i></span>
                 <p>没有需要清理的无效兑换码。</p>
             </div>
             <div id="invalidCodesTableWrapper" style="display: none;">
