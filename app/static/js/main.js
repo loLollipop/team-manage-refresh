@@ -291,7 +291,7 @@ async function initThemeSwitcher() {
             applySystemTheme(savedTheme);
             try { localStorage.setItem('ui_theme', savedTheme); } catch (e) {}
             updateThemeToggleButton(savedTheme);
-            showToast(`已切换为${savedTheme === 'warm' ? '暖色' : '深色'}主题`, 'success');
+            showToast(`已切换为${savedTheme === 'warm' ? '暖调' : '冷调'}主题`, 'success');
         } catch (error) {
             showToast(getFriendlyAdminErrorMessage(error.message || '保存失败', 0, 'settings'), 'error');
         }
