@@ -6,6 +6,7 @@
 
   <p>
     <a href="#-快速开始"><img alt="Docker" src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white"></a>
+    <a href="https://github.com/loLollipop/team-manage-refresh/pkgs/container/team-manage-refresh"><img alt="GHCR" src="https://img.shields.io/badge/GHCR-image-blue?logo=github&logoColor=white"></a>
     <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
     <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white">
     <img alt="SQLite" src="https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white">
@@ -17,6 +18,7 @@
   <p>
     <a href="#-界面预览"><strong>界面预览</strong></a> ·
     <a href="#-快速开始"><strong>快速开始</strong></a> ·
+    <a href="#-版本升级"><strong>版本升级</strong></a> ·
     <a href="docs/manual.md"><strong>部署与操作手册</strong></a> ·
     <a href="integration_docs.md"><strong>集成文档</strong></a> ·
     <a href="#-社区--community"><strong>社区</strong></a>
@@ -115,6 +117,17 @@
       <p>支持 Webhook 自动补货与 CliproxyAPI 推送，便于接入现有运营链路。</p>
     </td>
   </tr>
+  <tr>
+    <td width="33%">
+      <h3>预构建镜像分发</h3>
+      <p>每次发版自动构建 amd64 / arm64 多架构镜像并推到 GHCR，部署免 <code>git clone</code> 与本地编译。</p>
+    </td>
+    <td width="33%">
+      <h3>一键版本升级</h3>
+      <p>新版发布后 <code>docker compose pull &amp;&amp; docker compose up -d</code> 即可升级，数据卷与配置不受影响。</p>
+    </td>
+    <td width="33%"></td>
+  </tr>
 </table>
 
 ## 🔁 业务闭环
@@ -200,17 +213,13 @@ docker compose pull
 docker compose up -d
 ```
 
-升级版本：
-
-```bash
-docker compose pull && docker compose up -d
-```
-
 如果想锁定某个版本，可在启动时指定：
 
 ```bash
 IMAGE=ghcr.io/lolollipop/team-manage-refresh:0.2.0 docker compose up -d
 ```
+
+升级请看下面 «[🔄 版本升级](#-版本升级)» 节。
 
 ### 方式 B：从源码构建（适合本地开发或自定义改动）
 
@@ -289,6 +298,50 @@ docker compose down
 # 重新构建
 docker compose up -d --build
 ```
+
+## 🔄 版本升级
+
+每次发版会通过 GitHub Actions 自动构建多架构镜像（amd64 + arm64）并推送到 [GitHub Container Registry](https://github.com/loLollipop/team-manage-refresh/pkgs/container/team-manage-refresh)，使用预构建镜像部署的用户**升级时无需 `git pull`**：
+
+```bash
+# 拉取最新镜像并热重启（数据库与配置不会受影响）
+docker compose pull
+docker compose up -d
+```
+
+可用 tag：
+
+| Tag | 含义 |
+| --- | --- |
+| `latest` | 最近一次发版（生产环境推荐） |
+| `0.2`、`0.2.0` | 版本通配（适合锁次版本号） |
+| `v0.2.0`、`v0.2.1`… | 完整版本号（适合精确锁版本） |
+
+### 锁定版本
+
+如果想固定在某个版本，先在工作目录的 `.env` 里加一行：
+
+```env
+IMAGE=ghcr.io/lolollipop/team-manage-refresh:0.2.0
+```
+
+然后照常 `docker compose up -d` 即可。需要升级再改这个值并重新执行。
+
+### 自动升级（可选）
+
+如果希望服务器后续完全自动升级（GHCR 一发新版就拉取并重启），可在同一台机器上跑 [Watchtower](https://containrrr.dev/watchtower/)：
+
+```bash
+docker run -d --name watchtower \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  containrrr/watchtower team-manage-app --interval 3600
+```
+
+> Watchtower 不属于本项目，是社区通用的容器自动更新工具。要不要装、间隔设多久、是否开启 `--cleanup` 自行决定。
+
+### 从源码构建路径升级
+
+`方式 B` 用户升级仍需 `git pull && docker compose up -d --build`，没有变化。
 
 ## 📚 文档导航
 
