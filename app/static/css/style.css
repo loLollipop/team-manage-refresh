@@ -5848,3 +5848,257 @@ body.admin-theme .navbar-brand .cartoon-brand-title {
     }
 }
 /* ================================================================ */
+
+/* ================================================================ */
+/* === 卡通登录页 overlay：用粗黑边 + 偏移阴影统一登录页视觉 === */
+/* ================================================================ */
+
+body.admin-theme.auth-page {
+    background: var(--ca-paper);
+    background-image:
+        radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.55) 0%, transparent 35%),
+        radial-gradient(var(--ca-ink) 0.6px, transparent 0.6px);
+    background-size: auto, 22px 22px;
+    background-position: 0 0, 0 0;
+}
+
+body.admin-theme.auth-page .auth-orbs { display: none; }
+
+body.admin-theme.auth-page .auth-card {
+    background: var(--ca-surface);
+    border: 3px solid var(--ca-ink);
+    border-radius: 22px;
+    box-shadow: 7px 7px 0 var(--ca-ink);
+    padding: 28px 28px 24px;
+}
+
+body.admin-theme.auth-page .auth-card-title h1 {
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    color: var(--ca-ink);
+}
+
+body.admin-theme.auth-page .auth-card-title p {
+    color: var(--ca-ink);
+    opacity: 0.7;
+}
+
+body.admin-theme.auth-page .auth-eyebrow.cartoon-brand-eyebrow {
+    background: var(--ca-primary);
+    color: var(--ca-ink);
+    border: 2px solid var(--ca-ink);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    box-shadow: 1.5px 1.5px 0 var(--ca-ink);
+    display: inline-block;
+}
+
+body.admin-theme.auth-page .auth-brand-name.cartoon-brand-title {
+    font-weight: 900;
+    color: var(--ca-ink);
+    letter-spacing: -0.3px;
+}
+
+body.admin-theme.auth-page .auth-feature-list li {
+    background: var(--ca-surface);
+    border: 2.4px solid var(--ca-ink);
+    border-radius: 14px;
+    box-shadow: 4px 4px 0 var(--ca-ink);
+    padding: 10px 12px;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+body.admin-theme.auth-page .auth-feature-list li:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 var(--ca-ink);
+}
+body.admin-theme.auth-page .auth-feature-list li strong {
+    color: var(--ca-ink);
+    font-weight: 800;
+}
+body.admin-theme.auth-page .auth-feature-list li p {
+    color: var(--ca-ink);
+    opacity: 0.7;
+}
+body.admin-theme.auth-page .auth-feature-icon {
+    background: var(--ca-primary);
+    color: var(--ca-ink);
+    border: 2px solid var(--ca-ink);
+    border-radius: 10px;
+    box-shadow: 2px 2px 0 var(--ca-ink);
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body.admin-theme.auth-page .auth-hero-copy h2 {
+    font-weight: 900;
+    color: var(--ca-ink);
+    letter-spacing: -0.5px;
+}
+body.admin-theme.auth-page .auth-hero-copy p {
+    color: var(--ca-ink);
+    opacity: 0.72;
+}
+
+body.admin-theme.auth-page .auth-input-wrap {
+    background: var(--ca-surface);
+    border: 2.4px solid var(--ca-ink);
+    border-radius: 12px;
+    box-shadow: 3.5px 3.5px 0 var(--ca-ink);
+    padding: 0;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+body.admin-theme.auth-page .auth-input-wrap:focus-within {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--ca-ink);
+}
+body.admin-theme.auth-page .auth-input,
+body.admin-theme.auth-page .auth-input.form-control {
+    background: transparent;
+    border: 0;
+    color: var(--ca-ink);
+    font-weight: 600;
+    height: 46px;
+    padding: 0 12px 0 38px;
+    box-shadow: none;
+}
+body.admin-theme.auth-page .auth-input::placeholder {
+    color: var(--ca-ink);
+    opacity: 0.45;
+    font-weight: 500;
+}
+body.admin-theme.auth-page .auth-input-icon {
+    color: var(--ca-ink);
+    opacity: 0.7;
+}
+body.admin-theme.auth-page .auth-password-toggle {
+    color: var(--ca-ink);
+    opacity: 0.7;
+}
+
+body.admin-theme.auth-page .form-group label {
+    color: var(--ca-ink);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+body.admin-theme.auth-page .auth-submit,
+body.admin-theme.auth-page .auth-submit.btn-primary {
+    background: var(--ca-primary);
+    color: var(--ca-ink);
+    border: 2.6px solid var(--ca-ink);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--ca-ink);
+    font-weight: 900;
+    letter-spacing: 0.3px;
+    height: 52px;
+    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    text-shadow: none;
+}
+body.admin-theme.auth-page .auth-submit:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 6px 6px 0 var(--ca-ink);
+    background: var(--ca-primary-2, var(--ca-primary));
+}
+body.admin-theme.auth-page .auth-submit:active {
+    transform: translate(3px, 3px);
+    box-shadow: 1px 1px 0 var(--ca-ink);
+}
+
+body.admin-theme.auth-page .auth-error {
+    background: var(--ca-cream, #fff7d6);
+    color: var(--ca-ink);
+    border: 2.2px solid var(--ca-ink);
+    border-radius: 12px;
+    box-shadow: 3px 3px 0 var(--ca-ink);
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+body.admin-theme.auth-page .auth-divider {
+    color: var(--ca-ink);
+    opacity: 0.55;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+body.admin-theme.auth-page .auth-divider::before,
+body.admin-theme.auth-page .auth-divider::after {
+    background: var(--ca-ink);
+    opacity: 0.25;
+    height: 2px;
+    border-radius: 2px;
+}
+
+body.admin-theme.auth-page .auth-helper {
+    color: var(--ca-ink);
+    opacity: 0.7;
+}
+
+body.admin-theme.auth-page .auth-theme-toggle {
+    background: var(--ca-info);
+    color: var(--ca-ink);
+    border: 2px solid var(--ca-ink);
+    border-radius: 999px;
+    box-shadow: 2.5px 2.5px 0 var(--ca-ink);
+    padding: 6px 12px;
+    font-weight: 800;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+body.admin-theme.auth-page .auth-theme-toggle:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3.5px 3.5px 0 var(--ca-ink);
+}
+
+/* 浮动几何贴纸（呼应兑换页 / admin 卡通风格） */
+body.admin-theme.auth-page .auth-shell {
+    position: relative;
+    overflow: hidden;
+}
+body.admin-theme.auth-page .auth-shell::before,
+body.admin-theme.auth-page .auth-shell::after {
+    content: "";
+    position: absolute;
+    border: 3px solid var(--ca-ink);
+    box-shadow: 5px 5px 0 var(--ca-ink);
+    pointer-events: none;
+    z-index: 0;
+}
+body.admin-theme.auth-page .auth-shell::before {
+    width: 64px;
+    height: 64px;
+    background: var(--ca-secondary);
+    border-radius: 14px;
+    top: 6%;
+    right: 12%;
+    transform: rotate(8deg);
+}
+body.admin-theme.auth-page .auth-shell::after {
+    width: 56px;
+    height: 56px;
+    background: var(--ca-success);
+    border-radius: 50%;
+    bottom: 10%;
+    left: 8%;
+    transform: rotate(-6deg);
+}
+body.admin-theme.auth-page .auth-layout {
+    position: relative;
+    z-index: 1;
+}
+
+@media (max-width: 760px) {
+    body.admin-theme.auth-page .auth-card {
+        padding: 22px 18px;
+        box-shadow: 5px 5px 0 var(--ca-ink);
+    }
+    body.admin-theme.auth-page .auth-shell::before,
+    body.admin-theme.auth-page .auth-shell::after {
+        display: none;
+    }
+}
+/* ================================================================ */
