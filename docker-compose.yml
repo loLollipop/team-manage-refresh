@@ -1,6 +1,8 @@
 services:
   app:
-    build: .
+    # 默认使用 GHCR 上的预构建镜像；如需基于本地代码构建，注释掉 image 改用 build
+    image: ${IMAGE:-ghcr.io/lolollipop/team-manage-refresh:latest}
+    # build: .
     container_name: team-manage-app
     ports:
       - "${APP_PORT:-8008}:${APP_PORT:-8008}"

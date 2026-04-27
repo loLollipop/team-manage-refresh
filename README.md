@@ -180,18 +180,61 @@
 
 ## 🚀 快速开始
 
-### 1. 克隆仓库
+### 方式 A：使用预构建镜像（推荐，免 git clone / 免本地编译）
+
+每次发版会自动把多架构镜像（amd64 + arm64）推到 [GitHub Container Registry](https://github.com/loLollipop/team-manage-refresh/pkgs/container/team-manage-refresh)，可用 tag：`latest`、`0.2`、`0.2.0` 等。
+
+```bash
+# 1. 准备工作目录
+mkdir -p team-manage-refresh && cd team-manage-refresh
+
+# 2. 下载 docker-compose.yml 与 .env 模板
+curl -fsSL https://raw.githubusercontent.com/loLollipop/team-manage-refresh/main/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/loLollipop/team-manage-refresh/main/.env.example -o .env
+
+# 3. 编辑 .env，至少改这几项
+#    SESSION_SECRET_KEY / ENCRYPTION_KEY / ADMIN_PASSWORD
+
+# 4. 拉镜像并启动
+docker compose pull
+docker compose up -d
+```
+
+升级版本：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+如果想锁定某个版本，可在启动时指定：
+
+```bash
+IMAGE=ghcr.io/lolollipop/team-manage-refresh:0.2.0 docker compose up -d
+```
+
+### 方式 B：从源码构建（适合本地开发或自定义改动）
 
 ```bash
 git clone https://github.com/loLollipop/team-manage-refresh.git
 cd team-manage-refresh
+cp .env.example .env
+# 编辑 .env，至少改 SESSION_SECRET_KEY / ENCRYPTION_KEY / ADMIN_PASSWORD
 ```
 
-### 2. 准备环境变量
+把 `docker-compose.yml` 里的 `image:` 注释掉，启用 `build: .`：
+
+```yaml
+services:
+  app:
+    # image: ${IMAGE:-ghcr.io/lolollipop/team-manage-refresh:latest}
+    build: .
+```
 
 ```bash
-cp .env.example .env
+docker compose up -d --build
 ```
+
+### 环境变量提示
 
 最少建议确认这几个配置：
 
@@ -204,20 +247,14 @@ ADMIN_PASSWORD=admin123
 
 > 首次登录后请立即修改管理员密码。`SESSION_SECRET_KEY` 与 `ENCRYPTION_KEY` 建议分开配置；若只提供老版本的 `SECRET_KEY`，系统会做一次回退以兼容已有部署。
 
-### 3. 使用 Docker 启动
-
-```bash
-docker compose up -d
-```
-
-### 4. 访问入口
+### 访问入口
 
 - 用户兑换页：`http://localhost:8008/`
 - 管理员登录页：`http://localhost:8008/login`
 - 管理后台：`http://localhost:8008/admin`
 - 福利车位页：`http://localhost:8008/admin/welfare`
 
-### 5. Zeabur 部署（可选）
+### Zeabur 部署（可选）
 
 项目可直接复用根目录 `Dockerfile` 部署到 Zeabur，无需额外构建前端，也不使用 `docker-compose.yml`。
 
@@ -240,7 +277,7 @@ DEBUG=False
 - 部署完成后先检查启动日志，再验证 `/health` 与 `/login`
 - `/health` 仅表示进程存活，不能替代数据库初始化与迁移检查
 
-### 6. 常用命令
+### 常用命令
 
 ```bash
 # 查看日志
