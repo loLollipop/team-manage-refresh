@@ -21,13 +21,21 @@ from app.utils.time_utils import get_now
 
 
 class StubRedemptionService:
+    def __init__(self, *, has_warranty=False, pool_type="normal", virtual_welfare_code=False, team_id=None):
+        self.has_warranty = has_warranty
+        self.pool_type = pool_type
+        self.virtual_welfare_code = virtual_welfare_code
+        self.team_id = team_id
+
     async def validate_code(self, code, db_session):
         return {
             "success": True,
             "valid": True,
             "redemption_code": {
-                "pool_type": "normal",
-                "virtual_welfare_code": False,
+                "pool_type": self.pool_type,
+                "virtual_welfare_code": self.virtual_welfare_code,
+                "has_warranty": self.has_warranty,
+                "team_id": self.team_id,
             },
         }
 
@@ -42,6 +50,10 @@ class StubTeamService:
         self.mapping_updates = []
         self.reserve_results = reserve_results or {}
         self.released_team_ids = []
+
+    @staticmethod
+    def _append_warranty_seat_condition(conditions, warranty_required):
+        return None
 
     @staticmethod
     def _normalize_member_email(email):
@@ -61,7 +73,7 @@ class StubTeamService:
         return {"success": True, "member_emails": [], "error": None}
 
 
-    async def reserve_seat_if_available(self, team_id, db_session, pool_type="normal"):
+    async def reserve_seat_if_available(self, team_id, db_session, pool_type="normal", warranty_required=None):
         queued = self.reserve_results.get(team_id) or []
         if queued:
             result = queued.pop(0)
@@ -79,6 +91,9 @@ class StubTeamService:
         team = await db_session.get(Team, team_id)
         if not team or team.pool_type != pool_type or team.status != "active":
             return {"success": False, "error": f"目标 Team {team_id} 不可用"}
+        if warranty_required is not None and team.warranty_seat_enabled != bool(warranty_required):
+            mode_label = "已开启质保的 Team" if warranty_required else "未开启质保的 Team"
+            return {"success": False, "error": f"当前兑换码仅可加入{mode_label}"}
         if team.current_members >= team.max_members:
             team.status = "full"
             return {"success": False, "error": "该 Team 已满, 请选择其他 Team 尝试"}
@@ -1847,6 +1862,112 @@ class TeamServiceBulkInviteTests(unittest.IsolatedAsyncioTestCase):
             async with self.session_factory() as session2:
                 team = await session2.get(Team, 101)
                 self.assertNotEqual(team.status, "error")
+                self.assertEqual(team.current_members, 2)
+                mapping_result = await session2.execute(
+                    select(TeamEmailMapping.status).where(
+                        TeamEmailMapping.team_id == 101,
+                        TeamEmailMapping.email == "newuser@example.com",
+                    )
+                )
+                self.assertEqual(mapping_result.scalar_one(), "invited")
+
+    async def test_add_team_member_does_not_double_count_existing_active_mapping(self):
+        await self._seed_team(current_members=2, max_members=5)
+        team_service = TeamService()
+
+        async def stub_sync(team_id, db_session, force_refresh=False):
+            return {
+                "success": True,
+                "message": "ok",
+                "member_emails": ["existing@example.com"],
+                "error": None,
+            }
+
+        async def stub_ensure_token(*args, **kwargs):
+            return "access-token"
+
+        async def stub_send_invite(*args, **kwargs):
+            return {
+                "success": True,
+                "data": {"account_invites": [{"email_address": "pending@example.com"}]},
+                "error": None,
+            }
+
+        async def stub_reset(*args, **kwargs):
+            return None
+
+        async def stub_bg_verify(*args, **kwargs):
+            return None
+
+        async with self.session_factory() as session:
+            await team_service.upsert_team_email_mapping(
+                team_id=101,
+                email="pending@example.com",
+                status="invited",
+                db_session=session,
+                source="admin_add",
+                is_admin_invited=True,
+            )
+            await session.commit()
+
+            with patch.object(team_service, "sync_team_info", new=stub_sync), \
+                 patch.object(team_service, "ensure_access_token", new=stub_ensure_token), \
+                 patch.object(team_service.chatgpt_service, "send_invite", new=stub_send_invite), \
+                 patch.object(team_service, "_reset_error_status", new=stub_reset), \
+                 patch.object(team_service, "_background_verify_admin_invite", new=stub_bg_verify):
+                result = await team_service.add_team_member(
+                    101, "pending@example.com", session
+                )
+
+        self.assertTrue(result["success"])
+        async with self.session_factory() as session2:
+            team = await session2.get(Team, 101)
+            self.assertEqual(team.current_members, 2)
+            self.assertEqual(team.status, "active")
+
+    async def test_add_team_member_marks_full_when_last_seat_is_invited(self):
+        await self._seed_team(current_members=5, max_members=6)
+        team_service = TeamService()
+
+        async def stub_sync(team_id, db_session, force_refresh=False):
+            return {
+                "success": True,
+                "message": "ok",
+                "member_emails": ["existing@example.com"],
+                "error": None,
+            }
+
+        async def stub_ensure_token(*args, **kwargs):
+            return "access-token"
+
+        async def stub_send_invite(*args, **kwargs):
+            return {
+                "success": True,
+                "data": {"account_invites": [{"email_address": "last-seat@example.com"}]},
+                "error": None,
+            }
+
+        async def stub_reset(*args, **kwargs):
+            return None
+
+        async def stub_bg_verify(*args, **kwargs):
+            return None
+
+        async with self.session_factory() as session:
+            with patch.object(team_service, "sync_team_info", new=stub_sync), \
+                 patch.object(team_service, "ensure_access_token", new=stub_ensure_token), \
+                 patch.object(team_service.chatgpt_service, "send_invite", new=stub_send_invite), \
+                 patch.object(team_service, "_reset_error_status", new=stub_reset), \
+                 patch.object(team_service, "_background_verify_admin_invite", new=stub_bg_verify):
+                result = await team_service.add_team_member(
+                    101, "last-seat@example.com", session
+                )
+
+        self.assertTrue(result["success"])
+        async with self.session_factory() as session2:
+            team = await session2.get(Team, 101)
+            self.assertEqual(team.current_members, 6)
+            self.assertEqual(team.status, "full")
 
     async def test_background_verify_admin_invite_does_not_flip_team_to_error(self):
         """后台校验失败时不应再把 Team 标记为 error。
@@ -1981,6 +2102,50 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             session.add_all([team_1, team_2, code])
             await session.commit()
 
+    async def _seed_warranty_routing_data(self):
+        async with self.session_factory() as session:
+            warranty_team = Team(
+                id=11,
+                email="warranty-owner@example.com",
+                access_token_encrypted="token-11",
+                account_id="acct-11",
+                team_name="Warranty Team",
+                current_members=1,
+                max_members=6,
+                status="active",
+                pool_type="normal",
+                warranty_seat_enabled=True,
+            )
+            normal_team = Team(
+                id=12,
+                email="normal-owner@example.com",
+                access_token_encrypted="token-12",
+                account_id="acct-12",
+                team_name="Normal Team",
+                current_members=1,
+                max_members=6,
+                status="active",
+                pool_type="normal",
+                warranty_seat_enabled=False,
+            )
+            warranty_code = RedemptionCode(
+                code="WARRANTY-CODE-0001",
+                status="unused",
+                pool_type="normal",
+                has_warranty=True,
+                warranty_days=30,
+                reusable_by_seat=False,
+            )
+            normal_code = RedemptionCode(
+                code="NORMAL-CODE-0001",
+                status="unused",
+                pool_type="normal",
+                has_warranty=False,
+                reusable_by_seat=False,
+            )
+            session.add_all([warranty_team, normal_team, warranty_code, normal_code])
+            await session.commit()
+
     @staticmethod
     def _close_coro(coro):
         coro.close()
@@ -2069,6 +2234,104 @@ class RedeemFlowServiceTests(unittest.IsolatedAsyncioTestCase):
             records = (await session.execute(select(RedemptionRecord))).scalars().all()
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0].team_id, 2)
+
+    async def test_get_all_teams_includes_warranty_seat_flag(self):
+        await self._seed_warranty_routing_data()
+        team_service = TeamService()
+
+        async with self.session_factory() as session:
+            result = await team_service.get_all_teams(session, per_page=20, pool_type="normal")
+
+        self.assertTrue(result["success"])
+        team_flags = {team["id"]: team["warranty_seat_enabled"] for team in result["teams"]}
+        self.assertTrue(team_flags[11])
+        self.assertFalse(team_flags[12])
+
+    async def test_set_warranty_seat_enabled_updates_team_flag(self):
+        await self._seed_warranty_routing_data()
+        team_service = TeamService()
+
+        async with self.session_factory() as session:
+            result = await team_service.set_warranty_seat_enabled(12, True, session)
+            self.assertTrue(result["success"])
+            refreshed_team = await session.get(Team, 12)
+            self.assertTrue(refreshed_team.warranty_seat_enabled)
+
+    async def test_verify_code_only_returns_warranty_teams_for_warranty_code(self):
+        await self._seed_warranty_routing_data()
+        service = RedeemFlowService()
+
+        async with self.session_factory() as session:
+            result = await service.verify_code_and_get_teams("WARRANTY-CODE-0001", session)
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["valid"])
+        self.assertEqual([team["id"] for team in result["teams"]], [11])
+
+    async def test_verify_code_only_returns_non_warranty_teams_for_normal_code(self):
+        await self._seed_warranty_routing_data()
+        service = RedeemFlowService()
+
+        async with self.session_factory() as session:
+            result = await service.verify_code_and_get_teams("NORMAL-CODE-0001", session)
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["valid"])
+        self.assertEqual([team["id"] for team in result["teams"]], [12])
+
+    async def test_auto_select_routes_warranty_code_to_warranty_team(self):
+        await self._seed_warranty_routing_data()
+        service = RedeemFlowService()
+        service.chatgpt_service = StubChatGPTService(
+            {"acct-11": [{"success": True, "data": {"account_invites": [{"email": "warranty-user@example.com"}]}}]}
+        )
+
+        async with self.session_factory() as session:
+            with patch.object(service.team_service, "ensure_access_token", new=self._return_token), \
+                 patch("app.services.redeem_flow.asyncio.create_task", side_effect=self._close_coro):
+                result = await service.redeem_and_join_team(
+                    email="warranty-user@example.com",
+                    code="WARRANTY-CODE-0001",
+                    team_id=None,
+                    db_session=session,
+                )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["team_info"]["id"], 11)
+
+            code = (await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-CODE-0001")
+            )).scalar_one()
+            self.assertEqual(code.used_team_id, 11)
+
+    async def test_manual_team_selection_rejects_mismatched_warranty_mode_without_consuming_code(self):
+        await self._seed_warranty_routing_data()
+        service = RedeemFlowService()
+        service.chatgpt_service = StubChatGPTService({})
+
+        async with self.session_factory() as session:
+            with patch.object(service.team_service, "ensure_access_token", new=self._return_token):
+                result = await service.redeem_and_join_team(
+                    email="wrong-target@example.com",
+                    code="WARRANTY-CODE-0001",
+                    team_id=12,
+                    db_session=session,
+                )
+
+            self.assertFalse(result["success"])
+            self.assertIn("仅可加入已开启质保的 Team", result["error"])
+
+            code = (await session.execute(
+                select(RedemptionCode).where(RedemptionCode.code == "WARRANTY-CODE-0001")
+            )).scalar_one()
+            self.assertEqual(code.status, "unused")
+            self.assertIsNone(code.used_team_id)
+
+            team = await session.get(Team, 12)
+            self.assertEqual(team.current_members, 1)
+
+            records = (await session.execute(select(RedemptionRecord))).scalars().all()
+            self.assertEqual(records, [])
 
     async def test_sync_reconcile_requires_three_misses_before_removed(self):
         await self._seed_basic_data()

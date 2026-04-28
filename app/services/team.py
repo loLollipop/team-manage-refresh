@@ -36,6 +36,12 @@ class TeamService:
     """Team 管理服务类"""
 
     PROACTIVE_REFRESH_WINDOW_HOURS = 2
+
+    @staticmethod
+    def _append_warranty_seat_condition(conditions: List[Any], warranty_required: Optional[bool]) -> None:
+        if warranty_required is None:
+            return
+        conditions.append(Team.warranty_seat_enabled.is_(bool(warranty_required)))
     PLACEHOLDER_ACCOUNT_IDS = {"default", "personal", "none", "null", "me", "self"}
 
     def __init__(self):
@@ -142,7 +148,8 @@ class TeamService:
         self,
         team_id: int,
         db_session: AsyncSession,
-        pool_type: str = "normal"
+        pool_type: str = "normal",
+        warranty_required: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         以数据库原子更新的方式预留一个席位。
@@ -150,15 +157,17 @@ class TeamService:
         这样即使在多 worker / 多实例环境中，也不会仅依赖进程内锁导致超拉。
         """
         current_time = get_now()
+        reserve_conditions = [
+            Team.id == team_id,
+            Team.pool_type == pool_type,
+            Team.status == "active",
+            Team.current_members < Team.max_members,
+            or_(Team.expires_at.is_(None), Team.expires_at >= current_time),
+        ]
+        self._append_warranty_seat_condition(reserve_conditions, warranty_required)
         reserve_stmt = (
             update(Team)
-            .where(
-                Team.id == team_id,
-                Team.pool_type == pool_type,
-                Team.status == "active",
-                Team.current_members < Team.max_members,
-                or_(Team.expires_at.is_(None), Team.expires_at >= current_time),
-            )
+            .where(*reserve_conditions)
             .values(
                 current_members=Team.current_members + 1,
                 status=case(
@@ -174,6 +183,9 @@ class TeamService:
                 return {"success": False, "error": f"目标 Team {team_id} 不存在"}
             if team.pool_type != pool_type:
                 return {"success": False, "error": f"目标 Team {team_id} 不属于当前兑换池"}
+            if warranty_required is not None and team.warranty_seat_enabled != bool(warranty_required):
+                mode_label = "已开启质保的 Team" if warranty_required else "未开启质保的 Team"
+                return {"success": False, "error": f"当前兑换码仅可加入{mode_label}"}
             if team.expires_at and team.expires_at < current_time:
                 team.status = "expired"
                 await db_session.flush()
@@ -2458,6 +2470,15 @@ class TeamService:
                     "Team 已满,无法添加成员",
                 )
 
+            mapping_result = await db_session.execute(
+                select(TeamEmailMapping.status).where(
+                    TeamEmailMapping.team_id == team_id,
+                    TeamEmailMapping.email == normalized_email,
+                )
+            )
+            existing_mapping_status = mapping_result.scalar_one_or_none()
+            had_active_mapping = existing_mapping_status in ACTIVE_TEAM_EMAIL_STATUSES
+
             # 4. 调用 ChatGPT API 发送邀请
             invite_result = await self.chatgpt_service.send_invite(
                 access_token,
@@ -2508,6 +2529,14 @@ class TeamService:
                 source="admin_add",
                 is_admin_invited=True,
             )
+            if not had_active_mapping:
+                team.current_members = min(team.current_members + 1, team.max_members)
+                if team.expires_at and team.expires_at < get_now():
+                    team.status = "expired"
+                elif team.current_members >= team.max_members:
+                    team.status = "full"
+                else:
+                    team.status = "active"
             await db_session.commit()
 
             logger.info(f"添加成员成功: {normalized_email} -> Team {team_id}")
@@ -2934,10 +2963,35 @@ class TeamService:
             logger.exception("开启设备身份验证失败")
             return {"success": False, "error": "开启设备身份验证失败，请稍后重试"}
 
+    async def set_warranty_seat_enabled(
+        self,
+        team_id: int,
+        enabled: bool,
+        db_session: AsyncSession,
+    ) -> Dict[str, Any]:
+        try:
+            team = await db_session.get(Team, team_id)
+            if not team:
+                return {"success": False, "error": f"Team ID {team_id} 不存在"}
+
+            team.warranty_seat_enabled = bool(enabled)
+            await db_session.commit()
+            return {
+                "success": True,
+                "enabled": team.warranty_seat_enabled,
+                "message": "质保车位已开启" if team.warranty_seat_enabled else "质保车位已关闭",
+                "error": None,
+            }
+        except Exception:
+            await db_session.rollback()
+            logger.exception("更新 Team 质保车位开关失败")
+            return {"success": False, "error": "更新质保车位失败，请稍后重试"}
+
     async def get_available_teams(
         self,
         db_session: AsyncSession,
-        pool_type: str = "normal"
+        pool_type: str = "normal",
+        warranty_required: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         获取可用的 Team 列表 (用于用户兑换页面)
@@ -2950,11 +3004,13 @@ class TeamService:
         """
         try:
             # 查询 status='active' 且 current_members < max_members 的 Team
-            stmt = select(Team).where(
+            conditions = [
                 Team.status == "active",
                 Team.current_members < Team.max_members,
-                Team.pool_type == pool_type
-            )
+                Team.pool_type == pool_type,
+            ]
+            self._append_warranty_seat_condition(conditions, warranty_required)
+            stmt = select(Team).where(*conditions)
             result = await db_session.execute(stmt)
             teams = result.scalars().all()
 
@@ -3065,6 +3121,7 @@ class TeamService:
                 "status": team.status,
                 "account_role": team.account_role,
                 "device_code_auth_enabled": team.device_code_auth_enabled,
+                "warranty_seat_enabled": team.warranty_seat_enabled,
                 "last_sync": team.last_sync.isoformat() if team.last_sync else None,
                 "created_at": team.created_at.isoformat() if team.created_at else None
             }
@@ -3177,6 +3234,7 @@ class TeamService:
                     "max_members": team.max_members,
                     "status": team.status,
                     "device_code_auth_enabled": getattr(team, 'device_code_auth_enabled', False),
+                    "warranty_seat_enabled": getattr(team, "warranty_seat_enabled", False),
                     "last_sync": team.last_sync.isoformat() if team.last_sync else None,
                     "created_at": team.created_at.isoformat() if team.created_at else None,
                     "pool_type": getattr(team, "pool_type", "normal")

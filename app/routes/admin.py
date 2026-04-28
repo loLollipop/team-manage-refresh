@@ -165,6 +165,11 @@ class TeamUpdateRequest(BaseModel):
     status: Optional[str] = Field(None, description="状态: active/full/expired/error/banned")
 
 
+class WarrantySeatToggleRequest(BaseModel):
+    """Team 质保车位开关请求"""
+    enabled: bool = Field(..., description="是否开启质保车位")
+
+
 class CodeUpdateRequest(BaseModel):
     """兑换码更新请求"""
     has_warranty: bool = Field(..., description="是否为质保兑换码")
@@ -536,6 +541,32 @@ async def update_team(
         )
 
 
+@router.post("/teams/{team_id}/warranty-seat")
+async def toggle_team_warranty_seat(
+    team_id: int,
+    payload: WarrantySeatToggleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """切换 Team 质保车位开关。"""
+    try:
+        result = await team_service.set_warranty_seat_enabled(
+            team_id=team_id,
+            enabled=payload.enabled,
+            db_session=db,
+        )
+        if not result["success"]:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result,
+            )
+        return JSONResponse(content=result)
+    except Exception:
+        logger.exception("更新 Team 质保车位开关失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "操作失败，请稍后重试"}
+        )
 
 
 @router.post("/teams/import")
@@ -1320,7 +1351,7 @@ async def batch_refresh_teams(
 
                 try:
                     async with AsyncSessionLocal() as db_session:
-                        result = await team_service.sync_team_info(team_id, db_session, force_refresh=True)
+                        result = await team_service.sync_team_info(team_id, db_session, force_refresh=False)
                     item_success = bool(result.get("success"))
                     item_message = result.get("message")
                     item_error = result.get("error")

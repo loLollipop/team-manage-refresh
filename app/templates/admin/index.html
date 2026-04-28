@@ -979,6 +979,16 @@
                             <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i>
                             <span class="btn-icon-fallback" aria-hidden="true">刷</span>
                         </button>
+                        {% if team.pool_type == 'normal' %}
+                        <button class="btn btn-sm btn-icon btn-minimal {{ 'btn-success' if team.warranty_seat_enabled else 'btn-secondary' }} btn-toggle-warranty-seat"
+                            data-id="{{ team.id }}"
+                            data-enabled="{{ 'true' if team.warranty_seat_enabled else 'false' }}"
+                            title="{{ '关闭质保' if team.warranty_seat_enabled else '开启质保' }}"
+                            aria-label="{{ '关闭质保' if team.warranty_seat_enabled else '开启质保' }}">
+                            <i data-lucide="shield" style="width: 16px; height: 16px;"></i>
+                            <span class="btn-icon-fallback" aria-hidden="true">保</span>
+                        </button>
+                        {% endif %}
                         <button class="btn btn-sm btn-icon btn-minimal btn-success btn-enable-device-auth"
                             data-id="{{ team.id }}" title="一键开启设备代码验证" aria-label="开启设备验证">
                             <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
@@ -1305,6 +1315,14 @@
             });
         });
 
+        document.querySelectorAll('.btn-toggle-warranty-seat').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                const enabled = btn.getAttribute('data-enabled') === 'true';
+                toggleTeamWarrantySeat(id, enabled);
+            });
+        });
+
         document.querySelectorAll('.btn-push-cliproxyapi').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-id');
@@ -1357,6 +1375,35 @@
                 setTimeout(() => location.reload(), 1000);
             } else {
                 showToast(data.error || '开启失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function toggleTeamWarrantySeat(teamId, currentlyEnabled) {
+        const nextEnabled = !currentlyEnabled;
+        const actionLabel = nextEnabled ? '开启' : '关闭';
+        if (!confirm(`确定要为该 Team ${actionLabel}质保车位吗？\n\n此操作仅影响后续兑换码分流，不会影响现有成员。`)) {
+            return;
+        }
+
+        try {
+            showToast(`正在${actionLabel}质保车位...`, 'info');
+            const response = await fetch(`/admin/teams/${teamId}/warranty-seat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ enabled: nextEnabled })
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showToast(data.message || `${actionLabel}成功`, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error || `${actionLabel}失败`, 'error');
             }
         } catch (error) {
             showToast('网络错误', 'error');

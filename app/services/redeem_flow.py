@@ -99,6 +99,20 @@ class RedeemFlowService:
         self.team_service = TeamService()
         self.chatgpt_service = chatgpt_service
 
+    @staticmethod
+    def _resolve_warranty_requirement(code_meta: Dict[str, Any]) -> Optional[bool]:
+        if code_meta.get("virtual_welfare_code"):
+            return None
+        return bool(code_meta.get("has_warranty"))
+
+    @staticmethod
+    def _get_team_mode_label(warranty_required: Optional[bool]) -> str:
+        if warranty_required is True:
+            return "质保 Team"
+        if warranty_required is False:
+            return "非质保 Team"
+        return "Team"
+
     async def verify_code_and_get_teams(
         self,
         code: str,
@@ -140,6 +154,7 @@ class RedeemFlowService:
             # 2. 获取可用 Team 列表
             code_meta = validate_result.get("redemption_code") or {}
             pool_type = code_meta.get("pool_type", "normal")
+            warranty_required = self._resolve_warranty_requirement(code_meta)
             teams: List[Dict[str, Any]] = []
             if code_meta.get("virtual_welfare_code"):
                 bound_team_id = int(code_meta.get("team_id") or 0)
@@ -184,7 +199,11 @@ class RedeemFlowService:
                     "subscription_plan": bound_team.get("subscription_plan"),
                 }]
             else:
-                teams_result = await self.team_service.get_available_teams(db_session, pool_type=pool_type)
+                teams_result = await self.team_service.get_available_teams(
+                    db_session,
+                    pool_type=pool_type,
+                    warranty_required=warranty_required,
+                )
 
                 if not teams_result["success"]:
                     return {
@@ -222,7 +241,8 @@ class RedeemFlowService:
         db_session: AsyncSession,
         email: Optional[str] = None,
         exclude_team_ids: Optional[List[int]] = None,
-        pool_type: str = "normal"
+        pool_type: str = "normal",
+        warranty_required: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         自动选择一个可用的 Team。
@@ -242,11 +262,13 @@ class RedeemFlowService:
                 excluded_ids.update(mapped_team_ids)
 
             # 查找所有 active 且未满的 Team
-            stmt = select(Team).where(
+            conditions = [
                 Team.status == "active",
                 Team.current_members < Team.max_members,
-                Team.pool_type == pool_type
-            )
+                Team.pool_type == pool_type,
+            ]
+            self.team_service._append_warranty_seat_condition(conditions, warranty_required)
+            stmt = select(Team).where(*conditions)
 
             if excluded_ids:
                 stmt = stmt.where(Team.id.not_in(sorted(excluded_ids)))
@@ -258,11 +280,12 @@ class RedeemFlowService:
             team = result.scalars().first()
 
             if not team:
-                reason = "没有可用的 Team"
+                team_mode_label = self._get_team_mode_label(warranty_required)
+                reason = f"没有可用的{team_mode_label}"
                 if mapped_team_ids:
-                    reason = "没有新的可用 Team；您已加入所有当前有席位的 Team，当前兑换码不会被消耗"
+                    reason = f"没有新的可用{team_mode_label}；您已加入所有当前有席位的{team_mode_label}，当前兑换码不会被消耗"
                 elif exclude_team_ids:
-                    reason = "您已加入所有可用 Team"
+                    reason = f"您已加入所有可用{team_mode_label}"
                 return {
                     "success": False,
                     "team_id": None,
@@ -325,6 +348,7 @@ class RedeemFlowService:
                         return {"success": False, "error": validate_result.get("reason") or "兑换码无效"}
                     code_meta = validate_result.get("redemption_code") or {}
                     pool_type = code_meta.get("pool_type", "normal")
+                    warranty_required = self._resolve_warranty_requirement(code_meta)
                     is_virtual_welfare_code = bool(code_meta.get("virtual_welfare_code"))
                     bound_welfare_team_id = int(code_meta.get("team_id") or 0) if is_virtual_welfare_code else 0
 
@@ -361,7 +385,8 @@ class RedeemFlowService:
                                 db_session,
                                 email=email,
                                 exclude_team_ids=sorted(excluded_team_ids) if excluded_team_ids else None,
-                                pool_type=pool_type
+                                pool_type=pool_type,
+                                warranty_required=warranty_required,
                             )
                             if not select_res["success"]:
                                 return {"success": False, "error": select_res["error"]}
@@ -412,6 +437,7 @@ class RedeemFlowService:
                                 team_id=team_id_final,
                                 db_session=db_session,
                                 pool_type=pool_type,
+                                warranty_required=warranty_required,
                             )
                             if not reserve_result["success"]:
                                 raise Exception(reserve_result["error"])
