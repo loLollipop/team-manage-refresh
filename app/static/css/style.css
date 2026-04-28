@@ -4822,6 +4822,65 @@ body.admin-theme .btn-plain:hover {
     box-shadow: var(--ca-shadow-sm) !important;
 }
 
+/* ----- 状态切换按钮（已开启 / 未开启 视觉强区分） ----- */
+body.admin-theme .btn-minimal.is-toggle-on {
+    background: var(--ca-success) !important;
+    color: var(--ca-ink) !important;
+    border: var(--ca-border) !important;
+    box-shadow: var(--ca-shadow-sm) !important;
+    position: relative;
+}
+
+body.admin-theme .btn-minimal.is-toggle-on::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ca-secondary);
+    border: 1.5px solid var(--ca-ink);
+    box-shadow: 0 1px 0 0 var(--ca-ink);
+    pointer-events: none;
+}
+
+body.admin-theme .btn-minimal.is-toggle-on:hover {
+    background: var(--ca-success) !important;
+    filter: brightness(0.96);
+}
+
+body.admin-theme .btn-minimal.is-toggle-on i,
+body.admin-theme .btn-minimal.is-toggle-on svg {
+    color: var(--ca-ink) !important;
+    stroke: var(--ca-ink) !important;
+    stroke-width: 2.4 !important;
+}
+
+body.admin-theme .btn-minimal.is-toggle-off {
+    background: var(--ca-surface) !important;
+    color: var(--ca-ink-muted) !important;
+}
+
+body.admin-theme .btn-minimal.is-toggle-off i,
+body.admin-theme .btn-minimal.is-toggle-off svg {
+    color: var(--ca-ink-muted) !important;
+    stroke: var(--ca-ink-muted) !important;
+    opacity: 0.7;
+}
+
+body.admin-theme .btn-minimal.is-toggle-off:hover {
+    background: var(--ca-cream) !important;
+    color: var(--ca-ink) !important;
+}
+
+body.admin-theme .btn-minimal.is-toggle-off:hover i,
+body.admin-theme .btn-minimal.is-toggle-off:hover svg {
+    color: var(--ca-ink) !important;
+    stroke: var(--ca-ink) !important;
+    opacity: 1;
+}
+
 /* ----- 表单控件 ----- */
 body.admin-theme .form-control,
 body.admin-theme .form-control-sm,

@@ -980,18 +980,23 @@
                             <span class="btn-icon-fallback" aria-hidden="true">刷</span>
                         </button>
                         {% if team.pool_type == 'normal' %}
-                        <button class="btn btn-sm btn-icon btn-minimal {{ 'btn-success' if team.warranty_seat_enabled else 'btn-secondary' }} btn-toggle-warranty-seat"
+                        <button class="btn btn-sm btn-icon btn-minimal {{ 'btn-success is-toggle-on' if team.warranty_seat_enabled else 'btn-secondary is-toggle-off' }} btn-toggle-warranty-seat"
                             data-id="{{ team.id }}"
                             data-enabled="{{ 'true' if team.warranty_seat_enabled else 'false' }}"
-                            title="{{ '关闭质保' if team.warranty_seat_enabled else '开启质保' }}"
-                            aria-label="{{ '关闭质保' if team.warranty_seat_enabled else '开启质保' }}">
-                            <i data-lucide="shield" style="width: 16px; height: 16px;"></i>
+                            title="{{ '已开启质保（点击关闭）' if team.warranty_seat_enabled else '开启质保' }}"
+                            aria-label="{{ '已开启质保（点击关闭）' if team.warranty_seat_enabled else '开启质保' }}"
+                            aria-pressed="{{ 'true' if team.warranty_seat_enabled else 'false' }}">
+                            <i data-lucide="{{ 'shield-check' if team.warranty_seat_enabled else 'shield' }}" style="width: 16px; height: 16px;"></i>
                             <span class="btn-icon-fallback" aria-hidden="true">保</span>
                         </button>
                         {% endif %}
-                        <button class="btn btn-sm btn-icon btn-minimal btn-success btn-enable-device-auth"
-                            data-id="{{ team.id }}" title="一键开启设备代码验证" aria-label="开启设备验证">
-                            <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
+                        <button class="btn btn-sm btn-icon btn-minimal {{ 'btn-success is-toggle-on' if team.device_code_auth_enabled else 'btn-secondary is-toggle-off' }} btn-enable-device-auth"
+                            data-id="{{ team.id }}"
+                            data-enabled="{{ 'true' if team.device_code_auth_enabled else 'false' }}"
+                            title="{{ '已开启设备代码验证' if team.device_code_auth_enabled else '一键开启设备代码验证' }}"
+                            aria-label="{{ '已开启设备代码验证' if team.device_code_auth_enabled else '开启设备验证' }}"
+                            aria-pressed="{{ 'true' if team.device_code_auth_enabled else 'false' }}">
+                            <i data-lucide="{{ 'badge-check' if team.device_code_auth_enabled else 'shield-check' }}" style="width: 16px; height: 16px;"></i>
                             <span class="btn-icon-fallback" aria-hidden="true">验</span>
                         </button>
                         <button class="btn btn-sm btn-icon btn-minimal btn-primary btn-push-cliproxyapi"
@@ -1311,7 +1316,8 @@
         document.querySelectorAll('.btn-enable-device-auth').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-id');
-                enableDeviceAuth(id);
+                const alreadyEnabled = btn.getAttribute('data-enabled') === 'true';
+                enableDeviceAuth(id, alreadyEnabled);
             });
         });
 
@@ -1357,7 +1363,11 @@
         document.getElementById('btnCheckPoolTeamsLive')?.addEventListener('click', handleCheckPoolTeamsLive);
     });
 
-    async function enableDeviceAuth(teamId) {
+    async function enableDeviceAuth(teamId, alreadyEnabled = false) {
+        if (alreadyEnabled) {
+            showToast('该 Team 已开启设备代码验证', 'info');
+            return;
+        }
         if (!confirm('确定要为该 Team 开启设备代码身份验证吗?')) {
             return;
         }
