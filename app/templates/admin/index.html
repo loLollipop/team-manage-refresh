@@ -440,6 +440,33 @@
         }
     }
 
+    .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"] {
+        background: var(--success);
+        color: #fff;
+        border-color: var(--success);
+    }
+
+    .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"]:hover {
+        background: color-mix(in srgb, var(--success) 84%, #000 16%);
+        color: #fff;
+        border-color: color-mix(in srgb, var(--success) 84%, #000 16%);
+    }
+
+    body.admin-theme .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"],
+    html.theme-warm body.admin-theme .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"] {
+        background: var(--ca-success) !important;
+        color: var(--ca-ink) !important;
+        border-color: color-mix(in srgb, var(--ca-success) 78%, var(--ca-border) 22%) !important;
+        box-shadow: var(--ca-shadow-xs) !important;
+    }
+
+    body.admin-theme .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"]:hover:not(:disabled),
+    html.theme-warm body.admin-theme .team-list-table-container .btn-toggle-warranty-seat[data-enabled="true"]:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--ca-success) 82%, #fff 18%) !important;
+        color: var(--ca-ink) !important;
+        border-color: color-mix(in srgb, var(--ca-success) 88%, var(--ca-border) 12%) !important;
+    }
+
     body.admin-theme.theme-warm .team-list-table-container .btn-edit-team.btn-minimal.btn-primary,
     body.admin-theme.theme-warm .team-list-table-container .btn-push-cliproxyapi.btn-minimal.btn-primary,
     html.theme-warm body.admin-theme .team-list-table-container .btn-edit-team.btn-minimal.btn-primary,
