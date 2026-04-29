@@ -1124,3 +1124,29 @@ body.redeem-page {
     transition: none !important;
   }
 }
+
+
+/* ============================================================
+   Classic UI Style — hide cartoon decorations on redeem page
+   ============================================================ */
+body.style-classic .cartoon-deco { display: none !important; }
+
+body.style-classic .hero-header h1 .hero-highlight {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: inherit;
+}
+
+body.style-classic .main-shell {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+body.style-classic .top-tab {
+    border-radius: 8px;
+}
+
+body.style-classic .result-shell {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}

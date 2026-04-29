@@ -6498,3 +6498,193 @@ body.admin-theme.auth-page .auth-card-head .auth-brand.auth-brand-compact {
         margin-bottom: 6px;
     }
 }
+
+
+/* ==========================================================================
+   Classic UI Style — hide cartoon/neobrutalism decorations, restore v0.2.1 look
+   ========================================================================== */
+
+/* --- Classic mode: revert neobrutalism CSS custom properties --- */
+body.admin-theme.style-classic {
+    --ca-border:        1px solid var(--border-base);
+    --ca-border-thick:  1px solid var(--border-base);
+    --ca-border-thin:   1px solid var(--border-base);
+    --ca-shadow-xs:     0 1px 2px rgba(0,0,0,.05);
+    --ca-shadow-sm:     0 1px 3px rgba(0,0,0,.08);
+    --ca-shadow-md:     0 4px 6px -1px rgba(0,0,0,.1);
+    --ca-shadow-lg:     0 10px 15px -3px rgba(0,0,0,.1);
+    --shadow-sm:        0 1px 3px rgba(0,0,0,.08);
+    --shadow-md:        0 4px 6px -1px rgba(0,0,0,.1);
+    --shadow-lg:        0 10px 15px -3px rgba(0,0,0,.1);
+}
+
+body.admin-theme.style-classic,
+body.admin-theme.style-classic.theme-warm,
+html.theme-warm body.admin-theme.style-classic {
+    --border-base:      #e2e8f0;
+    --border-main:      #e2e8f0;
+    --border-focus:     var(--ca-primary);
+    --toast-border:     #e2e8f0;
+    --minimal-button-border: #e2e8f0;
+    --table-header-text: #fff;
+}
+
+body.admin-theme.style-classic.theme-ocean,
+html.theme-ocean body.admin-theme.style-classic {
+    --border-base:      #cbd5e1;
+    --border-main:      #cbd5e1;
+    --border-focus:     var(--ca-primary);
+    --toast-border:     #cbd5e1;
+    --minimal-button-border: #cbd5e1;
+    --table-header-text: #fff;
+}
+
+/* Classic: remove dot-grid background */
+body.admin-theme.style-classic {
+    background: var(--ca-paper) !important;
+}
+
+/* --- Default: hide classic badge, show cartoon --- */
+.classic-brand-badge { display: none !important; }
+
+/* --- Classic mode: show text badge, hide mascot & decorations --- */
+body.style-classic .classic-brand-badge {
+    display: inline-flex !important;
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 58%, var(--accent) 42%));
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 800;
+    box-shadow: 0 12px 24px color-mix(in srgb, var(--primary) 26%, transparent);
+    flex-shrink: 0;
+}
+
+body.style-classic .cartoon-brand-mark { display: none !important; }
+body.style-classic .brand-mark-spark { display: none !important; }
+
+body.style-classic .navbar-brand .cartoon-brand-title {
+    font-size: 1.06rem;
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--text-main);
+    animation: none;
+}
+
+body.style-classic .navbar-brand .navbar-eyebrow.cartoon-brand-eyebrow {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--text-muted);
+}
+
+/* Classic mode: auth page — hide stickers */
+body.style-classic.auth-page .auth-stickers { display: none !important; }
+
+/* Classic mode: auth page — revert brand styling */
+body.style-classic.auth-page .auth-brand-name.cartoon-brand-title {
+    font-size: 1.5rem;
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--text-main);
+    animation: none;
+}
+
+body.style-classic.auth-page .auth-eyebrow.cartoon-brand-eyebrow {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--text-muted);
+}
+
+body.style-classic.auth-page .auth-brand-compact .classic-brand-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+}
+
+body.style-classic.auth-page .auth-brand-compact .auth-brand-name.cartoon-brand-title {
+    font-size: 1rem;
+}
+
+/* Classic mode: revert neobrutalism card borders/shadows on admin */
+body.style-classic .content-section {
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Classic mode: navbar — revert neobrutalism shadow */
+body.style-classic .navbar {
+    border-bottom: 1px solid var(--border-base) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08) !important;
+}
+
+/* Classic mode: table header — softer look */
+body.style-classic .data-table thead th {
+    border-bottom: 2px solid var(--border-base);
+}
+
+/* Classic mode: modal — softer borders */
+body.style-classic .modal-content {
+    border: 1px solid var(--border-base);
+    box-shadow: 0 10px 25px rgba(0,0,0,.15);
+}
+
+/* Classic mode: toast — softer */
+body.style-classic .toast {
+    border: 1px solid var(--border-base);
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+/* Classic mode: auth card — softer borders */
+body.style-classic.auth-page .auth-card {
+    border: 1px solid var(--border-base);
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0,0,0,.1);
+}
+
+/* Classic mode: auth form input — softer */
+body.style-classic.auth-page .auth-input-wrap {
+    border: 1px solid var(--border-base);
+    box-shadow: none;
+}
+
+body.style-classic.auth-page .auth-input-wrap:focus-within {
+    border-color: var(--ca-primary);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Classic mode: auth submit button — softer */
+body.style-classic.auth-page .auth-submit {
+    box-shadow: none;
+    border: none;
+}
+
+body.style-classic.auth-page .auth-submit:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+
+/* Classic mode: navbar user area — show text label instead of avatar */
+body.style-classic .navbar-menu .navbar-user-label-classic { display: inline; }
+
+/* Classic mode: stat-card — revert neobrutalism */
+body.style-classic .stat-card {
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Classic mode: buttons — softer styling */
+body.style-classic .btn {
+    border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+    body.style-classic .classic-brand-badge {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        font-size: 0.78rem;
+    }
+}

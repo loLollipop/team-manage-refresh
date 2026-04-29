@@ -27,6 +27,14 @@ VALID_UI_THEMES = {
     UI_THEME_WARM,
 }
 
+UI_STYLE_CARTOON = "cartoon"
+UI_STYLE_CLASSIC = "classic"
+DEFAULT_UI_STYLE = UI_STYLE_CARTOON
+VALID_UI_STYLES = {
+    UI_STYLE_CARTOON,
+    UI_STYLE_CLASSIC,
+}
+
 
 class _CacheDict(dict):
     """兼容旧写法的缓存容器。
@@ -90,6 +98,14 @@ class SettingsService:
         if normalized in VALID_UI_THEMES:
             return normalized
         return DEFAULT_UI_THEME
+
+    @staticmethod
+    def normalize_ui_style(style: Optional[str]) -> str:
+        """规范化界面风格（cartoon / classic）。"""
+        normalized = str(style or "").strip().lower()
+        if normalized in VALID_UI_STYLES:
+            return normalized
+        return DEFAULT_UI_STYLE
 
     async def get_setting(
         self,

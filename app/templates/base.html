@@ -19,18 +19,29 @@
             } catch (e) {
                 window.__EARLY_UI_THEME = null;
             }
+            try {
+                var savedStyle = localStorage.getItem('ui_style');
+                var normStyle = (savedStyle === 'classic' || savedStyle === 'cartoon') ? savedStyle : null;
+                if (normStyle) {
+                    document.documentElement.classList.remove('style-classic', 'style-cartoon');
+                    document.documentElement.classList.add('style-' + normStyle);
+                    window.__EARLY_UI_STYLE = normStyle;
+                }
+            } catch (e) {
+                window.__EARLY_UI_STYLE = null;
+            }
         })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260428-polish-2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260429-ui-style-toggle">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 text-slate-900 admin-theme theme-{{ ui_theme|default('ocean') }}{% if not user %} auth-page{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}">
+<body class="bg-gray-50 text-slate-900 admin-theme theme-{{ ui_theme|default('ocean') }} style-{{ ui_style|default('cartoon') }}{% if not user %} auth-page{% endif %}" data-pool-type="{% if active_page == 'welfare' %}welfare{% else %}normal{% endif %}" data-ui-theme="{{ ui_theme|default('ocean') }}" data-ui-style="{{ ui_style|default('cartoon') }}">
     {% if user %}
     {% set system_active = active_page in ['settings', 'announcement'] %}
     <nav class="navbar">
@@ -40,6 +51,7 @@
                     <i data-lucide="menu"></i>
                 </button>
                 <a href="/admin" class="navbar-brand cartoon-brand">
+                    <span class="brand-badge classic-brand-badge">GT</span>
                     <span class="brand-badge cartoon-brand-mark" aria-hidden="true">
                         <span class="brand-mark-rotation">
                             <svg viewBox="0 0 44 44" class="brand-mark-svg brand-mark-mascot">

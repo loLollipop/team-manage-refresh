@@ -41,6 +41,7 @@
         <div class="settings-nav-group">
             <div class="settings-nav-group-title">账户与外观</div>
             <a href="#settings-password" class="settings-nav-pill settings-nav-link" data-target="settings-password">修改密码</a>
+            <a href="#settings-ui-style" class="settings-nav-pill settings-nav-link" data-target="settings-ui-style">界面风格</a>
             <a href="#settings-ui-theme" class="settings-nav-pill settings-nav-link" data-target="settings-ui-theme">系统配色</a>
             <a href="/admin/announcement" class="settings-nav-pill">公告通知</a>
         </div>
@@ -331,6 +332,38 @@
         </div>
 
         <button type="submit" class="btn btn-primary">保存 CliproxyAPI 配置</button>
+    </form>
+</div>
+
+<!-- 界面风格 -->
+<div class="content-section settings-panel" id="settings-ui-style">
+    <div class="section-header">
+        <h3>界面风格</h3>
+    </div>
+
+    <form id="uiStyleForm" class="settings-form">
+        <div class="form-group">
+            <label>选择界面风格</label>
+            <p class="form-help">切换卡通风格（Neobrutalism）与经典简约风格，配色方案（冷调/暖调）保持独立。</p>
+            <div class="theme-options">
+                <label class="theme-option-card" for="uiStyleCartoon">
+                    <input type="radio" id="uiStyleCartoon" name="ui_style" value="cartoon" {% if ui_style == 'cartoon' %}checked{% endif %}>
+                    <span>
+                        <strong>卡通风格</strong>
+                        <small>Neobrutalism 设计，带有吉祥物 Logo、贴纸装饰和活泼动效。</small>
+                    </span>
+                </label>
+                <label class="theme-option-card" for="uiStyleClassic">
+                    <input type="radio" id="uiStyleClassic" name="ui_style" value="classic" {% if ui_style == 'classic' %}checked{% endif %}>
+                    <span>
+                        <strong>经典风格</strong>
+                        <small>简洁专业的工作台风格，无装饰贴纸，适合长时间高效运营。</small>
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">保存界面风格</button>
     </form>
 </div>
 
@@ -798,6 +831,40 @@
             if (response.ok && data.success) {
                 document.getElementById('cliproxyapiBaseUrl').value = data.base_url || base_url.replace(/\/+$/, '');
                 showToast(data.message || 'CliproxyAPI 配置已保存', 'success');
+            } else {
+                showToast(data.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // 界面风格表单
+    document.getElementById('uiStyleForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const style = document.querySelector('input[name="ui_style"]:checked')?.value || 'cartoon';
+
+        try {
+            const response = await fetch('/admin/settings/ui-style', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ style })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(data.message || '界面风格已保存', 'success');
+                try { localStorage.setItem('ui_style', data.style || style); } catch (e) {}
+                if (typeof applyUiStyle === 'function') {
+                    applyUiStyle(data.style || style);
+                }
+                setTimeout(() => {
+                    window.location.reload();
+                }, 300);
             } else {
                 showToast(data.error || '保存失败', 'error');
             }
