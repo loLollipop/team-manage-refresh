@@ -1127,26 +1127,147 @@ body.redeem-page {
 
 
 /* ============================================================
-   Classic UI Style — hide cartoon decorations on redeem page
+   Classic UI Style — revert neobrutalism to clean/soft look
    ============================================================ */
+
+/* --- Override global neobrutalism tokens for classic scope --- */
+body.style-classic {
+    --c-border:       1px solid var(--border, #e2e8f0);
+    --c-border-thick: 1px solid var(--border, #e2e8f0);
+    --c-shadow-sm:  0 1px 3px rgba(0,0,0,.06);
+    --c-shadow-md:  0 2px 6px rgba(0,0,0,.08);
+    --c-shadow-lg:  0 4px 12px rgba(0,0,0,.10);
+    --c-shadow-xl:  0 6px 16px rgba(0,0,0,.10);
+}
+
+/* Hide cartoon deco stickers */
 body.style-classic .cartoon-deco { display: none !important; }
 
+/* Hero title highlight: remove rotated background box */
 body.style-classic .hero-header h1 .hero-highlight {
     background: none;
     -webkit-background-clip: unset;
     -webkit-text-fill-color: inherit;
+    border: none;
+    box-shadow: none;
+    transform: none;
 }
 
+/* Logo badge: remove rotation and offset shadow */
+body.style-classic .logo-badge {
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    transform: none;
+}
+
+/* Status pills: soften */
+body.style-classic .spots-badge,
+body.style-classic .welfare-spots-badge {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    transform: none;
+}
+
+/* Top nav tabs container */
+body.style-classic .top-nav-tabs {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Tab buttons */
+body.style-classic .top-tab {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: none;
+}
+body.style-classic .top-tab:hover {
+    transform: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+body.style-classic .top-tab.active {
+    transform: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.10);
+}
+body.style-classic .top-tab:focus-visible {
+    box-shadow: 0 0 0 3px var(--c-sky, #7ec8e3);
+}
+
+/* Tab panel (form container) */
+body.style-classic .tab-panel {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+
+/* Panel meta pills */
+body.style-classic .panel-meta-pill {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: none;
+}
+
+/* Info / warning boxes */
+body.style-classic .info-box {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Form inputs */
+body.style-classic .form-input {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: none;
+}
+body.style-classic .form-input:focus {
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, .2);
+}
+body.style-classic .form-input:hover {
+    transform: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Submit button */
+body.style-classic .btn-submit {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.10);
+}
+body.style-classic .btn-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.12);
+}
+body.style-classic .btn-submit:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+/* Main shell */
 body.style-classic .main-shell {
     border: 1px solid var(--border, #e2e8f0);
     box-shadow: 0 1px 3px rgba(0,0,0,.06);
 }
 
-body.style-classic .top-tab {
-    border-radius: 8px;
-}
-
+/* Result shell */
 body.style-classic .result-shell {
     border: 1px solid var(--border, #e2e8f0);
     box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Result cards (success/failure) */
+body.style-classic .result-card {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+body.style-classic .result-card:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,.10);
+}
+
+/* Warranty / renewal list items */
+body.style-classic .warranty-card,
+body.style-classic .renewal-card {
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+/* Empty state */
+body.style-classic .empty-state {
+    border: 1px dashed var(--border, #e2e8f0);
 }
