@@ -261,21 +261,65 @@ function updateThemeToggleButton(theme) {
     openBtn.title = isWarm ? '切换为冷调' : '切换为暖调';
 }
 
+function applyUiStyle(styleName) {
+    const body = document.body;
+    if (!body) return;
+    const normalized = String(styleName || '').toLowerCase() === 'classic' ? 'classic' : 'cartoon';
+    body.dataset.uiStyle = normalized;
+    body.classList.remove('style-classic', 'style-cartoon');
+    body.classList.add(`style-${normalized}`);
+    document.documentElement.classList.remove('style-classic', 'style-cartoon');
+    document.documentElement.classList.add(`style-${normalized}`);
+}
+
+function getCurrentUiStyle() {
+    const bodyStyle = document.body?.dataset?.uiStyle;
+    if (bodyStyle === 'classic' || bodyStyle === 'cartoon') return bodyStyle;
+    try {
+        const saved = localStorage.getItem('ui_style');
+        if (saved === 'classic' || saved === 'cartoon') return saved;
+    } catch (e) {}
+    if (window.__EARLY_UI_STYLE === 'classic' || window.__EARLY_UI_STYLE === 'cartoon') return window.__EARLY_UI_STYLE;
+    return 'cartoon';
+}
+
+async function saveUiStyle(style) {
+    const response = await fetch('/admin/settings/ui-style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(extractErrorText(data.error ?? data.detail ?? data.message ?? data.reason) || '保存失败');
+    }
+    return data.style || style;
+}
+
 async function initThemeSwitcher() {
     const isAdmin = !!document.body?.classList.contains('admin-theme');
     const isAuthPage = !!document.body?.classList.contains('auth-page');
     applySystemTheme(getCurrentSystemTheme());
+    applyUiStyle(getCurrentUiStyle());
 
     if (!isAdmin || isAuthPage) return;
 
     try {
-        const response = await fetch('/admin/settings/ui-theme');
-        const data = await response.json();
-        if (response.ok && data.success) {
-            applySystemTheme(data.theme);
+        const [themeRes, styleRes] = await Promise.all([
+            fetch('/admin/settings/ui-theme'),
+            fetch('/admin/settings/ui-style'),
+        ]);
+        const themeData = await themeRes.json();
+        if (themeRes.ok && themeData.success) {
+            applySystemTheme(themeData.theme);
+        }
+        const styleData = await styleRes.json();
+        if (styleRes.ok && styleData.success) {
+            applyUiStyle(styleData.style);
+            try { localStorage.setItem('ui_style', styleData.style); } catch (e) {}
         }
     } catch (error) {
-        console.error('load ui theme failed:', error);
+        console.error('load ui theme/style failed:', error);
     }
 
     updateThemeToggleButton(getCurrentSystemTheme());

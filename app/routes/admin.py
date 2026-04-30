@@ -25,6 +25,7 @@ from app.services.settings import (
     settings_service,
     DEFAULT_WARRANTY_EXPIRATION_MODE,
     DEFAULT_UI_THEME,
+    DEFAULT_UI_STYLE,
 )
 from app.services.cliproxyapi import cliproxyapi_service
 from app.models import RedemptionCode, RedemptionRecord, RenewalRequest, Team
@@ -48,6 +49,13 @@ async def resolve_ui_theme(db: AsyncSession) -> str:
     """获取当前系统 UI 主题。"""
     return settings_service.normalize_ui_theme(
         await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)
+    )
+
+
+async def resolve_ui_style(db: AsyncSession) -> str:
+    """获取当前界面风格（cartoon / classic）。"""
+    return settings_service.normalize_ui_style(
+        await settings_service.get_setting(db, "ui_style", DEFAULT_UI_STYLE)
     )
 
 
@@ -81,6 +89,7 @@ async def build_admin_base_context(
         "user": current_user,
         "active_page": active_page,
         "ui_theme": await resolve_ui_theme(db),
+        "ui_style": await resolve_ui_style(db),
         "pending_renewal_request_count": await get_pending_renewal_request_count(db),
         "admin_profile": await resolve_admin_profile(db),
     }
@@ -2261,6 +2270,7 @@ async def settings_page(
             "cliproxyapi_api_key": await settings_service.get_setting(db, "cliproxyapi_api_key", ""),
             "warranty_expiration_mode": await settings_service.get_warranty_expiration_mode(db),
             "ui_theme": settings_service.normalize_ui_theme(await settings_service.get_setting(db, "ui_theme", DEFAULT_UI_THEME)),
+            "ui_style": settings_service.normalize_ui_style(await settings_service.get_setting(db, "ui_style", DEFAULT_UI_STYLE)),
         })
         return templates.TemplateResponse(
             request,
@@ -2365,6 +2375,11 @@ class UiThemeSettingsRequest(BaseModel):
     theme: Literal["ocean", "warm"] = Field(DEFAULT_UI_THEME, description="系统配色主题")
 
 
+class UiStyleSettingsRequest(BaseModel):
+    """界面风格设置请求"""
+    style: Literal["cartoon", "classic"] = Field(DEFAULT_UI_STYLE, description="界面风格")
+
+
 class AdminProfileRequest(BaseModel):
     """管理员个人资料更新请求"""
     nickname: str = Field("", max_length=32, description="昵称")
@@ -2418,6 +2433,45 @@ async def update_ui_theme_settings(
         )
     except Exception as e:
         logger.exception("更新系统配色失败")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "更新失败，请稍后重试"}
+        )
+
+
+@router.get("/settings/ui-style")
+async def get_ui_style_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """获取界面风格设置。"""
+    style = settings_service.normalize_ui_style(
+        await settings_service.get_setting(db, "ui_style", DEFAULT_UI_STYLE)
+    )
+    return JSONResponse(content={"success": True, "style": style})
+
+
+@router.post("/settings/ui-style")
+async def update_ui_style_settings(
+    style_data: UiStyleSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """更新界面风格设置。"""
+    try:
+        style = settings_service.normalize_ui_style(style_data.style)
+        logger.info("管理员更新界面风格: %s", style)
+
+        success = await settings_service.update_setting(db, "ui_style", style)
+        if success:
+            return JSONResponse(content={"success": True, "message": "界面风格已保存", "style": style})
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "保存失败"}
+        )
+    except Exception as e:
+        logger.exception("更新界面风格失败")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": "更新失败，请稍后重试"}
