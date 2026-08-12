@@ -1557,6 +1557,58 @@ class TeamService:
                 "error": f"批量导入过程中发生异常: {str(e)}"
             }
 
+    @staticmethod
+    def _normalize_team_import_item(item: Dict[str, Any]) -> Optional[Dict[str, Optional[str]]]:
+        """归一化 CLIProxyAPI 认证文件及历史 Team JSON 格式。"""
+        if not isinstance(item, dict):
+            return None
+
+        # CLIProxyAPI 当前写出的 Codex 文件是扁平对象；其读取器同时兼容
+        # {"token": {"access_token": ...}}，部分工具还会再包一层 metadata。
+        sources: List[Dict[str, Any]] = []
+        pending = [item]
+        seen = set()
+        while pending:
+            source = pending.pop(0)
+            marker = id(source)
+            if marker in seen or not isinstance(source, dict):
+                continue
+            seen.add(marker)
+            sources.append(source)
+            for key in ("metadata", "token"):
+                nested = source.get(key)
+                if isinstance(nested, dict):
+                    pending.append(nested)
+
+        def first_value(*keys: str) -> Optional[str]:
+            for source in sources:
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and not isinstance(value, (dict, list)):
+                        normalized = str(value).strip()
+                        if normalized:
+                            return normalized
+            return None
+
+        access_token = first_value("access_token")
+        if not access_token:
+            token_value = item.get("token")
+            if isinstance(token_value, str) and token_value.strip():
+                access_token = token_value.strip()
+
+        normalized = {
+            "access_token": access_token,
+            "id_token": first_value("id_token"),
+            "refresh_token": first_value("refresh_token"),
+            "session_token": first_value("session_token"),
+            "client_id": first_value("client_id"),
+            "email": first_value("email"),
+            "account_id": first_value("account_id", "chatgpt_account_id"),
+        }
+        if not any((normalized["access_token"], normalized["refresh_token"], normalized["session_token"])):
+            return None
+        return normalized
+
     async def import_team_json(
         self,
         json_text: Optional[str],
@@ -1589,25 +1641,9 @@ class TeamService:
 
             normalized_items = []
             for item in raw_items:
-                if not isinstance(item, dict):
-                    continue
-
-                access_token = item.get("access_token") or item.get("token")
-                refresh_token = item.get("refresh_token")
-                session_token = item.get("session_token")
-
-                if not any([access_token, refresh_token, session_token]):
-                    continue
-
-                normalized_items.append({
-                    "access_token": access_token,
-                    "id_token": item.get("id_token"),
-                    "refresh_token": refresh_token,
-                    "session_token": session_token,
-                    "client_id": item.get("client_id"),
-                    "email": item.get("email"),
-                    "account_id": item.get("account_id")
-                })
+                normalized = self._normalize_team_import_item(item)
+                if normalized:
+                    normalized_items.append(normalized)
 
             if not normalized_items:
                 yield {"type": "error", "error": "JSON 中未找到可导入的 Team 项（需包含 AT/RT/ST）"}
