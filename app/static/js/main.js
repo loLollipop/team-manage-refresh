@@ -754,6 +754,15 @@ function setSingleImportMode(mode = 'quick') {
     const isManual = mode === 'manual';
     quickSection.style.display = isManual ? 'none' : 'block';
     manualSection.style.display = isManual ? 'block' : 'none';
+
+    // display:none 不会让带 required 的控件退出 HTML 表单校验。
+    // 切换模式时禁用非当前模式的输入，避免隐藏的 AT 字段阻止提交。
+    [quickSection, manualSection].forEach((section) => {
+        const inactive = section !== (isManual ? manualSection : quickSection);
+        section.querySelectorAll('input, textarea, select').forEach((field) => {
+            field.disabled = inactive;
+        });
+    });
 }
 
 function syncResponsiveSidebarMount() {
@@ -1240,7 +1249,11 @@ async function handleSingleImport(event) {
     const clientId = form.clientId ? form.clientId.value.trim() : null;
     const email = form.email.value.trim();
     const accountId = form.accountId.value.trim();
-    const submitButton = form.querySelector('button[type="submit"]');
+    const activeSection = document.getElementById('manualTokenSection')?.style.display !== 'none'
+        ? document.getElementById('manualTokenSection')
+        : document.getElementById('oauthQuickSection');
+    const submitButton = activeSection?.querySelector('button[type="submit"]')
+        || form.querySelector('button[type="submit"]');
 
     submitButton.disabled = true;
     submitButton.textContent = '导入中...';
