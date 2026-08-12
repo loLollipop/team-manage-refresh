@@ -17,13 +17,15 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from contextlib import asynccontextmanager
 # 导入路由
 from app import __version__
 from app.routes import redeem, auth, admin, api, user, warranty
 from app.config import settings
-from app.database import init_db, close_db, AsyncSessionLocal
+from app.database import init_db, close_db, AsyncSessionLocal, engine
 from app.services.auth import auth_service
 from app.services.team import team_service
 from app.utils.time_utils import get_now
@@ -437,9 +439,12 @@ async def lifespan(app: FastAPI):
             logger.info("质保过期自动踢人任务已禁用")
 
         logger.info("数据库初始化完成")
-    except Exception as e:
-        logger.error(f"数据库初始化失败: {e}")
-    
+    except Exception as exc:
+        # 数据库、迁移或任务初始化失败时不能继续对外提供服务，否则会导致
+        # /health 误报成功并在首次真实请求时才暴露故障。
+        logger.exception("数据库初始化失败，应用将停止启动")
+        raise RuntimeError("数据库初始化失败，应用未启动") from exc
+
     yield
     
     # 关闭定时任务
@@ -586,7 +591,14 @@ async def login_page(request: Request):
 
 @app.get("/health")
 async def health_check():
-    """健康检查端点"""
+    """检查应用是否仍可访问数据库。"""
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        logger.exception("健康检查失败：无法连接数据库")
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
+
     return {"status": "healthy"}
 
 

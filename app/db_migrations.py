@@ -5,15 +5,21 @@
 import logging
 import sqlite3
 from pathlib import Path
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
-def get_db_path():
-    """获取数据库文件路径"""
+def get_db_path() -> Path | None:
+    """返回文件型 SQLite 数据库路径；其他后端没有可迁移的本地数据库文件。"""
     from app.config import settings
-    db_file = settings.database_url.split("///")[-1]
+
+    database_url = settings.database_url
+    if not database_url.startswith("sqlite"):
+        return None
+
+    db_file = database_url.split(":///", 1)[-1]
+    if not db_file or db_file == ":memory:":
+        return None
     return Path(db_file)
 
 
@@ -39,7 +45,10 @@ def run_auto_migration():
     检测缺失的列并自动添加
     """
     db_path = get_db_path()
-    
+    if db_path is None:
+        logger.info("当前数据库不是文件型 SQLite，跳过 SQLite 自动迁移")
+        return
+
     if not db_path.exists():
         logger.info("数据库文件不存在，跳过迁移")
         return
