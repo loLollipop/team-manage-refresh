@@ -67,7 +67,9 @@ async def init_db():
     创建所有表
     """
     async with engine.begin() as conn:
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        # WAL 是 SQLite 专用设置；PostgreSQL/MySQL 等后端执行该语句会导致启动失败。
+        if _is_sqlite:
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
         await conn.run_sync(Base.metadata.create_all)
 
 
