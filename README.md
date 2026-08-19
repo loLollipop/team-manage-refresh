@@ -364,11 +364,11 @@ docker run -d --name watchtower \
 ## 📈 Star History
 
 <div align="center">
-  <a href="https://star-history.com/#loLollipop/team-manage-refresh&Date">
+  <a href="https://star-history.dera.page/#loLollipop/team-manage-refresh&type=Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date" />
-      <img alt="Star History" src="https://api.star-history.com/svg?repos=loLollipop/team-manage-refresh&type=Date" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=loLollipop/team-manage-refresh&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=loLollipop/team-manage-refresh&type=Date" />
+      <img alt="Star History" src="https://star-history.dera.page/svg?repos=loLollipop/team-manage-refresh&type=Date" />
     </picture>
   </a>
 </div>
